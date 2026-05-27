@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -7,7 +9,10 @@ from typing import Any
 import numpy as np
 
 from pypuff.models import pymet, pywrf
+from pypuff.logging import configure_logging
 
+
+LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class WindInterpolationResult:
@@ -155,7 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.print_download_url:
         if args.download_date is None:
             parser.error("--print-download-url requires --download-date")
-        print(pywrf.meteo_uniparthenope_wrf_url(args.download_date, args.download_cycle_hour))
+        configure_logging(False)
+        LOGGER.info("%s", pywrf.meteo_uniparthenope_wrf_url(args.download_date, args.download_cycle_hour))
         return 0
     result = interpolate_wrf_to_100m(
         args.wrf,
@@ -175,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
         force_download=args.force_download,
         download_timeout_s=args.download_timeout_s,
     )
-    print(result.as_dict())
+    configure_logging(False)
+    LOGGER.info("%s", result.as_dict())
     return 0
 
 

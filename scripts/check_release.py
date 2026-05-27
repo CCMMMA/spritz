@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+LOGGER = logging.getLogger(__name__)
 REQUIRED = [
     "README.md",
     "requirements.txt",
@@ -13,6 +15,8 @@ REQUIRED = [
     "SECURITY.md",
     "CONTRIBUTING.md",
     "docs/production_readiness.md",
+    "docs/getting_started.md",
+    "docs/parallelization.md",
     "docs/validation.md",
     "docs/usecases.md",
     "docs/pywrf_pymet.md",
@@ -45,11 +49,13 @@ def main() -> int:
         if rel.parts[:2] == ("src", "pypuff") and len(rel.parts) > 2 and rel.parts[2] == "usecases":
             errors.append(f"use cases must not be packaged as suite modules: {rel}")
     if errors:
-        print("release check failed", file=sys.stderr)
+        logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr, force=True)
+        LOGGER.error("release check failed")
         for error in errors:
-            print(f"- {error}", file=sys.stderr)
+            LOGGER.error("- %s", error)
         return 1
-    print("release check passed")
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout, force=True)
+    LOGGER.info("release check passed")
     return 0
 
 

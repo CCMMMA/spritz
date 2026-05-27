@@ -1,5 +1,7 @@
 # MPI parallel execution
 
+For the full parallelization schema, work partitioning rules, I/O contract, and HPC batch examples, see [`parallelization.md`](parallelization.md).
+
 PyPuff supports optional MPI parallelism through `mpi4py` for the concentration-producing backends:
 
 - `pypuff.models.calpuff`, the Gaussian CALPUFF-compatible screening backend;

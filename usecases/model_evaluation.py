@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import csv
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,7 @@ import numpy as np
 from pypuff.exceptions import DataFormatError
 from pypuff.io.jsonio import read_json, write_json
 from pypuff.io.netcdf_cf import read_cf_concentration
+from pypuff.logging import configure_logging
 
 
 def _read_concentration(path: str | Path) -> list[dict[str, Any]]:
@@ -165,6 +168,8 @@ def evaluate_wildfire_event(
     return result
 
 
+LOGGER = logging.getLogger(__name__)
+
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
@@ -182,7 +187,8 @@ def main(argv: list[str] | None = None) -> int:
         threshold=args.threshold,
         use_ai_calibration=not args.no_ai,
     )
-    print(result)
+    configure_logging(False)
+    LOGGER.info("%s", result)
     return 0
 
 

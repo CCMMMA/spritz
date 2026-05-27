@@ -33,7 +33,7 @@ NetCDF-CF is preferred for new module-to-module exchange. Legacy control files a
 
 ## Parallel layer
 
-`pypuff.parallel.mpi` contains the optional MPI abstraction used by concentration backends. It exposes serial-safe helpers, balanced partitioning, gather/broadcast operations, and root-only output coordination. The layer keeps `mpi4py` optional so every module remains importable on non-HPC systems.
+`pypuff.parallel.mpi` contains the optional MPI abstraction used by concentration backends. It exposes serial-safe helpers, balanced partitioning, gather/broadcast operations, and root-only output coordination. The layer keeps `mpi4py` optional so every module remains importable on non-HPC systems. The complete execution schema is documented in `docs/parallelization.md`.
 
 ## Numerical kernels
 

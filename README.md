@@ -46,6 +46,8 @@ python scripts/check_release.py
 
 ## Quick start
 
+For a complete step-by-step path from WRF download to PyPuff visualization, see `docs/getting_started.md`.
+
 Preferred NetCDF-CF workflow:
 
 ```bash
@@ -67,7 +69,7 @@ pycalpost --input output/concentration.csv --output output/post.json
 
 ## Input/output policy
 
-MPI parallel execution is available through the optional `mpi4py` extra for the Gaussian and particle backends. See `docs/parallel_mpi.md`.
+MPI parallel execution is available through the optional `mpi4py` extra for the Gaussian and particle backends. See `docs/parallelization.md` for the detailed schema and `docs/parallel_mpi.md` for command examples.
 
 The suite accepts a shared JSON configuration model and tolerant Fortran-style `.inp` control files. New module interoperability prefers NetCDF-CF. CSV and legacy text outputs are retained for migration and comparison workflows. See `docs/io_compatibility.md` and `docs/pywrf_pymet.md`.
 

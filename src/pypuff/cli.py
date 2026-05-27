@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import sys
+import json
+import logging
 from pathlib import Path
 from typing import Sequence
 
@@ -12,6 +13,8 @@ from .models import calmet, calpost, calpuff, calwrf, ctgproc, makegeo, particle
 from .workflow import run_workflow
 from .parallel import get_mpi_context
 from .doctor import run_diagnostics, format_report
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _config_parser(description: str) -> argparse.ArgumentParser:
@@ -25,7 +28,9 @@ def _guard(fn, argv: Sequence[str] | None = None) -> int:
     try:
         return fn(argv)
     except PyPuffError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if not logging.getLogger().handlers:
+            configure_logging(False)
+        LOGGER.error("%s", exc)
         return 1
 
 
@@ -157,7 +162,7 @@ def pyterrel_main(argv: Sequence[str] | None = None) -> int:
             source_dy_m=args.source_dy,
             prefer_netcdf=not args.json,
         )
-        print(result)
+        LOGGER.info("%s", result)
         return 0
 
     return _guard(run, argv)
@@ -224,13 +229,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             ctx = get_mpi_context(args.parallel)
             if ctx.is_root:
                 for key, value in result.items():
-                    print(f"{key}: {value}")
+                    LOGGER.info("%s: %s", key, value)
             return 0
         if args.command == "validate":
             cfg = load_config(Path(args.config))
-            print(
-                f"valid: grid={cfg.grid.nx}x{cfg.grid.ny} "
-                f"sources={len(cfg.sources)} receptors={len(cfg.receptors)}"
+            LOGGER.info(
+                "valid: grid=%sx%s sources=%s receptors=%s",
+                cfg.grid.nx,
+                cfg.grid.ny,
+                len(cfg.sources),
+                len(cfg.receptors),
             )
             return 0
         if args.command == "doctor":
@@ -240,11 +248,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 require_mpi=args.require_mpi,
             )
             if args.json:
-                import json
-
-                print(json.dumps(report, indent=2, sort_keys=True))
+                LOGGER.info("%s", json.dumps(report, indent=2, sort_keys=True))
             else:
-                print(format_report(report))
+                LOGGER.info("%s", format_report(report))
             return 0 if report["ok"] else 1
         return 2
 

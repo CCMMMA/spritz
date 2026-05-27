@@ -20,8 +20,7 @@ Key paths:
 - `src/pypuff/` — package source code.
 - `src/pypuff/models/` — model components, including PyWRF, PyMET, PyPuff Gaussian, particle backend, CTGPROC, MAKEGEO-lite, and visualization.
 - `src/pypuff/io/` — JSON, legacy-style text, and NetCDF-CF I/O helpers.
-- `src/pypuff/usecases/` — importable production APIs for operational use cases.
-- `usecases/` — documented runnable use-case folders.
+- `usecases/` — documented runnable didactic use-case folders. Use cases must not be packaged under `src/pypuff/`.
 - `examples/` — minimal stable examples used by docs and tests.
 - `docs/` — architecture, validation, I/O, MPI, numerical, visualization, use-case, and production-readiness documentation.
 - `tests/` — pytest suite.
@@ -82,6 +81,7 @@ mpiexec -n 2 python -m pypuff run examples/minimal.json --output-dir /tmp/pypuff
 - Use standard-library facilities unless an optional scientific dependency is already declared.
 - Keep optional dependencies optional and import them lazily.
 - Keep CLI behavior deterministic and suitable for batch/HPC runs.
+- Use the standard `logging` module for all operational, diagnostic, and user-facing runtime messages; do not use `print()` in package modules, scripts, or use-case programs.
 - Write outputs atomically where practical.
 - Only rank 0 should write shared output files in MPI workflows.
 - Preserve fallback paths for environments without NetCDF, MPI, or visualization dependencies.
@@ -113,10 +113,7 @@ When adding new fields:
 
 ## Use-case conventions
 
-Each use case must have both:
-
-1. A reusable module under `src/pypuff/usecases/`.
-2. A runnable documented folder under `usecases/NN_name/`.
+Each use case must remain outside the installable suite namespace and have a runnable documented folder under `usecases/NN_name/`. Shared didactic helpers may live directly under `usecases/`, but do not add `src/pypuff/usecases/` or use-case entry points to `pyproject.toml`.
 
 Use-case documentation should include:
 

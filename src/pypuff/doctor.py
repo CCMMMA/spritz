@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import platform
 import sys
 from dataclasses import dataclass
@@ -11,6 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from pypuff import __version__
+from pypuff.logging import configure_logging
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -88,10 +92,11 @@ def main(argv: list[str] | None = None) -> int:
         require_viz=args.require_viz,
         require_mpi=args.require_mpi,
     )
+    configure_logging(False)
     if args.json:
-        print(json.dumps(report, indent=2, sort_keys=True))
+        LOGGER.info("%s", json.dumps(report, indent=2, sort_keys=True))
     else:
-        print(format_report(report))
+        LOGGER.info("%s", format_report(report))
     return 0 if report["ok"] else 1
 
 

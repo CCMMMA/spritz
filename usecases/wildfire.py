@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import json
 import math
 from dataclasses import dataclass
@@ -11,7 +13,10 @@ from pypuff.config import from_mapping
 from pypuff.io.jsonio import write_json
 from high_resolution_wind import interpolate_wrf_to_100m
 from pypuff.workflow import run_workflow
+from pypuff.logging import configure_logging
 
+
+LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class WildfireRunResult:
@@ -276,7 +281,8 @@ def main(argv: list[str] | None = None) -> int:
         download_dir=args.download_dir,
         force_download=args.force_download,
     )
-    print(result.as_dict())
+    configure_logging(False)
+    LOGGER.info("%s", result.as_dict())
     return 0
 
 
