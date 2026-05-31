@@ -6,13 +6,13 @@ from typing import Any
 
 import numpy as np
 
-from pypuff.config import Receptor, SuiteConfig
-from pypuff.core.grid import Grid
-from pypuff.exceptions import DataFormatError
-from pypuff.io.legacy_outputs import infer_format, write_legacy_table
-from pypuff.io.netcdf_cf import write_cf_concentration
-from pypuff.models.calpuff import read_meteorology, write_csv
-from pypuff.parallel import get_mpi_context
+from sprtz.config import Receptor, SuiteConfig
+from sprtz.core.grid import Grid
+from sprtz.exceptions import DataFormatError
+from sprtz.io.legacy_outputs import infer_format, write_legacy_table
+from sprtz.io.netcdf_cf import write_cf_concentration
+from sprtz.models.spritz import read_meteorology, write_csv
+from sprtz.parallel import get_mpi_context
 
 
 def _grid_receptors(config: SuiteConfig) -> tuple[Receptor, ...]:
@@ -41,10 +41,10 @@ def simulate_particles(
     seed: int | None = None,
     parallel: str = "serial",
 ) -> list[dict[str, float | str]]:
-    """Run a deterministic Lagrangian particle screening alternative to CALPUFF.
+    """Run a deterministic Lagrangian particle screening alternative to Spritz.
 
     The module accepts the same SuiteConfig and meteorology files as the Gaussian
-    CALPUFF-compatible kernel and emits the same receptor concentration table.
+    Spritz kernel and emits the same receptor concentration table.
     It is designed for interoperability, not regulatory equivalence.
     """
     config.validate()
@@ -115,7 +115,7 @@ def write_particle_output(path: str | Path, rows: list[dict[str, float | str]], 
     if fmt == "netcdf":
         write_cf_concentration(path, rows)
     elif fmt == "legacy":
-        write_legacy_table(path, "PyPuff particle concentration and deposition table", rows)
+        write_legacy_table(path, "Sprtz particle concentration and deposition table", rows)
     else:
         write_csv(path, rows)
 

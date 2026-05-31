@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from pypuff.exceptions import ConfigurationError
+from sprtz.exceptions import ConfigurationError
 
 
 @dataclass(frozen=True)

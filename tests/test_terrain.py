@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from pypuff.io.jsonio import read_json
-from pypuff.models import pyterrel
+from sprtz.io.jsonio import read_json
+from sprtz.models import terrain
 
 
-def test_pyterrel_interpolates_terrain_to_local_grid() -> None:
-    terrain = np.arange(25, dtype=float).reshape(5, 5)
-    product = pyterrel.terrain_to_local_grid(
-        terrain,
+def test_terrain_interpolates_terrain_to_local_grid() -> None:
+    terrain_values = np.arange(25, dtype=float).reshape(5, 5)
+    product = terrain.terrain_to_local_grid(
+        terrain_values,
         center_lat=40.85,
         center_lon=14.27,
         nx=3,
@@ -23,9 +23,9 @@ def test_pyterrel_interpolates_terrain_to_local_grid() -> None:
     assert product.elevation_m[1, 1] == 12.0
 
 
-def test_pyterrel_writes_json_product(tmp_path) -> None:
+def test_terrain_writes_json_product(tmp_path) -> None:
     out = tmp_path / "terrain.json"
-    result = pyterrel.run(
+    result = terrain.run(
         "examples/terrain.asc",
         out,
         center_lat=40.85,
@@ -37,15 +37,15 @@ def test_pyterrel_writes_json_product(tmp_path) -> None:
         prefer_netcdf=False,
     )
     data = read_json(out)
-    assert result["component"] == "pyterrel"
-    assert data["component"] == "pyterrel.terrain"
+    assert result["component"] == "terrain"
+    assert data["component"] == "terrain.terrain"
     assert "elevation_m" in data
 
 
 def test_assign_receptor_terrain() -> None:
-    terrain = np.arange(9, dtype=float).reshape(3, 3)
-    product = pyterrel.terrain_to_local_grid(
-        terrain,
+    terrain_values = np.arange(9, dtype=float).reshape(3, 3)
+    product = terrain.terrain_to_local_grid(
+        terrain_values,
         center_lat=40.85,
         center_lon=14.27,
         nx=3,
@@ -54,5 +54,5 @@ def test_assign_receptor_terrain() -> None:
         dy_m=100.0,
         source_dx_m=100.0,
     )
-    assigned = pyterrel.assign_receptor_terrain(product, [{"id": "R0", "x": 0.0, "y": 0.0}])
+    assigned = terrain.assign_receptor_terrain(product, [{"id": "R0", "x": 0.0, "y": 0.0}])
     assert assigned[0]["terrain_m"] == 4.0

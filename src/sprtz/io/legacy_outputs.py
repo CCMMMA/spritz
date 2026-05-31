@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pypuff.io.legacy import parse_legacy_file
+from sprtz.io.legacy import parse_legacy_file
 
 
 def infer_format(path: str | Path, default: str = "auto") -> str:

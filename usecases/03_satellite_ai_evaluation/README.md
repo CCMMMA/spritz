@@ -1,10 +1,10 @@
 # Use case 03 — Satellite and AI-supported model evaluation
 
-Goal: evaluate a PyPuff wildfire/arson simulation against satellite-derived evidence such as smoke masks, burned-area masks, or active-fire probability grids.
+Goal: evaluate a Sprtz wildfire/arson simulation against satellite-derived evidence such as smoke masks, burned-area masks, or active-fire probability grids.
 
 The workflow is didactic and auditable:
 
-1. **Run use case 02.** Produce a PyPuff concentration file.
+1. **Run use case 02.** Produce a Sprtz concentration file.
 2. **Prepare satellite evidence.** Provide a 2-D probability or binary mask in JSON, NPY, CSV, TXT, or ASCII numeric format.
 3. **Map model output to probabilities.** The script converts model concentrations to a normalized probability field.
 4. **Compare model and observation.** It computes a confusion matrix and skill scores.

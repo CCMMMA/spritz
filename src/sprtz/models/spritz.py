@@ -8,20 +8,20 @@ from typing import Any
 
 import numpy as np
 
-from pypuff.config import Receptor, SuiteConfig
-from pypuff.core.grid import Grid
-from pypuff.core.physics import (
+from sprtz.config import Receptor, SuiteConfig
+from sprtz.core.grid import Grid
+from sprtz.core.physics import (
     depletion_factor,
     dispersion_parameters,
     effective_release_height,
     gaussian_plume,
     gaussian_puff,
 )
-from pypuff.exceptions import DataFormatError
-from pypuff.io.jsonio import read_json
-from pypuff.io.legacy_outputs import infer_format, write_legacy_table
-from pypuff.io.netcdf_cf import read_cf_meteorology, write_cf_concentration
-from pypuff.parallel import get_mpi_context
+from sprtz.exceptions import DataFormatError
+from sprtz.io.jsonio import read_json
+from sprtz.io.legacy_outputs import infer_format, write_legacy_table
+from sprtz.io.netcdf_cf import read_cf_meteorology, write_cf_concentration
+from sprtz.parallel import get_mpi_context
 
 
 def _mean_wind(meteo: dict[str, Any]) -> tuple[float, float, float]:
@@ -174,7 +174,7 @@ def write_concentration(path: str | Path, rows: list[dict[str, float | str]], ou
     if fmt == "netcdf":
         write_cf_concentration(path, rows)
     elif fmt == "legacy":
-        write_legacy_table(path, "PyPuff concentration and deposition table", rows)
+        write_legacy_table(path, "Sprtz concentration and deposition table", rows)
     else:
         write_csv(path, rows)
 

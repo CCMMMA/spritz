@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Production readiness diagnostics for PyPuff installations."""
+"""Production readiness diagnostics for Sprtz installations."""
 
 import importlib.util
 import json
@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pypuff import __version__
-from pypuff.logging import configure_logging
+from sprtz import __version__
+from sprtz.logging import configure_logging
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def run_diagnostics(*, require_netcdf: bool = False, require_viz: bool = False, 
 
     ok = all(c.ok for c in checks)
     return {
-        "component": "pypuff.doctor",
+        "component": "sprtz.doctor",
         "version": __version__,
         "platform": platform.platform(),
         "executable": sys.executable,
@@ -70,7 +70,7 @@ def run_diagnostics(*, require_netcdf: bool = False, require_viz: bool = False, 
 
 
 def format_report(report: dict[str, Any]) -> str:
-    lines = [f"PyPuff {report['version']} production diagnostics", f"overall: {'OK' if report['ok'] else 'FAILED'}"]
+    lines = [f"Sprtz {report['version']} production diagnostics", f"overall: {'OK' if report['ok'] else 'FAILED'}"]
     for check in report["checks"]:
         mark = "OK" if check["ok"] else "FAIL"
         lines.append(f"- {mark} {check['name']}: {check['detail']}")
@@ -80,7 +80,7 @@ def format_report(report: dict[str, Any]) -> str:
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run local PyPuff production-readiness diagnostics")
+    parser = argparse.ArgumentParser(description="Run local Sprtz production-readiness diagnostics")
     parser.add_argument("--require-netcdf", action="store_true", help="fail if netCDF4 is unavailable")
     parser.add_argument("--require-viz", action="store_true", help="fail if matplotlib is unavailable")
     parser.add_argument("--require-mpi", action="store_true", help="fail if mpi4py is unavailable")

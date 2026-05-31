@@ -1,4 +1,4 @@
-from pypuff.cli import main
+from sprtz.cli import main
 
 
 def test_validate_cli(capsys):

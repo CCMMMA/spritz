@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pypuff.config import from_mapping, load_config
-from pypuff.core.physics import depletion_factor, dispersion_parameters, effective_release_height, gaussian_puff
-from pypuff.models import calmet, calpuff
+from sprtz.config import from_mapping, load_config
+from sprtz.core.physics import depletion_factor, dispersion_parameters, effective_release_height, gaussian_puff
+from sprtz.models import spritzmet, spritz
 
 
 def test_puff_dispersion_is_positive_and_finite_source_increases_spread():
@@ -46,16 +46,16 @@ def test_numerical_options_change_results(tmp_path):
     cfg = load_config("examples/minimal.json")
     plume_cfg = from_mapping({**cfg.raw, "run": {**cfg.raw["run"], "numerical_mode": "plume"}})
     meteo_path = tmp_path / "meteo.json"
-    calmet.run(cfg, meteo_path, "json")
-    puff = calpuff.run(cfg, meteo_path, tmp_path / "puff.csv", "csv")
-    plume = calpuff.run(plume_cfg, meteo_path, tmp_path / "plume.csv", "csv")
+    spritzmet.run(cfg, meteo_path, "json")
+    puff = spritz.run(cfg, meteo_path, tmp_path / "puff.csv", "csv")
+    plume = spritz.run(plume_cfg, meteo_path, tmp_path / "plume.csv", "csv")
     assert puff != plume
     assert "dry_flux" in puff[0]
 
-from pypuff.core.stats import block_average, ranked, running_average
+from sprtz.core.stats import block_average, ranked, running_average
 
 
-def test_calpost_style_averages_and_rank():
+def test_spritzpost_style_averages_and_rank():
     assert running_average([1, 3, 5], 2) == [2.0, 4.0]
     assert block_average([1, 3, 5, 7], 2) == [2.0, 6.0]
     assert ranked([1, 9, 3], 2) == 3.0

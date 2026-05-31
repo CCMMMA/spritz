@@ -6,8 +6,8 @@ from typing import Any
 
 import numpy as np
 
-from pypuff.exceptions import DataFormatError
-from pypuff.io.netcdf_cf import read_cf_concentration
+from sprtz.exceptions import DataFormatError
+from sprtz.io.netcdf_cf import read_cf_concentration
 
 
 def _read_rows(path: str | Path) -> list[dict[str, Any]]:

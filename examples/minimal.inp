@@ -1,4 +1,4 @@
-! tolerant Fortran-style control example; supports CALPUFF-like ! comments
+! tolerant Fortran-style control example; supports Spritz-like ! comments
 NX = 5
 NY = 4
 DX = 500

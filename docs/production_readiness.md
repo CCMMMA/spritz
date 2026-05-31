@@ -2,7 +2,7 @@
 
 This repository is production-ready as Python software infrastructure: it is installable, typed, deterministic for a given input, covered by unit tests, has explicit exceptions, atomic writes for core outputs, CLI error handling, CI, and coherent documentation.
 
-It is not claimed to be a regulatory replacement for the official CALPUFF Modeling System. Production scientific use requires project-specific verification, validation against accepted reference cases, and review by qualified atmospheric-science practitioners.
+It is not claimed to be a regulatory replacement for any third-party modeling system. Production scientific use requires project-specific verification, validation against accepted reference cases, and review by qualified atmospheric-science practitioners.
 
 ## Operational properties
 
@@ -28,8 +28,8 @@ The suite supports optional MPI execution with `mpi4py` for the Gaussian and par
 Run the built-in diagnostic command after installation and in operational containers:
 
 ```bash
-pypuff doctor
-pypuff doctor --require-netcdf --require-viz
+sprtz doctor
+sprtz doctor --require-netcdf --require-viz
 # add --require-mpi on MPI production nodes
 ```
 
@@ -50,9 +50,9 @@ python scripts/check_release.py
 The release check verifies required docs, use-case documentation, typed package metadata, and absence of Python bytecode/cache directories in the repository archive.
 
 
-## PyTerrel terrain preprocessing
+## Terrain Preprocessing
 
-PyTerrel is included as `pypuff.models.pyterrel` and the `pyterrel` CLI. It provides clean-room TERREL-role terrain interpolation and NetCDF-CF/JSON terrain outputs for PyMET, MAKEGEO, and dispersion workflows.
+Terrain is included as `sprtz.models.terrain` and the `terrain` CLI. It provides clean-room terrain interpolation and NetCDF-CF/JSON terrain outputs for SpritzMet, MakeGeo, and dispersion workflows.
 
 
 ## Use-case packaging boundary

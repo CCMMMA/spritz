@@ -1,18 +1,18 @@
 # Parallelization schema
 
-PyPuff uses an optional MPI parallelization layer designed for deterministic atmospheric-dispersion workflows on both laptops and HPC clusters. The same code path can run in serial mode, in automatic MPI mode, or in explicit MPI mode without changing the scenario configuration files.
+Sprtz uses an optional MPI parallelization layer designed for deterministic atmospheric-dispersion workflows on both laptops and HPC clusters. The same code path can run in serial mode, in automatic MPI mode, or in explicit MPI mode without changing the scenario configuration files.
 
 This document describes the production execution schema, how work is partitioned, which files are read and written by each rank, and how to run and validate parallel jobs.
 
 ## Goals
 
-PyPuff parallelization follows five design goals.
+Sprtz parallelization follows five design goals.
 
 1. **Serial first**: every model must run without MPI or `mpi4py` installed.
 2. **Optional HPC acceleration**: MPI is enabled only when requested or when `--parallel auto` detects a multi-rank communicator.
 3. **Deterministic results**: serial and parallel runs should produce equivalent outputs for the same backend, configuration, and random seed.
 4. **Safe output writing**: only rank 0 writes shared concentration, meteorology, post-processing, and workflow files.
-5. **Clean interoperability**: NetCDF-CF remains the preferred file exchange format between PyWRF, PyMET, PyTerrel, PyPuff, PyPOST, and the use-case scripts.
+5. **Clean interoperability**: NetCDF-CF remains the preferred file exchange format between SpritzWRF, SpritzMet, Terrain, Spritz, SpritzPost, and the use-case scripts.
 
 ## Supported execution modes
 
@@ -27,7 +27,7 @@ All concentration-producing commands accept one of the following modes:
 Example serial run:
 
 ```bash
-pypuff run examples/minimal.json \
+sprtz run examples/minimal.json \
   --output-dir output-serial \
   --interchange netcdf \
   --parallel serial
@@ -36,7 +36,7 @@ pypuff run examples/minimal.json \
 Example automatic run:
 
 ```bash
-mpiexec -n 4 pypuff run examples/minimal.json \
+mpiexec -n 4 sprtz run examples/minimal.json \
   --output-dir output-auto \
   --interchange netcdf \
   --parallel auto
@@ -45,7 +45,7 @@ mpiexec -n 4 pypuff run examples/minimal.json \
 Example production MPI run:
 
 ```bash
-mpiexec -n 4 pypuff run examples/minimal.json \
+mpiexec -n 4 sprtz run examples/minimal.json \
   --output-dir output-mpi \
   --backend gaussian \
   --interchange netcdf \
@@ -55,7 +55,7 @@ mpiexec -n 4 pypuff run examples/minimal.json \
 Particle backend:
 
 ```bash
-mpiexec -n 4 pypuff run examples/minimal.json \
+mpiexec -n 4 sprtz run examples/minimal.json \
   --output-dir output-particles-mpi \
   --backend particles \
   --interchange netcdf \
@@ -67,12 +67,12 @@ mpiexec -n 4 pypuff run examples/minimal.json \
 The parallel abstraction is implemented in:
 
 ```text
-src/pypuff/parallel/
+src/sprtz/parallel/
 ├── __init__.py
 └── mpi.py
 ```
 
-The central object is `MPIContext`. It wraps `MPI.COMM_WORLD` when MPI is active and exposes the same small API when PyPuff is running serially:
+The central object is `MPIContext`. It wraps `MPI.COMM_WORLD` when MPI is active and exposes the same small API when Sprtz is running serially:
 
 - `rank`: current rank, or `0` in serial mode.
 - `size`: communicator size, or `1` in serial mode.
@@ -86,7 +86,7 @@ The central object is `MPIContext`. It wraps `MPI.COMM_WORLD` when MPI is active
 The public factory is:
 
 ```python
-from pypuff.parallel import get_mpi_context
+from sprtz.parallel import get_mpi_context
 
 ctx = get_mpi_context("auto")
 ```
@@ -95,7 +95,7 @@ No modeling module imports `mpi4py` directly. This keeps non-MPI installations i
 
 ## Work partitioning
 
-PyPuff currently uses static balanced partitioning with contiguous blocks. For `n_items` units of work, `size` MPI ranks, and one `rank`, the partition is:
+Sprtz currently uses static balanced partitioning with contiguous blocks. For `n_items` units of work, `size` MPI ranks, and one `rank`, the partition is:
 
 ```python
 base, remainder = divmod(n_items, size)
@@ -123,7 +123,7 @@ Example for 10 receptors and 4 ranks:
 The Gaussian/non-steady puff backend is implemented in:
 
 ```text
-src/pypuff/models/calpuff.py
+src/sprtz/models/spritz.py
 ```
 
 Parallelization unit: **receptors**.
@@ -173,7 +173,7 @@ The Gaussian backend is deterministic because each receptor row is computed inde
 The particle backend is implemented in:
 
 ```text
-src/pypuff/models/particles.py
+src/sprtz/models/particles.py
 ```
 
 Parallelization unit: **sources**.
@@ -230,19 +230,19 @@ For future very large single-source simulations, a particle-block decomposition 
 The high-level workflow is implemented in:
 
 ```text
-src/pypuff/workflow.py
+src/sprtz/workflow.py
 ```
 
-The workflow coordinates PyMET, the selected concentration backend, and PyPOST-style post-processing. The current production workflow is:
+The workflow coordinates SpritzMet, the selected concentration backend, and SpritzPost-style post-processing. The current production workflow is:
 
 ```text
 rank 0 creates output directory
 all ranks synchronize
 all ranks load configuration
-rank 0 runs PyMET/CALMET-compatible meteorology generation
+rank 0 runs SpritzMet meteorology generation
 all ranks synchronize
 all ranks run Gaussian or particle concentration backend
-rank 0 runs PyPOST/CALPOST-style post-processing
+rank 0 runs SpritzPost post-processing
 rank 0 broadcasts the final workflow summary
 ```
 
@@ -255,8 +255,8 @@ The I/O contract is intentionally conservative.
 | File class | Writer | Readers | Notes |
 |---|---|---|---|
 | Configuration JSON / `.inp` | User | All ranks | Small text inputs; read independently. |
-| PyMET meteorology NetCDF/JSON | Rank 0 | All ranks | Rank 0 writes, all ranks read after a barrier. |
-| Concentration NetCDF/CSV/legacy table | Rank 0 | User / PyPOST | Rank 0 writes gathered results. |
+| SpritzMet meteorology NetCDF/JSON | Rank 0 | All ranks | Rank 0 writes, all ranks read after a barrier. |
+| Concentration NetCDF/CSV/legacy table | Rank 0 | User / SpritzPost | Rank 0 writes gathered results. |
 | Post-processing JSON | Rank 0 | User | Produced after concentration output exists. |
 | Visualization figures | Serial scripts or rank 0 | User | Visualization is not currently MPI-parallel. |
 
@@ -264,14 +264,14 @@ Rank 0 only writing is deliberate. It avoids multi-writer NetCDF corruption and 
 
 ## NetCDF-CF interoperability
 
-PyPuff prefers NetCDF-CF for module interoperability. In a parallel workflow, NetCDF-CF is used as a shared exchange format rather than a parallel write target:
+Sprtz prefers NetCDF-CF for module interoperability. In a parallel workflow, NetCDF-CF is used as a shared exchange format rather than a parallel write target:
 
-1. PyWRF converts/extracts WRF-derived meteorology.
-2. PyMET interpolates or regularizes meteorology onto the modeling grid.
-3. PyTerrel provides terrain fields where required.
-4. PyPuff Gaussian or particle backend reads the meteorology product on all ranks.
+1. SpritzWRF converts/extracts WRF-derived meteorology.
+2. SpritzMet interpolates or regularizes meteorology onto the modeling grid.
+3. Terrain provides terrain fields where required.
+4. Spritz Gaussian or particle backend reads the meteorology product on all ranks.
 5. Rank 0 writes the concentration NetCDF-CF product.
-6. PyPOST and visualization modules read the final product.
+6. SpritzPost and visualization modules read the final product.
 
 This schema is robust on local disks, shared POSIX filesystems, and typical HPC scratch filesystems.
 
@@ -300,10 +300,10 @@ print(MPI.COMM_WORLD.Get_rank(), MPI.COMM_WORLD.Get_size())
 PY
 ```
 
-Then run PyPuff diagnostics:
+Then run Sprtz diagnostics:
 
 ```bash
-pypuff doctor
+sprtz doctor
 ```
 
 ## Batch-scheduler examples
@@ -312,7 +312,7 @@ pypuff doctor
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=pypuff
+#SBATCH --job-name=sprtz
 #SBATCH --nodes=1
 #SBATCH --ntasks=16
 #SBATCH --time=00:30:00
@@ -324,7 +324,7 @@ module load python
 module load openmpi
 source .venv/bin/activate
 
-srun -n 16 pypuff run examples/minimal.json \
+srun -n 16 sprtz run examples/minimal.json \
   --output-dir output-slurm \
   --backend gaussian \
   --interchange netcdf \
@@ -335,7 +335,7 @@ srun -n 16 pypuff run examples/minimal.json \
 
 ```bash
 #!/bin/bash
-#PBS -N pypuff
+#PBS -N sprtz
 #PBS -l select=1:ncpus=16:mpiprocs=16
 #PBS -l walltime=00:30:00
 
@@ -343,7 +343,7 @@ set -euo pipefail
 cd "$PBS_O_WORKDIR"
 source .venv/bin/activate
 
-mpiexec -n 16 pypuff run examples/minimal.json \
+mpiexec -n 16 sprtz run examples/minimal.json \
   --output-dir output-pbs \
   --backend particles \
   --interchange netcdf \
@@ -389,13 +389,13 @@ Before accepting a new parallel workflow or backend change, run:
 ```bash
 PYTHONPATH=src python -m compileall -q src tests usecases
 PYTHONPATH=src python -m pytest -q
-PYTHONPATH=src python -m pypuff doctor
-PYTHONPATH=src python -m pypuff run examples/minimal.json \
-  --output-dir /tmp/pypuff_parallel_serial \
+PYTHONPATH=src python -m sprtz doctor
+PYTHONPATH=src python -m sprtz run examples/minimal.json \
+  --output-dir /tmp/sprtz_parallel_serial \
   --interchange json \
   --parallel serial
-PYTHONPATH=src python -m pypuff run examples/minimal.json \
-  --output-dir /tmp/pypuff_parallel_auto \
+PYTHONPATH=src python -m sprtz run examples/minimal.json \
+  --output-dir /tmp/sprtz_parallel_auto \
   --interchange json \
   --parallel auto
 python scripts/check_release.py
@@ -404,8 +404,8 @@ python scripts/check_release.py
 When MPI is available, also run:
 
 ```bash
-mpiexec -n 2 pypuff run examples/minimal.json \
-  --output-dir /tmp/pypuff_parallel_mpi \
+mpiexec -n 2 sprtz run examples/minimal.json \
+  --output-dir /tmp/sprtz_parallel_mpi \
   --interchange netcdf \
   --parallel mpi
 ```
@@ -413,8 +413,8 @@ mpiexec -n 2 pypuff run examples/minimal.json \
 For the particle backend, repeat with:
 
 ```bash
-mpiexec -n 2 pypuff run examples/minimal.json \
-  --output-dir /tmp/pypuff_parallel_particles \
+mpiexec -n 2 sprtz run examples/minimal.json \
+  --output-dir /tmp/sprtz_parallel_particles \
   --backend particles \
   --interchange netcdf \
   --parallel mpi
@@ -436,7 +436,7 @@ These are future extensions. The current schema prioritizes deterministic behavi
 
 When adding a new parallelized module:
 
-1. Keep `mpi4py` imports isolated behind `pypuff.parallel`.
+1. Keep `mpi4py` imports isolated behind `sprtz.parallel`.
 2. Make `serial` the default execution mode.
 3. Use `MPIContext.partition()` for deterministic static decomposition.
 4. Use rank-local accumulation and a small number of collective operations.

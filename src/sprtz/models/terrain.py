@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-"""PyTerrel: clean-room terrain extraction and interpolation for PyPuff.
+"""Terrain: clean-room terrain extraction and interpolation for Sprtz.
 
-PyTerrel fills the TERREL role in the PyPuff suite.  It reads terrain rasters,
-interpolates them to a local modeling grid, assigns terrain heights to model
-cells/receptors, and writes a NetCDF-CF terrain product for PyMET, MAKEGEO, and
-PyPuff dispersion workflows.  The implementation is clean-room Python code and
-contains no original TERREL/CALPUFF source code.
+Terrain reads terrain rasters, interpolates them to a local modeling grid,
+assigns terrain heights to model cells/receptors, and writes a NetCDF-CF terrain
+product for SpritzMet, MakeGeo, and Sprtz dispersion workflows.
 """
 
 from dataclasses import dataclass
@@ -15,15 +13,15 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from pypuff.io.jsonio import write_json
-from pypuff.io.netcdf_cf import available as netcdf_available
-from pypuff.models.ctgproc import read_ascii_grid
-from pypuff.models.pymet import local_grid_latlon
+from sprtz.io.jsonio import write_json
+from sprtz.io.netcdf_cf import available as netcdf_available
+from sprtz.models.ctgproc import read_ascii_grid
+from sprtz.models.spritzmet import local_grid_latlon
 
 
 @dataclass(frozen=True)
 class TerrainProduct:
-    """Terrain on a PyPuff local grid."""
+    """Terrain on a Sprtz local grid."""
 
     x: np.ndarray
     y: np.ndarray
@@ -39,7 +37,7 @@ class TerrainProduct:
 
     def to_payload(self) -> dict[str, Any]:
         return {
-            "component": "pyterrel.terrain",
+            "component": "terrain.terrain",
             "center_lat": self.center_lat,
             "center_lon": self.center_lon,
             "dx_m": self.dx_m,
@@ -52,7 +50,7 @@ class TerrainProduct:
             "longitude": self.longitude.tolist(),
             "elevation_m": self.elevation_m.tolist(),
             "metadata": {
-                "former_role": "TERREL",
+                "former_role": "Terrain",
                 "clean_room": True,
                 "schema_version": "1.0",
             },
@@ -115,7 +113,7 @@ def terrain_to_local_grid(
     source_dy_m: float | None = None,
     source: str = "in-memory terrain",
 ) -> TerrainProduct:
-    """Interpolate a terrain raster to a PyPuff local modeling grid."""
+    """Interpolate a terrain raster to a Sprtz local modeling grid."""
     if nx < 2 or ny < 2:
         raise ValueError("nx and ny must be at least 2")
     if dx_m <= 0 or dy_m <= 0:
@@ -158,7 +156,7 @@ def write_terrain_product(path: str | Path, product: TerrainProduct, *, prefer_n
             ds.createDimension("y", ny)
             ds.createDimension("x", nx)
             ds.Conventions = "CF-1.8"
-            ds.title = "PyPuff PyTerrel terrain product"
+            ds.title = "Sprtz Terrain product"
             ds.source = product.source
             ds.center_latitude = float(product.center_lat)
             ds.center_longitude = float(product.center_lon)
@@ -192,7 +190,7 @@ def run(
     source_dy_m: float | None = None,
     prefer_netcdf: bool = True,
 ) -> dict[str, Any]:
-    """Read terrain, interpolate it, write a PyTerrel product, and return metadata."""
+    """Read terrain, interpolate it, write a Terrain product, and return metadata."""
     p = Path(terrain_path)
     terrain = read_ascii_grid(p)
     product = terrain_to_local_grid(
@@ -209,7 +207,7 @@ def run(
     )
     fmt = write_terrain_product(output, product, prefer_netcdf=prefer_netcdf)
     return {
-        "component": "pyterrel",
+        "component": "terrain",
         "output": str(output),
         "format": fmt,
         "nx": nx,

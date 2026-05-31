@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
-from pypuff.io.jsonio import write_json
-from pypuff.models import pywrf
+from sprtz.io.jsonio import write_json
+from sprtz.models import spritzwrf
 
 USECASES = Path(__file__).resolve().parents[1] / "usecases"
 sys.path.insert(0, str(USECASES))
@@ -84,10 +84,10 @@ def test_evaluate_wildfire_event(tmp_path: Path) -> None:
 
 
 def test_meteo_uniparthenope_url_builder() -> None:
-    assert pywrf.meteo_uniparthenope_wrf_url("2026-05-27", 0).endswith(
+    assert spritzwrf.meteo_uniparthenope_wrf_url("2026-05-27", 0).endswith(
         "/2026/05/27/wrf5_d03_20260527Z0000.nc"
     )
-    assert pywrf.meteo_uniparthenope_wrf_url("2026-05-27", "18").endswith(
+    assert spritzwrf.meteo_uniparthenope_wrf_url("2026-05-27", "18").endswith(
         "wrf5_d03_20260527Z1800.nc"
     )
 
@@ -99,4 +99,4 @@ def test_resolve_wrf_input_prefers_local_path(tmp_path: Path) -> None:
 
 
 def test_usecases_are_not_packaged_as_suite_modules() -> None:
-    assert not (Path("src/pypuff/usecases")).exists()
+    assert not (Path("src/sprtz/usecases")).exists()

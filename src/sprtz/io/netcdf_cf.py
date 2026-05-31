@@ -5,8 +5,8 @@ from typing import Any
 
 import numpy as np
 
-from pypuff.exceptions import DataFormatError
-from pypuff.io.jsonio import read_json, write_json
+from sprtz.exceptions import DataFormatError
+from sprtz.io.jsonio import read_json, write_json
 
 
 def available() -> bool:
@@ -25,7 +25,7 @@ def _as_array(data: Any) -> np.ndarray:
 
 
 def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
-    """Write CALMET-like meteorology using a compact CF-inspired NetCDF schema.
+    """Write SpritzMet-like meteorology using a compact CF-inspired NetCDF schema.
 
     When netCDF4 is not installed, a JSON file with the same logical schema is
     written so tests and lightweight deployments remain deterministic.
@@ -52,7 +52,7 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
         ds.createDimension("y", ny)
         ds.createDimension("x", nx)
         ds.Conventions = "CF-1.8"
-        ds.title = "PyPuff CALMET-compatible meteorology"
+        ds.title = "Sprtz SpritzMet meteorology"
         ds.featureType = "grid"
         x = ds.createVariable("x", "f8", ("x",))
         y = ds.createVariable("y", "f8", ("y",))
@@ -94,7 +94,7 @@ def read_cf_meteorology(path: str | Path) -> dict[str, Any]:
             return np.full(shape, default, dtype=float).tolist()
 
         return {
-            "component": "calmet",
+            "component": "spritzmet",
             "format": "NetCDF-CF",
             "u": read_var("eastward_wind", "u", default=0.0),
             "v": read_var("northward_wind", "v", default=0.0),
@@ -116,7 +116,7 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
         ds.createDimension("time", 1)
         ds.createDimension("receptor", n)
         ds.Conventions = "CF-1.8"
-        ds.title = "PyPuff receptor concentration"
+        ds.title = "Sprtz receptor concentration"
         rec = ds.createVariable("receptor", "i4", ("receptor",))
         rec.long_name = "receptor index"
         rec[:] = np.arange(n, dtype=np.int32)

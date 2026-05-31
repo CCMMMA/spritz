@@ -1,4 +1,4 @@
-from pypuff.config import load_config
+from sprtz.config import load_config
 
 
 def test_load_json_minimal():

@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from pypuff.exceptions import DataFormatError
+from sprtz.exceptions import DataFormatError
 
 
 def read_json(path: str | Path) -> dict[str, Any]:

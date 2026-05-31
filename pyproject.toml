@@ -3,14 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pypuff"
+name = "sprtz"
 version = "0.4.4"
 description = "Clean-room pure Python puff and dispersion modeling toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "Raffaele Montella / contributors"}]
-keywords = ["PyPuff", "PyWRF", "PyMET", "CALPUFF", "CALMET", "CALPOST", "CALWRF", "MAKEGEO", "CTGPROC", "air-quality", "atmospheric-science"]
+keywords = ["Sprtz", "SpritzWRF", "SpritzMet", "Spritz", "SpritzPost", "Terrain", "MakeGeo", "CTGPROC", "air-quality", "atmospheric-science"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
@@ -31,27 +31,28 @@ mpi = ["mpi4py>=3.1"]
 dev = ["pytest>=7", "ruff>=0.4", "mypy>=1.8", "build>=1.0", "matplotlib>=3.7"]
 
 [project.scripts]
-pypuff = "pypuff.cli:main"
-pycalmet = "pypuff.cli:calmet_main"
-pypuff-model = "pypuff.cli:calpuff_main"
-pycalpost = "pypuff.cli:calpost_main"
-pypuff-particles = "pypuff.cli:pypuff_particles_main"
-pypuff-plot = "pypuff.cli:plot_main"
-pycalwrf = "pypuff.cli:calwrf_main"
-pyctgproc = "pypuff.cli:ctgproc_main"
-pymakegeo-lite = "pypuff.cli:makegeo_main"
-pyterrel = "pypuff.cli:pyterrel_main"
-pypuff-doctor = "pypuff.doctor:main"
+sprtz = "sprtz.cli:main"
+spritzwrf = "sprtz.cli:spritzwrf_main"
+spritzmet = "sprtz.cli:spritzmet_main"
+spritz = "sprtz.cli:spritz_main"
+spritzpost = "sprtz.cli:spritzpost_main"
+sprtz-particles = "sprtz.cli:sprtz_particles_main"
+sprtz-plot = "sprtz.cli:plot_main"
+ctgproc = "sprtz.cli:ctgproc_main"
+makegeo = "sprtz.cli:makegeo_main"
+terrain = "sprtz.cli:terrain_main"
+sprtz-doctor = "sprtz.doctor:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-pypuff = ["py.typed"]
+sprtz = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

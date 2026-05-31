@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Sequence
 
 from .config import load_config
-from .exceptions import PyPuffError
+from .doctor import format_report, run_diagnostics
+from .exceptions import SprtzError
 from .logging import configure_logging
-from .models import calmet, calpost, calpuff, calwrf, ctgproc, makegeo, particles, pyterrel, visualization
-from .workflow import run_workflow
+from .models import ctgproc, makegeo, particles, spritz, spritzmet, spritzpost, spritzwrf
+from .models import terrain, visualization
 from .parallel import get_mpi_context
-from .doctor import run_diagnostics, format_report
+from .workflow import run_workflow
 
 LOGGER = logging.getLogger(__name__)
 
@@ -27,44 +28,44 @@ def _config_parser(description: str) -> argparse.ArgumentParser:
 def _guard(fn, argv: Sequence[str] | None = None) -> int:
     try:
         return fn(argv)
-    except PyPuffError as exc:
+    except SprtzError as exc:
         if not logging.getLogger().handlers:
             configure_logging(False)
         LOGGER.error("%s", exc)
         return 1
 
 
-def calmet_main(argv: Sequence[str] | None = None) -> int:
+def spritzmet_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = _config_parser("Run the pure Python CALMET-compatible diagnostic kernel")
+        parser = _config_parser("Run the pure Python SpritzMet diagnostic kernel")
         parser.add_argument("--output", required=True)
         parser.add_argument("--format", default="auto", choices=["auto", "json", "netcdf"])
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        calmet.run(load_config(args.config), args.output, args.format)
+        spritzmet.run(load_config(args.config), args.output, args.format)
         return 0
 
     return _guard(run, argv)
 
 
-def calpuff_main(argv: Sequence[str] | None = None) -> int:
+def spritz_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = _config_parser("Run the pure Python CALPUFF-compatible screening kernel")
+        parser = _config_parser("Run the pure Python Spritz screening kernel")
         parser.add_argument("--meteo", required=True)
         parser.add_argument("--output", required=True)
         parser.add_argument("--format", default="auto", choices=["auto", "csv", "legacy", "netcdf"])
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"], help="parallel execution mode")
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        calpuff.run(load_config(args.config), args.meteo, args.output, args.format, parallel=args.parallel)
+        spritz.run(load_config(args.config), args.meteo, args.output, args.format, parallel=args.parallel)
         return 0
 
     return _guard(run, argv)
 
 
-def pypuff_particles_main(argv: Sequence[str] | None = None) -> int:
+def sprtz_particles_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = _config_parser("Run the particle-based PyPuff alternative")
+        parser = _config_parser("Run the particle-based Spritz alternative")
         parser.add_argument("--meteo", required=True)
         parser.add_argument("--output", required=True)
         parser.add_argument("--format", default="auto", choices=["auto", "csv", "legacy", "netcdf"])
@@ -78,9 +79,9 @@ def pypuff_particles_main(argv: Sequence[str] | None = None) -> int:
     return _guard(run, argv)
 
 
-def calpost_main(argv: Sequence[str] | None = None) -> int:
+def spritzpost_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = argparse.ArgumentParser(description="Run the pure Python CALPOST-compatible postprocessor")
+        parser = argparse.ArgumentParser(description="Run the pure Python SpritzPost postprocessor")
         parser.add_argument("--input", required=True)
         parser.add_argument("--output", required=True)
         parser.add_argument("--threshold", type=float, default=None)
@@ -90,7 +91,7 @@ def calpost_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--verbose", action="store_true")
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        calpost.run(
+        spritzpost.run(
             args.input,
             args.output,
             args.threshold,
@@ -103,15 +104,15 @@ def calpost_main(argv: Sequence[str] | None = None) -> int:
     return _guard(run, argv)
 
 
-def calwrf_main(argv: Sequence[str] | None = None) -> int:
+def spritzwrf_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = argparse.ArgumentParser(description="Inspect/adapt a WRF file for Python CALMET workflows")
+        parser = argparse.ArgumentParser(description="Inspect/adapt a WRF file for Python SpritzMet workflows")
         parser.add_argument("--input", required=True)
         parser.add_argument("--output", required=True)
         parser.add_argument("--verbose", action="store_true")
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        calwrf.run(args.input, args.output)
+        spritzwrf.run(args.input, args.output)
         return 0
 
     return _guard(run, argv)
@@ -132,9 +133,9 @@ def ctgproc_main(argv: Sequence[str] | None = None) -> int:
 
 
 
-def pyterrel_main(argv: Sequence[str] | None = None) -> int:
+def terrain_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = argparse.ArgumentParser(description="Build a PyTerrel terrain product on a local modeling grid")
+        parser = argparse.ArgumentParser(description="Build a Terrain product on a local modeling grid")
         parser.add_argument("--terrain", required=True, help="ASCII terrain raster")
         parser.add_argument("--output", required=True, help="NetCDF-CF or JSON terrain product")
         parser.add_argument("--center-lat", type=float, required=True)
@@ -149,7 +150,7 @@ def pyterrel_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--verbose", action="store_true")
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        result = pyterrel.run(
+        result = terrain.run(
             args.terrain,
             args.output,
             center_lat=args.center_lat,
@@ -200,10 +201,10 @@ def plot_main(argv: Sequence[str] | None = None) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = argparse.ArgumentParser(prog="pypuff", description="Pure Python CALPUFF-compatible toolkit")
+        parser = argparse.ArgumentParser(prog="sprtz", description="Pure Python Sprtz toolkit")
         parser.add_argument("--verbose", action="store_true", help="enable debug logging")
         sub = parser.add_subparsers(dest="command", required=True)
-        workflow = sub.add_parser("run", help="run CALMET -> CALPUFF/PARTICLES -> CALPOST workflow")
+        workflow = sub.add_parser("run", help="run SpritzMet -> Spritz/particles -> SpritzPost workflow")
         workflow.add_argument("config")
         workflow.add_argument("--output-dir", default="output")
         workflow.add_argument("--backend", choices=["gaussian", "particles"], default="gaussian")

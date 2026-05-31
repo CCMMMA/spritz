@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-"""PyWRF: clean-room WRF extraction utilities for PyPuff.
+"""SpritzWRF: clean-room WRF extraction utilities for Sprtz.
 
-PyWRF is the PyPuff replacement for the old CALWRF role.  It does not attempt
-byte-for-byte compatibility with CALWRF binaries; instead it provides a typed,
-well documented Python API that extracts WRF fields into the common PyPuff
-interoperability schema used by PyMET and downstream dispersion models.
+SpritzWRF provides a typed, documented Python API that inspects WRF files and
+extracts wind fields into the common Sprtz interoperability schema used by
+SpritzMet and downstream dispersion models.
 """
 
 from dataclasses import dataclass
@@ -17,7 +16,8 @@ import shutil
 
 import numpy as np
 
-from pypuff.io.netcdf_cf import available as netcdf_available
+from sprtz.io.jsonio import write_json
+from sprtz.io.netcdf_cf import available as netcdf_available
 
 METEO_UNIPARTHENOPE_BASE = "https://data.meteo.uniparthenope.it/files/wrf5/d03/history"
 
@@ -112,7 +112,7 @@ def _select_2d(arr: np.ndarray, time_index: int) -> np.ndarray:
 
 
 def load_near_surface_wind(path: str | Path, *, time_index: int = 0) -> WRFWindField:
-    """Extract near-surface wind from WRF/WRF-like NetCDF into a PyWRF object.
+    """Extract near-surface wind from WRF/WRF-like NetCDF into a SpritzWRF object.
 
     Accepted variable combinations include:
 
@@ -121,7 +121,7 @@ def load_near_surface_wind(path: str | Path, *, time_index: int = 0) -> WRFWindF
     - CF-like ``latitude``/``longitude`` with ``eastward_wind``/``northward_wind``
     """
     if not netcdf_available():
-        raise RuntimeError("netCDF4 is required to read WRF NetCDF files; install pypuff[netcdf]")
+        raise RuntimeError("netCDF4 is required to read WRF NetCDF files; install sprtz[netcdf]")
     from netCDF4 import Dataset  # type: ignore
 
     p = Path(path)
@@ -148,3 +148,27 @@ def load_near_surface_wind(path: str | Path, *, time_index: int = 0) -> WRFWindF
             v = read2d(("northward_wind", "v", "V"))
         attrs = {name: str(getattr(ds, name)) for name in ds.ncattrs()}
     return WRFWindField(lat, lon, u, v, p, time_index=time_index, metadata=attrs)
+
+
+def describe_wrf_input(path: str | Path) -> dict[str, Any]:
+    p = Path(path)
+    result: dict[str, Any] = {"component": "spritzwrf", "path": str(p), "exists": p.exists()}
+    if not p.exists():
+        return result
+    result["size_bytes"] = p.stat().st_size
+    try:
+        from netCDF4 import Dataset  # type: ignore
+    except Exception:
+        result["netcdf"] = "netCDF4 not installed; metadata only"
+        return result
+    with Dataset(p) as ds:
+        result["dimensions"] = {name: len(dim) for name, dim in ds.dimensions.items()}
+        result["variables"] = sorted(ds.variables.keys())[:100]
+        result["attrs"] = {name: str(getattr(ds, name)) for name in ds.ncattrs()}
+    return result
+
+
+def run(input_path: str | Path, output: str | Path) -> dict[str, Any]:
+    result = describe_wrf_input(input_path)
+    write_json(output, result)
+    return result

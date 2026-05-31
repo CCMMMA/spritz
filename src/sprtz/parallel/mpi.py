@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Sequence, TypeVar
 
-from pypuff.exceptions import ParallelExecutionError
+from sprtz.exceptions import ParallelExecutionError
 
 T = TypeVar("T")
 
@@ -86,7 +86,7 @@ def get_mpi_context(mode: str = "auto") -> MPIContext:
         from mpi4py import MPI  # type: ignore
     except ImportError:
         if normalized == "mpi":
-            raise ParallelExecutionError("mpi4py is required for --parallel mpi; install pypuff[mpi]") from None
+            raise ParallelExecutionError("mpi4py is required for --parallel mpi; install sprtz[mpi]") from None
         return MPIContext()
     comm = MPI.COMM_WORLD
     size = int(comm.Get_size())

@@ -8,10 +8,10 @@ from typing import Any
 
 import numpy as np
 
-from pypuff.exceptions import DataFormatError
-from pypuff.io.jsonio import read_json, write_json
-from pypuff.io.netcdf_cf import read_cf_concentration
-from pypuff.logging import configure_logging
+from sprtz.exceptions import DataFormatError
+from sprtz.io.jsonio import read_json, write_json
+from sprtz.io.netcdf_cf import read_cf_concentration
+from sprtz.logging import configure_logging
 
 
 def _read_concentration(path: str | Path) -> list[dict[str, Any]]:
@@ -173,7 +173,7 @@ LOGGER = logging.getLogger(__name__)
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Evaluate wildfire/arson PyPuff output with satellite masks and AI calibration")
+    parser = argparse.ArgumentParser(description="Evaluate wildfire/arson Sprtz output with satellite masks and AI calibration")
     parser.add_argument("--concentration", required=True)
     parser.add_argument("--satellite-mask", required=True)
     parser.add_argument("--output", required=True)

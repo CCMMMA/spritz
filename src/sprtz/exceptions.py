@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 
-class PyPuffError(Exception):
-    """Base exception for pypuff."""
+class SprtzError(Exception):
+    """Base exception for sprtz."""
 
 
-class ConfigurationError(PyPuffError, ValueError):
+class ConfigurationError(SprtzError, ValueError):
     """Raised when a suite configuration is invalid."""
 
 
-class DataFormatError(PyPuffError, ValueError):
+class DataFormatError(SprtzError, ValueError):
     """Raised when an input data file cannot be parsed safely."""
 
 
-class ParallelExecutionError(PyPuffError, RuntimeError):
+class ParallelExecutionError(SprtzError, RuntimeError):
     """Raised when requested parallel execution cannot be initialized."""

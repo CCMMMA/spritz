@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from pypuff.config import ConfigurationError, load_config
-from pypuff.models.ctgproc import read_ascii_grid
-from pypuff.exceptions import DataFormatError
+from sprtz.config import ConfigurationError, load_config
+from sprtz.models.ctgproc import read_ascii_grid
+from sprtz.exceptions import DataFormatError
 
 
 def test_invalid_grid_rejected(tmp_path):

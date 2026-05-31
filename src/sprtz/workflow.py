@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import load_config
-from .models import calmet, calpost, calpuff, particles
+from .models import spritzmet, spritzpost, spritz, particles
 from .parallel import get_mpi_context
 
 
@@ -27,22 +27,22 @@ def run_workflow(
     conc_path = out / ("concentration.nc" if use_netcdf else "concentration.csv")
     post_path = out / "post.json"
     if ctx.is_root:
-        meteo = calmet.run(config, meteo_path, "netcdf" if use_netcdf else "json")
+        meteo = spritzmet.run(config, meteo_path, "netcdf" if use_netcdf else "json")
     else:
-        meteo = {"component": "calmet"}
+        meteo = {"component": "spritzmet"}
     ctx.barrier()
     if backend == "particles":
         conc = particles.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel)
         model_component = "particles"
     elif backend == "gaussian":
-        conc = calpuff.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel)
-        model_component = "calpuff"
+        conc = spritz.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel)
+        model_component = "spritz"
     else:
         raise ValueError("backend must be gaussian or particles")
     if ctx.is_root:
-        post = calpost.run(conc_path, post_path, threshold=config.run.get("threshold", config.run.get("THRESHOLD")))
+        post = spritzpost.run(conc_path, post_path, threshold=config.run.get("threshold", config.run.get("THRESHOLD")))
     else:
-        post = {"component": "calpost"}
+        post = {"component": "spritzpost"}
     result = {
         "meteo": str(meteo_path),
         "concentration": str(conc_path),

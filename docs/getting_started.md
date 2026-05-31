@@ -1,6 +1,6 @@
 # Getting started: from WRF download to visualization
 
-This guide walks through a complete, reproducible PyPuff workflow starting with a WRF 1 km file from the meteo@uniparthenope archive and ending with a publication-ready concentration figure.
+This guide walks through a complete, reproducible Sprtz workflow starting with a WRF 1 km file from the meteo@uniparthenope archive and ending with a publication-ready concentration figure.
 
 The guide is intentionally didactic. Each step produces an inspectable file that can be reused by the next step.
 
@@ -10,15 +10,15 @@ The end-to-end path is:
 
 ```text
 WRF 1 km NetCDF
-  -> PyWRF extraction
-  -> PyMET 100 m local wind field
-  -> PyPuff wildfire/arson scenario
+  -> SpritzWRF extraction
+  -> SpritzMet 100 m local wind field
+  -> Sprtz wildfire/arson scenario
   -> Gaussian or particle dispersion
-  -> CALPOST-style statistics
+  -> SpritzPost-style statistics
   -> publishing-quality figure
 ```
 
-Use case 01 demonstrates the PyWRF -> PyMET meteorological downscaling step. Use case 02 adds a wildfire/arson source and runs PyPuff. The visualization CLI then renders the model concentration output.
+Use case 01 demonstrates the SpritzWRF -> SpritzMet meteorological downscaling step. Use case 02 adds a wildfire/arson source and runs Sprtz. The visualization CLI then renders the model concentration output.
 
 ## 1. Create and check the Python environment
 
@@ -41,18 +41,18 @@ python -m pip install -e .[netcdf,viz,mpi]
 Run the production diagnostics:
 
 ```bash
-pypuff doctor --require-netcdf --require-viz
+sprtz doctor --require-netcdf --require-viz
 ```
 
 Expected result:
 
 ```text
-PyPuff 0.4.4 production diagnostics: OK
+Sprtz 0.4.4 production diagnostics: OK
 ```
 
 ## 2. Choose a WRF cycle and build the download URL
 
-PyPuff use cases use the meteo@uniparthenope WRF5 d03 history pattern:
+Sprtz use cases use the meteo@uniparthenope WRF5 d03 history pattern:
 
 ```text
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
@@ -64,7 +64,7 @@ For example, the 00 UTC cycle for 2026-05-27 is:
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/2026/05/27/wrf5_d03_20260527Z0000.nc
 ```
 
-To ask PyPuff to print the exact URL without downloading:
+To ask Sprtz to print the exact URL without downloading:
 
 ```bash
 python usecases/01_high_resolution_wind_field/run.py \
@@ -76,9 +76,9 @@ python usecases/01_high_resolution_wind_field/run.py \
   --print-download-url
 ```
 
-## 3. Download WRF and create a 100 m PyMET wind product
+## 3. Download WRF and create a 100 m SpritzMet wind product
 
-This command downloads the WRF file when it is not already present in `data/wrf/`, extracts near-surface wind with PyWRF, and interpolates it onto a 100 m local PyMET grid centered on the requested coordinate:
+This command downloads the WRF file when it is not already present in `data/wrf/`, extracts near-surface wind with SpritzWRF, and interpolates it onto a 100 m local SpritzMet grid centered on the requested coordinate:
 
 ```bash
 mkdir -p data/wrf output
@@ -143,10 +143,10 @@ This does not replace real meteorological data. It is only for checking the inst
 
 ## 5. Build and run a wildfire/arson scenario
 
-Use case 02 creates a PyPuff scenario for a burning place at a known latitude and longitude. It uses the same WRF download mechanism, then generates:
+Use case 02 creates a Sprtz scenario for a burning place at a known latitude and longitude. It uses the same WRF download mechanism, then generates:
 
 - a local wind product;
-- a PyPuff scenario configuration;
+- a Sprtz scenario configuration;
 - a model output directory containing meteorology, concentration, and postprocessing files.
 
 Example with the particle backend:
@@ -193,17 +193,17 @@ output/wildfire_case/model/post.json
 
 ## 6. Run the core suite directly from a configuration file
 
-Use case 02 writes a standard PyPuff configuration. You can rerun the suite directly from that file:
+Use case 02 writes a standard Sprtz configuration. You can rerun the suite directly from that file:
 
 ```bash
-pypuff validate output/wildfire_case/wildfire_event.json
+sprtz validate output/wildfire_case/wildfire_event.json
 
-pypuff run output/wildfire_case/wildfire_event.json \
+sprtz run output/wildfire_case/wildfire_event.json \
   --output-dir output/wildfire_case/model_gaussian \
   --backend gaussian \
   --interchange netcdf
 
-pypuff run output/wildfire_case/wildfire_event.json \
+sprtz run output/wildfire_case/wildfire_event.json \
   --output-dir output/wildfire_case/model_particles \
   --backend particles \
   --interchange netcdf
@@ -212,7 +212,7 @@ pypuff run output/wildfire_case/wildfire_event.json \
 For MPI execution, use:
 
 ```bash
-mpiexec -n 4 pypuff run output/wildfire_case/wildfire_event.json \
+mpiexec -n 4 sprtz run output/wildfire_case/wildfire_event.json \
   --output-dir output/wildfire_case/model_mpi \
   --backend particles \
   --interchange netcdf \
@@ -224,10 +224,10 @@ mpiexec -n 4 pypuff run output/wildfire_case/wildfire_event.json \
 Render a concentration scatter plot from the NetCDF-CF output:
 
 ```bash
-pypuff-plot \
+sprtz-plot \
   --input output/wildfire_case/model/concentration.nc \
   --output output/wildfire_case/concentration.png \
-  --title "PyPuff wildfire screening concentration" \
+  --title "Sprtz wildfire screening concentration" \
   --dpi 300
 ```
 
@@ -291,10 +291,10 @@ The bundled use cases write to `output/` by default, but operational projects sh
 
 Before sharing results, confirm:
 
-1. `pypuff doctor --require-netcdf --require-viz` passes in the execution environment.
+1. `sprtz doctor --require-netcdf --require-viz` passes in the execution environment.
 2. The WRF file name, cycle time, and download URL are recorded.
 3. The center latitude/longitude, grid spacing, and grid size are documented.
-4. The generated PyPuff configuration is archived with the outputs.
+4. The generated Sprtz configuration is archived with the outputs.
 5. The backend is stated clearly: `gaussian` or `particles`.
 6. The figure was generated from the archived concentration file.
 7. Any satellite mask or AI product is stored with its provenance, threshold, and preprocessing notes.
@@ -334,6 +334,6 @@ python usecases/01_high_resolution_wind_field/run.py \
 
 Then verify that the requested date and cycle exist in the archive. The downloader intentionally does not silently substitute another meteorological cycle.
 
-### The use cases are not importable as `pypuff.usecases`
+### The use cases are not importable as `sprtz.usecases`
 
-That is intentional. The use cases are educational workflows under the repository root. Reusable production code stays in `src/pypuff/`.
+That is intentional. The use cases are educational workflows under the repository root. Reusable production code stays in `src/sprtz/`.

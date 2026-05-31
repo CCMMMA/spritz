@@ -5,9 +5,9 @@ Goal: obtain a local 100 m wind field centered on a user-supplied latitude and l
 This didactic workflow is deliberately explicit:
 
 1. **Acquire WRF 1 km data.** Use a local WRF NetCDF file or download from the meteo@uniparthenope archive.
-2. **PyWRF step.** Extract latitude, longitude, and near-surface wind components from the WRF file.
-3. **PyMET step.** Build a local azimuthal-equidistant grid centered on the requested coordinate.
-4. **Interpolation step.** Interpolate PyWRF wind vectors onto the PyMET 100 m grid.
+2. **SpritzWRF step.** Extract latitude, longitude, and near-surface wind components from the WRF file.
+3. **SpritzMet step.** Build a local azimuthal-equidistant grid centered on the requested coordinate.
+4. **Interpolation step.** Interpolate SpritzWRF wind vectors onto the SpritzMet 100 m grid.
 5. **Output step.** Write NetCDF-CF by default, or JSON for lightweight runs.
 
 The WRF archive pattern is:
@@ -71,4 +71,4 @@ python usecases/01_high_resolution_wind_field/run.py \
 
 ## Teaching notes
 
-The script uses production modules `pypuff.models.pywrf` and `pypuff.models.pymet`, but the scenario orchestration lives only in this folder. This keeps the suite compact and keeps educational workflows easy to inspect.
+The script uses production modules `sprtz.models.spritzwrf` and `sprtz.models.spritzmet`, but the scenario orchestration lives only in this folder. This keeps the suite compact and keeps educational workflows easy to inspect.

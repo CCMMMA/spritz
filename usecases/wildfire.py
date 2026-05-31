@@ -9,11 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pypuff.config import from_mapping
-from pypuff.io.jsonio import write_json
+from sprtz.config import from_mapping
+from sprtz.io.jsonio import write_json
 from high_resolution_wind import interpolate_wrf_to_100m
-from pypuff.workflow import run_workflow
-from pypuff.logging import configure_logging
+from sprtz.workflow import run_workflow
+from sprtz.logging import configure_logging
 
 
 LOGGER = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def estimate_heat_release_w(burning_temperature_k: float, burning_area_m2: float
 
     This is not a fuel-specific combustion model. It creates a consistent
     buoyancy proxy from user-provided burning temperature, area, and duration so
-    the PyPuff source can be parameterized before a detailed fuel inventory is
+    the Sprtz source can be parameterized before a detailed fuel inventory is
     available.
     """
     ambient_k = 293.15
@@ -79,7 +79,7 @@ def build_wildfire_config(
     grid_cells: int = 101,
     grid_spacing_m: float = 100.0,
 ) -> dict[str, Any]:
-    """Create a PyPuff config for an arson/wildfire release scenario."""
+    """Create a Sprtz config for an arson/wildfire release scenario."""
     burn_lat = center_lat if burning_lat is None else burning_lat
     burn_lon = center_lon if burning_lon is None else burning_lon
     # Use the burn point as local origin. For small wildfire/arson domains this
@@ -101,7 +101,7 @@ def build_wildfire_config(
                 receptors.append({"id": f"R{len(receptors):04d}", "x": x, "y": y, "z": 1.5})
     config = {
         "metadata": {
-            "title": "PyPuff arson/wildfire screening scenario",
+            "title": "Sprtz arson/wildfire screening scenario",
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "center_lat": center_lat,
             "center_lon": center_lon,
@@ -247,7 +247,7 @@ def run_wildfire_event(
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run a PyPuff arson/wildfire screening use case")
+    parser = argparse.ArgumentParser(description="Run a Sprtz arson/wildfire screening use case")
     parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --download-date")
     parser.add_argument("--download-date", default=None, help="Download WRF5 d03 data from meteo@uniparthenope for YYYY-MM-DD")
     parser.add_argument("--download-cycle-hour", type=int, default=0)

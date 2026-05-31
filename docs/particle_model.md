@@ -1,12 +1,12 @@
-# Particle-based PyPuff alternative
+# Particle-based Sprtz alternative
 
-`pypuff.models.particles` implements a Lagrangian particle screening backend that accepts the same `SuiteConfig`, the same CALMET meteorology files, and writes the same receptor concentration table as the Gaussian CALPUFF-compatible backend.
+`sprtz.models.particles` implements a Lagrangian particle screening backend that accepts the same `SuiteConfig`, the same SpritzMet meteorology files, and writes the same receptor concentration table as the Gaussian Spritz backend.
 
 CLI:
 
 ```bash
-pypuff-particles --config examples/minimal.json --meteo output/meteo.nc --output output/particle_concentration.nc
-pypuff run examples/minimal.json --backend particles --interchange netcdf --output-dir output-particles
+sprtz-particles --config examples/minimal.json --meteo output/meteo.nc --output output/particle_concentration.nc
+sprtz run examples/minimal.json --backend particles --interchange netcdf --output-dir output-particles
 ```
 
 The particle backend is deterministic for a fixed seed. Relevant `run` keys are `particles`, `seed`, `particle_duration_s`, `particle_sigma_h`, `particle_sigma_z`, and `particle_receptor_radius`.

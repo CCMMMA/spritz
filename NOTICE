@@ -1,6 +1,6 @@
-PyPuff is an independent clean-room Python implementation inspired by public
-CALPUFF modeling-system concepts and file roles. It does not contain, translate,
-embed, or redistribute original CALPUFF Fortran source code, executables,
-manuals, sample data, or proprietary parameter tables. CALPUFF, CALMET,
-CALPOST, and related names are referenced only to describe interoperability and
-migration concepts.
+Sprtz is an independent clean-room Python implementation inspired by public
+atmospheric puff-modeling workflows and file roles. It does not contain,
+translate, embed, or redistribute proprietary Fortran source code, executables,
+manuals, sample data, or parameter tables from third-party modeling suites.
+Sprtz, SpritzWRF, SpritzMet, Terrain, Spritz, and SpritzPost name the
+clean-room components in this project.

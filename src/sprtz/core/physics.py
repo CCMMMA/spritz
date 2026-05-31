@@ -37,7 +37,7 @@ def pasquill_sigmas(distance_m: float, stability: str = "D") -> tuple[float, flo
     """Legacy-compatible Pasquill-Gifford plume spreads.
 
     This compact relation is retained as a migration/screening option.  Newer
-    PyPuff kernels use :func:`dispersion_parameters`, which adds source
+    Sprtz kernels use :func:`dispersion_parameters`, which adds source
     dimensions and a longitudinal puff spread.
     """
     x = max(float(distance_m), 1.0)

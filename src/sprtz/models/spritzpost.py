@@ -5,10 +5,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from pypuff.core.stats import summary
-from pypuff.exceptions import DataFormatError
-from pypuff.io.jsonio import write_json
-from pypuff.io.netcdf_cf import read_cf_concentration
+from sprtz.core.stats import summary
+from sprtz.exceptions import DataFormatError
+from sprtz.io.jsonio import write_json
+from sprtz.io.netcdf_cf import read_cf_concentration
 
 
 def read_concentrations(path: str | Path) -> list[dict[str, Any]]:
@@ -46,7 +46,7 @@ def postprocess(
             by_rec[str(row["receptor"])].append(float(row["concentration"]))
         except (KeyError, TypeError, ValueError) as exc:
             raise DataFormatError(f"invalid concentration row: {row}") from exc
-    out: dict[str, Any] = {"component": "calpost", "receptors": {}}
+    out: dict[str, Any] = {"component": "spritzpost", "receptors": {}}
     for receptor, values in sorted(by_rec.items()):
         stats = summary(values, rank=rank, average_window=average_window, average_kind=average_kind)
         if threshold_value is not None:

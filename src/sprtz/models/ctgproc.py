@@ -6,8 +6,8 @@ from typing import Any
 
 import numpy as np
 
-from pypuff.exceptions import DataFormatError
-from pypuff.io.jsonio import write_json
+from sprtz.exceptions import DataFormatError
+from sprtz.io.jsonio import write_json
 
 
 def read_ascii_grid(path: str | Path) -> np.ndarray:
