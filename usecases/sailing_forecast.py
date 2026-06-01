@@ -81,7 +81,7 @@ def build_sailing_forecast(
     request: SailingForecastRequest,
     output_path: str | Path,
     *,
-    max_points: int = 5_000_000,
+    max_points: int = 30_000_000,
 ) -> dict[str, Any]:
     """Build a deterministic high-resolution wind forecast product for sailing.
 
@@ -158,10 +158,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--outlook-hours", type=float, default=6.0)
     parser.add_argument("--bbox", default=",".join(str(v) for v in BAY_OF_NAPLES_RACE_BOX), help="west,south,east,north")
     parser.add_argument("--horizontal-resolution-m", type=float, default=100.0)
-    parser.add_argument("--vertical-resolution-m", type=float, default=100.0)
-    parser.add_argument("--time-resolution-s", type=float, default=900.0)
+    parser.add_argument("--vertical-resolution-m", type=float, default=10.0)
+    parser.add_argument("--time-resolution-s", type=float, default=600.0)
     parser.add_argument("--top-altitude-m", type=float, default=300.0)
-    parser.add_argument("--max-points", type=int, default=5_000_000)
+    parser.add_argument("--max-points", type=int, default=30_000_000)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     init_date = (

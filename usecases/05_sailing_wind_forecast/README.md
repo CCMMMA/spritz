@@ -11,7 +11,7 @@ professional sailing applications. The use case is parameterized by:
 - time resolution in seconds.
 
 The bundled defaults target a Bay of Naples race area with 100 m horizontal
-resolution, 100 m vertical resolution, and 15 minute time resolution. The
+resolution, 10 m vertical resolution, and 10 minute time resolution. The
 initialization date defaults to the current UTC day at Z00.
 
 ```bash
@@ -27,8 +27,8 @@ python usecases/05_sailing_wind_forecast/run.py \
   --outlook-hours 6 \
   --bbox 14.18,40.70,14.32,40.82 \
   --horizontal-resolution-m 100 \
-  --vertical-resolution-m 100 \
-  --time-resolution-s 900 \
+  --vertical-resolution-m 10 \
+  --time-resolution-s 600 \
   --output output/sailing/bay_of_naples_forecast.json
 ```
 

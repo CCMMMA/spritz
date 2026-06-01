@@ -130,16 +130,17 @@ def test_sailing_forecast_small_grid(tmp_path: Path) -> None:
             outlook_h=0.25,
             bbox=parse_bbox("14.20,40.72,14.205,40.725"),
             horizontal_resolution_m=250.0,
-            vertical_resolution_m=100.0,
-            time_resolution_s=900.0,
-            top_altitude_m=100.0,
+            vertical_resolution_m=10.0,
+            time_resolution_s=600.0,
+            top_altitude_m=20.0,
         ),
         output,
     )
     assert output.exists()
     assert result["initialization_utc"] == "2026-06-01T00:00:00Z"
-    assert result["time_resolution_s"] == 900.0
-    assert len(result["height_m"]) == 2
+    assert result["time_resolution_s"] == 600.0
+    assert result["vertical_resolution_m"] == 10.0
+    assert len(result["height_m"]) == 3
 
 
 def test_usecases_are_not_packaged_as_suite_modules() -> None:

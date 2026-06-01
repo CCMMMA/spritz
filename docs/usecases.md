@@ -40,8 +40,8 @@ This use case creates a forecast-ready wind product over a latitude/longitude
 bounding box, with explicit initialization date at Z00, outlook in hours,
 horizontal resolution, vertical resolution, and time resolution. The default
 example targets a Bay of Naples race area for precision top class professional
-sailing: current UTC day at Z00, 100 m horizontal and vertical resolution, and
-15 minute temporal resolution. The bundled implementation is deterministic and
+sailing: current UTC day at Z00, 100 m horizontal resolution, 10 m vertical
+resolution, and 10 minute temporal resolution. The bundled implementation is deterministic and
 offline so downstream race-planning tooling can validate the full
 space-height-time schema before authoritative forecast data are connected.
 
