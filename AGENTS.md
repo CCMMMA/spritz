@@ -86,6 +86,7 @@ mpiexec -n 2 python -m sprtz run examples/minimal.json --output-dir /tmp/sprtz_s
 - Only rank 0 should write shared output files in MPI workflows.
 - Preserve fallback paths for environments without NetCDF, MPI, or visualization dependencies.
 - Avoid hidden network access except in explicit downloader commands or functions documented as such.
+- Add step-by-step comments in scientifically sensitive code paths, especially terrain acquisition, reprojection, resampling, land-cover remapping, surface-parameter derivation, NetCDF writing, and provenance capture.
 
 ## Numerical-modeling expectations
 
@@ -99,6 +100,21 @@ When changing physics or numerics:
 - Avoid hard-coding undocumented constants in deep implementation code.
 - Do not claim regulatory equivalence without external validation.
 
+## Scientific reproducibility and provenance
+
+All downloaded or derived geospatial products must carry provenance sufficient to
+reproduce or audit the run. Terrain/GEO outputs must include, when relevant:
+
+- `dem_source`, `dem_dataset`, `dem_resolution`, `dem_access_date`;
+- `landuse_source`, `landuse_dataset`, `landuse_year`, `landuse_resolution`;
+- `source_crs`, `target_crs`;
+- `resampling_dem`, `resampling_landuse`;
+- `cache_key`, `software_version`.
+
+Keep DEM, DTM, and DSM terminology precise. Keep land cover distinct from land
+use. Never bilinearly interpolate categorical land-cover classes; use nearest
+neighbor or a documented majority/aggregation method.
+
 ## Configuration and I/O conventions
 
 Sprtz should prefer NetCDF-CF for module interoperability while retaining tolerant JSON and legacy-style input support.
@@ -110,6 +126,32 @@ When adding new fields:
 - Update NetCDF-CF metadata and JSON fallback behavior.
 - Update tests and documentation.
 - Preserve unknown legacy-control-file keys where the tolerant parser already supports them.
+
+## Terrain data acquisition rules
+
+Terrain has two compatible surfaces:
+
+- `src/sprtz/models/terrain.py` and the `terrain` CLI preserve the lightweight
+  local ASCII-grid workflow.
+- `src/sprtz/terrain/` and `sprtz-terrain fetch` implement provider-based DEM
+  and land-cover acquisition, cache metadata, regridding, land-use remapping,
+  surface parameters, and GEO output.
+
+When changing Terrain:
+
+- Local raster workflows must work without network access and without optional
+  geospatial dependencies.
+- Online providers must require explicit user opt-in, clear configuration, and
+  actionable errors for missing network access, credentials, catalogs, CRS
+  support, or optional packages.
+- Tests must not contact external services unless guarded by an explicit
+  environment variable such as `SPRTZ_RUN_NETWORK_TESTS=1`.
+- Preserve exact grid alignment between Terrain, SpritzMet, and dispersion
+  outputs. Validate dimensions, spacing, CRS/projection choices, nodata values,
+  and empty or invalid AOIs.
+- Keep cache keys deterministic and include provider, dataset/version/year,
+  AOI/tile identity, resolution, CRS, and source timestamp or retrieval date
+  where available.
 
 ## Use-case conventions
 
@@ -139,6 +181,10 @@ Keep documentation coherent with the current package name, CLI names, and versio
 - Use `SpritzWRF` for WRF ingestion and `SpritzMet` for meteorological interpolation.
 - Use `Spritz` for the Gaussian dispersion model and `sprtz` for the package/CLI.
 - Keep examples runnable from the repository root.
+- Keep README, docs, examples, CLI help, and tests synchronized whenever public
+  APIs or user-facing commands change.
+- Document public APIs and CLI options, including optional dependencies and
+  network requirements.
 
 ## Release hygiene
 

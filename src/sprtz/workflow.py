@@ -6,6 +6,7 @@ from typing import Any
 from .config import load_config
 from .models import spritzmet, spritzpost, spritz, particles
 from .parallel import get_mpi_context
+from .terrain.acquisition import run_acquisition
 
 
 def run_workflow(
@@ -15,6 +16,8 @@ def run_workflow(
     backend: str = "gaussian",
     interchange: str = "netcdf",
     parallel: str = "serial",
+    auto_terrain: bool = False,
+    allow_terrain_network: bool = False,
 ) -> dict[str, Any]:
     ctx = get_mpi_context(parallel)
     out = Path(output_dir)
@@ -23,6 +26,25 @@ def run_workflow(
     ctx.barrier()
     config = load_config(config_path)
     use_netcdf = interchange == "netcdf"
+    terrain_result: dict[str, Any] | None = None
+    terrain_cfg = dict(config.raw.get("terrain", {}))
+    if auto_terrain or bool(terrain_cfg.get("enabled", False)):
+        terrain_output = terrain_cfg.get("output")
+        if terrain_output:
+            terrain_path = Path(terrain_output)
+            if not terrain_path.is_absolute():
+                terrain_path = out / terrain_path
+        else:
+            terrain_path = out / ("geo.nc" if use_netcdf else "geo.json")
+        acquisition_config = dict(config.raw)
+        acquisition_config["terrain"] = {**terrain_cfg, "output": str(terrain_path)}
+        if ctx.is_root:
+            terrain_result = run_acquisition(
+                acquisition_config,
+                prefer_netcdf=use_netcdf,
+                allow_network=allow_terrain_network,
+            )
+        ctx.barrier()
     meteo_path = out / ("meteo.nc" if use_netcdf else "meteo.json")
     conc_path = out / ("concentration.nc" if use_netcdf else "concentration.csv")
     post_path = out / "post.json"
@@ -53,4 +75,7 @@ def run_workflow(
         "mpi_size": ctx.size,
         "components": [meteo["component"], model_component, post["component"]],
     }
+    if terrain_result is not None:
+        result["terrain"] = terrain_result["output"]
+        result["terrain_cache_key"] = terrain_result["cache_key"]
     return ctx.bcast(result, root=0)

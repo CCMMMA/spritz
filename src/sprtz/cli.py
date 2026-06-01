@@ -13,6 +13,7 @@ from .logging import configure_logging
 from .models import ctgproc, makegeo, particles, spritz, spritzmet, spritzpost, spritzwrf
 from .models import terrain, visualization
 from .parallel import get_mpi_context
+from .terrain import acquisition as terrain_acquisition
 from .workflow import run_workflow
 
 LOGGER = logging.getLogger(__name__)
@@ -168,6 +169,85 @@ def terrain_main(argv: Sequence[str] | None = None) -> int:
 
     return _guard(run, argv)
 
+
+def _provider_spec(value: str, *, kind: str) -> dict[str, object]:
+    path = Path(value)
+    if path.exists():
+        return {"source": "local", "path": str(path)}
+    lowered = value.lower()
+    if kind == "dem" and lowered in {"copernicus-30", "copernicus-dem", "copernicus-glo-30"}:
+        return {"source": "copernicus-dem", "resolution": "30m"}
+    if kind == "landuse" and lowered in {"esa-worldcover-2021", "esa-worldcover", "worldcover"}:
+        return {"source": "esa-worldcover", "year": 2021}
+    raise SprtzError(f"unsupported {kind} provider or missing local path: {value}")
+
+
+def sprtz_terrain_main(argv: Sequence[str] | None = None) -> int:
+    def run(argv_: Sequence[str] | None) -> int:
+        parser = argparse.ArgumentParser(description="Sprtz terrain acquisition and GEO generation")
+        sub = parser.add_subparsers(dest="command", required=True)
+        fetch = sub.add_parser("fetch", help="build a terrain/GEO product from local or online providers")
+        fetch.add_argument("--config", default=None, help="JSON configuration with domain and terrain sections")
+        fetch.add_argument("--center-lat", type=float)
+        fetch.add_argument("--center-lon", type=float)
+        fetch.add_argument("--dx", type=float, default=100.0)
+        fetch.add_argument("--dy", type=float, default=100.0)
+        fetch.add_argument("--nx", type=int, default=100)
+        fetch.add_argument("--ny", type=int, default=100)
+        fetch.add_argument("--projection", default="auto-utm")
+        fetch.add_argument("--buffer-m", type=float, default=0.0)
+        fetch.add_argument("--dem", default="copernicus-30")
+        fetch.add_argument("--landuse", default="esa-worldcover-2021")
+        fetch.add_argument("--output", default=None)
+        fetch.add_argument("--cache-dir", default=None)
+        fetch.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
+        fetch.add_argument("--allow-network", action="store_true", help="allow explicit online provider access")
+        fetch.add_argument("--verbose", action="store_true")
+        args = parser.parse_args(argv_)
+        configure_logging(args.verbose)
+        if args.command == "fetch":
+            if args.config:
+                result = terrain_acquisition.run_acquisition(
+                    args.config,
+                    output=args.output,
+                    prefer_netcdf=not args.json,
+                    allow_network=args.allow_network,
+                    cache_dir=args.cache_dir,
+                )
+            else:
+                if args.center_lat is None or args.center_lon is None or args.output is None:
+                    raise SprtzError("--center-lat, --center-lon, and --output are required without --config")
+                config = {
+                    "domain": {
+                        "center_lat": args.center_lat,
+                        "center_lon": args.center_lon,
+                        "nx": args.nx,
+                        "ny": args.ny,
+                        "dx_m": args.dx,
+                        "dy_m": args.dy,
+                        "projection": args.projection,
+                        "buffer_m": args.buffer_m,
+                    },
+                    "terrain": {
+                        "enabled": True,
+                        "dem": _provider_spec(args.dem, kind="dem"),
+                        "landuse": _provider_spec(args.landuse, kind="landuse"),
+                        "output": args.output,
+                    },
+                }
+                result = terrain_acquisition.run_acquisition(
+                    config,
+                    prefer_netcdf=not args.json,
+                    allow_network=args.allow_network,
+                    cache_dir=args.cache_dir,
+                )
+            LOGGER.info("%s", result)
+            return 0
+        return 2
+
+    return _guard(run, argv)
+
+
 def makegeo_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
         parser = argparse.ArgumentParser(description="Build a GEO table from terrain and land-use rasters")
@@ -239,6 +319,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         workflow.add_argument("--backend", choices=["gaussian", "particles"], default="gaussian")
         workflow.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
         workflow.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial")
+        workflow.add_argument("--auto-terrain", action="store_true", help="run configured terrain acquisition before meteorology")
+        workflow.add_argument("--allow-terrain-network", action="store_true", help="allow explicit online terrain providers")
         validate = sub.add_parser("validate", help="load and validate a configuration file")
         validate.add_argument("config")
         doctor = sub.add_parser("doctor", help="run local production-readiness diagnostics")
@@ -255,6 +337,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 backend=args.backend,
                 interchange=args.interchange,
                 parallel=args.parallel,
+                auto_terrain=args.auto_terrain,
+                allow_terrain_network=args.allow_terrain_network,
             )
             ctx = get_mpi_context(args.parallel)
             if ctx.is_root:

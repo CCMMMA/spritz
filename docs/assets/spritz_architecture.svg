@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 760" role="img" aria-labelledby="title desc">
+  <title id="title">Spritz architecture</title>
+  <desc id="desc">Spritz layers from configuration through preprocessing, dispersion, post-processing, visualization, and MPI support.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0l10 5-10 5z" fill="#31546a"/>
+    </marker>
+    <style>
+      .box{fill:#f7fbfc;stroke:#31546a;stroke-width:2;rx:10}
+      .group{fill:#eef6f5;stroke:#5f8d8b;stroke-width:2;rx:14}
+      .out{fill:#fff8ed;stroke:#a66b2f;stroke-width:2;rx:10}
+      .text{font-family:Arial,Helvetica,sans-serif;font-size:22px;fill:#18313f}
+      .small{font-family:Arial,Helvetica,sans-serif;font-size:17px;fill:#335466}
+      .line{stroke:#31546a;stroke-width:2.5;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1120" height="760" fill="#ffffff"/>
+  <text x="560" y="52" text-anchor="middle" class="text" font-size="32">Spritz Architecture</text>
+
+  <rect x="70" y="95" width="280" height="110" class="box"/>
+  <text x="210" y="136" text-anchor="middle" class="text">Input configuration</text>
+  <text x="210" y="166" text-anchor="middle" class="small">JSON, INP-style controls</text>
+  <text x="210" y="190" text-anchor="middle" class="small">CLI options</text>
+
+  <rect x="420" y="95" width="280" height="110" class="box"/>
+  <text x="560" y="136" text-anchor="middle" class="text">Workflow orchestration</text>
+  <text x="560" y="166" text-anchor="middle" class="small">sprtz run</text>
+  <text x="560" y="190" text-anchor="middle" class="small">module run(...) APIs</text>
+
+  <rect x="770" y="95" width="280" height="110" class="box"/>
+  <text x="910" y="136" text-anchor="middle" class="text">MPI/HPC layer</text>
+  <text x="910" y="166" text-anchor="middle" class="small">optional mpi4py</text>
+  <text x="910" y="190" text-anchor="middle" class="small">rank-0 shared output</text>
+
+  <rect x="70" y="270" width="980" height="180" class="group"/>
+  <text x="560" y="305" text-anchor="middle" class="text">Preprocessing</text>
+  <rect x="110" y="335" width="250" height="80" class="box"/>
+  <text x="235" y="368" text-anchor="middle" class="text">SpritzWRF</text>
+  <text x="235" y="394" text-anchor="middle" class="small">WRF extraction</text>
+  <rect x="435" y="335" width="250" height="80" class="box"/>
+  <text x="560" y="368" text-anchor="middle" class="text">SpritzMet</text>
+  <text x="560" y="394" text-anchor="middle" class="small">diagnostic meteorology</text>
+  <rect x="760" y="335" width="250" height="80" class="box"/>
+  <text x="885" y="368" text-anchor="middle" class="text">Terrain / MakeGeo</text>
+  <text x="885" y="394" text-anchor="middle" class="small">DEM, land use, GEO</text>
+
+  <rect x="180" y="505" width="300" height="100" class="box"/>
+  <text x="330" y="545" text-anchor="middle" class="text">Dispersion engines</text>
+  <text x="330" y="575" text-anchor="middle" class="small">Gaussian puff and particles</text>
+  <rect x="640" y="505" width="300" height="100" class="box"/>
+  <text x="790" y="545" text-anchor="middle" class="text">SpritzPost</text>
+  <text x="790" y="575" text-anchor="middle" class="small">statistics and thresholds</text>
+
+  <rect x="180" y="655" width="300" height="70" class="out"/>
+  <text x="330" y="698" text-anchor="middle" class="text">NetCDF-CF, CSV, legacy</text>
+  <rect x="640" y="655" width="300" height="70" class="out"/>
+  <text x="790" y="698" text-anchor="middle" class="text">Visualization maps</text>
+
+  <path d="M350 150h70" class="line"/>
+  <path d="M700 150h70" class="line"/>
+  <path d="M560 205v65" class="line"/>
+  <path d="M235 415c0 55 95 58 95 90" class="line"/>
+  <path d="M560 415c0 45-210 45-230 90" class="line"/>
+  <path d="M885 415c0 45-510 45-555 90" class="line"/>
+  <path d="M480 555h160" class="line"/>
+  <path d="M330 605v50" class="line"/>
+  <path d="M790 605v50" class="line"/>
+</svg>

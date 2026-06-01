@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/spritz_logo.svg" alt="Spritz logo" width="420">
+</p>
+
 # Sprtz
 
 Sprtz is a GitHub-ready, clean-room, pure Python 3 project for atmospheric puff
@@ -34,6 +38,8 @@ python -m pip install -r requirements.txt
 python -m pip install -e .[netcdf,viz]
 # optional MPI/HPC support
 python -m pip install -e .[netcdf,viz,mpi]
+# optional geospatial Terrain acquisition support
+python -m pip install -e .[geo,netcdf]
 ```
 
 For development:
@@ -59,6 +65,13 @@ sprtz-plot --input output/concentration.nc --output output/concentration.png
 sprtz doctor
 ```
 
+Generate an offline high-resolution Terrain/GEO product:
+
+```bash
+sprtz-terrain fetch --config examples/highres_terrain_local.json --json
+sprtz run examples/highres_terrain_local.json --output-dir output-terrain-local --interchange json
+```
+
 Legacy-compatible workflow:
 
 ```bash
@@ -73,6 +86,18 @@ spritzpost --input output/concentration.csv --output output/post.json
 MPI parallel execution is available through the optional `mpi4py` extra for the Gaussian and particle backends. See `docs/parallelization.md` for the detailed schema and `docs/parallel_mpi.md` for command examples.
 
 The suite accepts a shared JSON configuration model and tolerant Fortran-style `.inp` control files. New module interoperability prefers NetCDF-CF. CSV and legacy text outputs are retained for migration and comparison workflows. See `docs/io_compatibility.md` and `docs/spritzwrf_spritzmet.md`.
+
+## Architecture
+
+![Spritz architecture](docs/assets/spritz_architecture.svg)
+
+The architecture layers are described in `docs/architecture.md`. The Spritz logo is an outlined vector mark showing the project wordmark, airflow path, and dispersion puffs.
+
+## Data flow
+
+![Spritz data flow](docs/assets/spritz_dataflow.svg)
+
+The terrain, meteorology, dispersion, post-processing, and visualization data flow is described in `docs/dataflow.md`.
 
 ## Numerical scope
 

@@ -6,7 +6,7 @@ It is not claimed to be a regulatory replacement for any third-party modeling sy
 
 ## Operational properties
 
-- Pure Python package with optional extras for NetCDF and visualization.
+- Pure Python package with optional extras for NetCDF, visualization, MPI, and geospatial Terrain acquisition.
 - Shared configuration model across all suite modules.
 - Tolerant Fortran-style control-file parser for migration inputs.
 - Preferred NetCDF-CF module interoperability.
@@ -16,7 +16,7 @@ It is not claimed to be a regulatory replacement for any third-party modeling sy
 
 ## Recommended deployment
 
-Use a virtual environment, install with `pip install .[netcdf,viz]`, commit exact input files with a run manifest, and archive output artifacts with the package version and Git commit.
+Use a virtual environment, install with `pip install .[netcdf,viz]`, or `pip install .[geo,netcdf,viz]` when Terrain acquisition must read GeoTIFF/COG products. Commit exact input files with a run manifest, and archive output artifacts with the package version and Git commit.
 
 
 ## Parallel production execution
@@ -52,7 +52,7 @@ The release check verifies required docs, use-case documentation, typed package 
 
 ## Terrain Preprocessing
 
-Terrain is included as `sprtz.models.terrain` and the `terrain` CLI. It provides clean-room terrain interpolation and NetCDF-CF/JSON terrain outputs for SpritzMet, MakeGeo, and dispersion workflows.
+Terrain is included as `sprtz.models.terrain`, the backward-compatible `terrain` CLI, and the provider-based `sprtz-terrain fetch` workflow. Offline local rasters are supported without network access. Online Copernicus DEM and ESA WorldCover providers require explicit opt-in and deployment-specific catalog/credential configuration. Derived GEO products must preserve provenance metadata for source datasets, CRS, resampling methods, cache key, and Sprtz software version.
 
 
 ## Use-case packaging boundary

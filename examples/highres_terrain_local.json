@@ -1,0 +1,82 @@
+{
+  "domain": {
+    "center_lat": 40.85,
+    "center_lon": 14.27,
+    "nx": 7,
+    "ny": 7,
+    "dx_m": 100.0,
+    "dy_m": 100.0,
+    "projection": "auto-utm",
+    "buffer_m": 500.0
+  },
+  "terrain": {
+    "enabled": true,
+    "cache": true,
+    "cache_dir": "output/terrain-cache",
+    "dem": {
+      "source": "local",
+      "path": "examples/data/highres_dem.asc",
+      "dataset": "example-local-dem",
+      "source_dx_m": 100.0,
+      "source_dy_m": 100.0
+    },
+    "landuse": {
+      "source": "local",
+      "path": "examples/data/highres_landcover.asc",
+      "dataset": "example-esa-worldcover-subset",
+      "year": 2021,
+      "source_dx_m": 100.0,
+      "source_dy_m": 100.0,
+      "target_categories": "sprtz"
+    },
+    "output": "output/highres_terrain_local/geo.json"
+  },
+  "grid": {
+    "nx": 7,
+    "ny": 7,
+    "dx": 100.0,
+    "dy": 100.0,
+    "x0": -300.0,
+    "y0": -300.0,
+    "projection": "AUTO_UTM"
+  },
+  "stations": [
+    {
+      "id": "S1",
+      "x": 0.0,
+      "y": 0.0,
+      "wind_speed": 3.0,
+      "wind_dir": 270.0,
+      "temperature": 294.0,
+      "mixing_height": 900.0
+    }
+  ],
+  "sources": [
+    {
+      "id": "P1",
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0,
+      "emission_rate": 10.0,
+      "stack_height": 20.0,
+      "source_type": "point",
+      "stack_diameter": 1.0,
+      "exit_velocity": 8.0,
+      "exit_temperature": 340.0
+    }
+  ],
+  "receptors": [
+    {
+      "id": "R1",
+      "x": 200.0,
+      "y": 0.0,
+      "z": 1.5
+    }
+  ],
+  "run": {
+    "stability": "D",
+    "threshold": 0.0,
+    "numerical_mode": "puff",
+    "averaging_time_s": 3600.0
+  }
+}

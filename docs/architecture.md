@@ -1,51 +1,84 @@
 # Architecture
 
-Sprtz uses a shared configuration and I/O layer plus independent model components. Every component exposes a `run(...)` function and pure computational functions suitable for tests.
+![Spritz architecture](assets/spritz_architecture.svg)
 
-```text
-Fortran-style .inp or JSON config
-        |
-        +-> SpritzWRF metadata adapter for WRF/NetCDF inputs
-        +-> CTGPROC land-use category aggregation
-        +-> MakeGeo terrain/land-use GEO table builder
-        |
-        v
-SpritzMet diagnostic meteorology -> NetCDF-CF meteo.nc
-        |
-        +-> Spritz Gaussian puff/deposition backend -> concentration.nc/csv/legacy table
-        +-> Sprtz particle backend ------> concentration.nc/csv/legacy table
-        |
-        v
-SpritzPost statistics -> post.json
-        |
-        v
-Visualization -> publication figures
-```
+Sprtz is organized as a clean-room Python suite with one shared configuration
+model and independent model components. Every production component exposes a
+small Python API and a deterministic command-line surface.
 
-## Clean-room rule
+## Input Configuration Layer
 
-The repository implements behavior from first principles and public component roles. It does not translate original Fortran routines or redistribute upstream data.
+Sprtz accepts JSON configuration, tolerant INP-style legacy control files, and
+CLI options. JSON remains the richest format because it can carry domain,
+terrain, meteorology, source, receptor, workflow, and provenance settings in one
+portable document.
 
-## Interoperability rule
+## Orchestration Layer
 
-NetCDF-CF is preferred for new module-to-module exchange. Legacy control files and tabular outputs remain supported to ease migration from Fortran-era workflows.
+`sprtz run` coordinates the standard workflow:
 
+1. optional Terrain acquisition and GEO generation;
+2. SpritzMet meteorology;
+3. Spritz Gaussian or particle dispersion;
+4. SpritzPost statistics.
 
-## Parallel layer
+The same modules can be invoked directly through their console scripts or Python
+`run(...)` functions for batch/HPC integration.
 
-`sprtz.parallel.mpi` contains the optional MPI abstraction used by concentration backends. It exposes serial-safe helpers, balanced partitioning, gather/broadcast operations, and root-only output coordination. The layer keeps `mpi4py` optional so every module remains importable on non-HPC systems. The complete execution schema is documented in `docs/parallelization.md`.
+## Meteorological Preprocessing
 
-## Numerical kernels
+SpritzWRF reads WRF-oriented NetCDF inputs and normalizes clean-room near-surface
+wind fields. SpritzMet creates diagnostic meteorology on the model grid, supports
+WRF-to-local-grid interpolation in didactic use cases, and writes NetCDF-CF or
+JSON outputs. The meteorology layer remains optional-dependency friendly:
+NetCDF support is used when installed, while JSON fallback keeps tests and
+lightweight deployments deterministic.
 
-The Gaussian backend can operate in `puff` or `plume` mode. The default `puff` mode uses finite source dimensions, effective release height, first-order loss/deposition, and dry/wet flux outputs. The particle backend uses the same input and output schema and is deterministic for a fixed seed.
+## Terrain And Land-Use Preprocessing
 
-## SpritzWRF and SpritzMet in operational use cases
+Terrain now has two layers:
 
-High-resolution meteorological use cases use explicit clean-room module names. `sprtz.models.spritzwrf` handles WRF NetCDF access, field normalization, and meteo@uniparthenope WRF5 d03 downloading. `sprtz.models.spritzmet` handles centered local grids, deterministic vector interpolation, and NetCDF-CF meteorological output.
+- `sprtz.models.terrain` keeps the existing local ASCII-grid interpolation API
+  and `terrain` CLI for backward compatibility.
+- `sprtz.terrain` provides production-style acquisition concepts: local and
+  online provider interfaces, deterministic cache metadata, AOI/domain handling,
+  continuous DEM resampling, categorical land-cover resampling, land-cover to
+  Sprtz land-use remapping, surface-parameter derivation, and NetCDF-CF/JSON GEO
+  output with provenance.
 
-Use case 01 calls SpritzWRF first and SpritzMet second.  Use case 02 reuses the same wind product before building a wildfire/arson source configuration.  This keeps the use cases consistent and prevents ad-hoc WRF parsing in scenario scripts.
+MakeGeo and CTGPROC remain lightweight clean-room helpers for GEO tables and
+category aggregation.
 
+## Dispersion Engines
 
-## Terrain Preprocessing
+The Gaussian Spritz backend supports puff and plume modes, finite source
+dimensions, effective release height, dry/wet deposition fluxes, first-order
+losses, and deterministic receptor outputs. The particle backend consumes the
+same configuration and meteorology exchange products and is deterministic for a
+fixed seed.
 
-Terrain is included as `sprtz.models.terrain` and the `terrain` CLI. It provides clean-room terrain interpolation and NetCDF-CF/JSON terrain outputs for SpritzMet, MakeGeo, and dispersion workflows.
+## Post-Processing And Outputs
+
+SpritzPost computes maxima, averages, ranked values, percentiles, and threshold
+summaries from concentration/deposition outputs. Module exchange prefers
+NetCDF-CF; CSV, JSON, and legacy-style outputs remain available for portability
+and migration workflows.
+
+## Visualization
+
+`sprtz-plot` renders local or geographic concentration maps from CSV, JSON, or
+NetCDF-CF outputs. It supports receptor latitude/longitude, local-grid to WGS84
+transforms, high-DPI output, offline raster basemaps, and explicit opt-in web
+tile basemaps.
+
+## HPC And MPI Compatibility
+
+`sprtz.parallel.mpi` keeps MPI optional. Serial runs use the same API as MPI
+runs. MPI-enabled workflows partition receptor computations, gather results, and
+write shared outputs only on rank 0 to avoid multi-writer NetCDF corruption.
+
+## Clean-Room Rule
+
+The repository implements behavior from first principles and public component
+roles. It does not translate proprietary routines, redistribute proprietary data,
+or claim regulatory equivalence without independent validation.

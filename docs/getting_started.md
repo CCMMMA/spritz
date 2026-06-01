@@ -18,7 +18,7 @@ WRF 1 km NetCDF
   -> publishing-quality figure
 ```
 
-Use case 01 demonstrates the SpritzWRF -> SpritzMet meteorological downscaling step. Use case 02 adds a wildfire/arson source and runs Sprtz. The visualization CLI then renders the model concentration output.
+Use case 01 demonstrates the SpritzWRF -> SpritzMet meteorological downscaling step. Use case 02 adds a wildfire/arson source and runs Sprtz. The visualization CLI then renders the model concentration output. The offline Terrain example can be run independently with `sprtz-terrain fetch --config examples/highres_terrain_local.json --json`.
 
 ## 1. Create and check the Python environment
 
@@ -36,6 +36,12 @@ For MPI/HPC runs, install the MPI extra as well:
 
 ```bash
 python -m pip install -e .[netcdf,viz,mpi]
+```
+
+For Terrain acquisition from GeoTIFF/COG or online provider adapters, install:
+
+```bash
+python -m pip install -e .[geo,netcdf,viz]
 ```
 
 Run the production diagnostics:

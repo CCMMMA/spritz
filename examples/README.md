@@ -10,6 +10,18 @@ sprtz run examples/minimal.inp --output-dir output-particles --backend particles
 sprtz-plot --input output/concentration.nc --output output/concentration.png
 ```
 
+High-resolution Terrain examples:
+
+```bash
+sprtz-terrain fetch --config examples/highres_terrain_local.json --json
+sprtz run examples/highres_terrain_local.json --output-dir output-terrain-local --interchange json
+sprtz-terrain fetch --config examples/highres_terrain_auto.json --allow-network
+```
+
+`highres_terrain_local.json` is the offline CI-safe example. `highres_terrain_auto.json`
+documents the Copernicus DEM and ESA WorldCover provider configuration and
+requires explicit network/provider access.
+
 Legacy-compatible text/CSV workflow is still available:
 
 ```bash

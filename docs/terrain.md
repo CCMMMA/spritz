@@ -1,17 +1,12 @@
 # Terrain Preprocessing
 
-Terrain is the clean-room Sprtz component for preparing terrain elevations on the Sprtz modeling grid and for downstream SpritzMet, MakeGeo, and dispersion workflows.
+Terrain is the clean-room Sprtz component for preparing terrain elevations,
+land-use classes, and surface parameters on the Sprtz modeling grid.
 
-## Responsibilities
+## Two Compatible APIs
 
-Terrain provides four production tasks:
-
-1. read a terrain raster, currently lightweight ASCII grid input for repository tests and examples;
-2. construct the same local azimuthal-equidistant grid convention used by SpritzMet;
-3. interpolate terrain elevations to that local grid with deterministic bilinear interpolation;
-4. write a NetCDF-CF terrain product by preference, or JSON when NetCDF support is not installed.
-
-## Command-line use
+The existing `terrain` CLI and `sprtz.models.terrain` API remain available for
+small local ASCII DEM interpolation:
 
 ```bash
 terrain \
@@ -23,40 +18,122 @@ terrain \
   --dx 100 --dy 100
 ```
 
-Use `--json` to force the lightweight JSON fallback:
+The production-style acquisition path is exposed as `sprtz-terrain fetch`:
 
 ```bash
-terrain --terrain examples/terrain.asc --output output/terrain.json \
-  --center-lat 40.85 --center-lon 14.27 --json
+sprtz-terrain fetch --config examples/highres_terrain_local.json --json
 ```
 
-## Python API
+The local example is offline and deterministic. It reads small ASCII fixtures
+under `examples/data/`, aligns DEM and land-cover rasters to the model grid,
+remaps land cover to Sprtz land-use classes, derives surface parameters, and
+writes a GEO JSON product.
 
-```python
-from sprtz.models import terrain
+## Online Providers
 
-result = terrain.run(
-    "examples/terrain.asc",
-    "output/terrain.nc",
-    center_lat=40.85,
-    center_lon=14.27,
-    nx=101,
-    ny=101,
-    dx_m=100.0,
-    dy_m=100.0,
-)
+The provider interfaces include Copernicus DEM and ESA WorldCover facades:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.85 \
+  --center-lon 14.27 \
+  --dx 100 --dy 100 \
+  --nx 100 --ny 100 \
+  --projection auto-utm \
+  --dem copernicus-30 \
+  --landuse esa-worldcover-2021 \
+  --output output/geo.nc \
+  --allow-network
 ```
 
-## Interoperability
+Live online access is not implicit. Deployments must configure appropriate
+STAC/COG/catalog endpoints or credentialed downloaders. Without `--allow-network`
+the providers fail with clear errors so tests never make hidden web requests.
 
-The NetCDF-CF output contains:
+Install optional geospatial dependencies for GeoTIFF/COG and richer provider
+adapters:
 
-- `x`, `y` local grid coordinates in metres;
-- `latitude`, `longitude` geographic coordinates;
-- `surface_altitude` terrain elevation in metres.
+```bash
+python -m pip install -e .[geo,netcdf]
+```
 
-This makes the product directly usable by SpritzMet, MakeGeo-style geophysical tables, visualization, and future terrain-aware dispersion refinements.
+## JSON Configuration
 
-## Production notes
+Terrain configuration can be embedded in a normal Sprtz run file:
 
-The current Terrain implementation is intentionally conservative and deterministic. For operational terrain deployments, use a documented DEM source and record its horizontal datum, vertical datum, native resolution, and preprocessing steps. The example ASCII-grid reader is suitable for tutorials and small tests; production deployments should add project-specific DEM adapters under the same clean-room boundary.
+```json
+{
+  "domain": {
+    "center_lat": 40.85,
+    "center_lon": 14.27,
+    "nx": 100,
+    "ny": 100,
+    "dx_m": 100,
+    "dy_m": 100,
+    "projection": "auto-utm",
+    "buffer_m": 5000
+  },
+  "terrain": {
+    "enabled": true,
+    "dem": {"source": "copernicus-dem", "resolution": "30m"},
+    "landuse": {"source": "esa-worldcover", "year": 2021},
+    "output": "geo.nc"
+  }
+}
+```
+
+Run it as a standalone terrain job or as part of the workflow:
+
+```bash
+sprtz-terrain fetch --config examples/highres_terrain_local.json --json
+sprtz run examples/highres_terrain_local.json --auto-terrain --interchange json
+```
+
+When `terrain.enabled` is true, `sprtz run` also builds the configured GEO
+product before meteorology. Relative `terrain.output` paths are written under the
+workflow output directory.
+
+## Caching
+
+The default cache metadata directory is:
+
+```text
+~/.cache/sprtz/terrain
+```
+
+Override it with `SPRTZ_TERRAIN_CACHE`, `--cache-dir`, or `terrain.cache_dir` in
+JSON. Cache keys include provider, dataset, resolution, AOI/domain, CRS, and
+grid metadata so incompatible data is not silently reused.
+
+## Scientific Assumptions
+
+DEM, DTM, and DSM are not interchangeable. A DTM is bare-earth terrain; a DSM may
+include buildings or canopy. Sprtz records `dem_source`, `dem_dataset`, and
+`dem_resolution` so users can validate whether the source is appropriate.
+
+Land cover is observed surface class; land use is the model category used for
+surface parameters. ESA WorldCover-style labels are remapped through an explicit
+crosswalk to Sprtz classes. The default parameters are minimal, visible, and
+replaceable:
+
+- roughness length;
+- albedo;
+- Bowen ratio;
+- vegetation fraction.
+
+Continuous terrain is bilinearly interpolated. Categorical land-cover rasters are
+nearest-neighbor resampled because class labels are not scalar measurements;
+bilinear interpolation would invent invalid classes.
+
+## Provenance
+
+Derived GEO products include:
+
+- `dem_source`, `dem_dataset`, `dem_resolution`, `dem_access_date`;
+- `landuse_source`, `landuse_dataset`, `landuse_year`, `landuse_resolution`;
+- `source_crs`, `target_crs`;
+- `resampling_dem`, `resampling_landuse`;
+- `cache_key`, `software_version`.
+
+NetCDF-CF is preferred when `netCDF4` is installed. JSON fallback keeps local
+tests and teaching examples portable.

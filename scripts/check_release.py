@@ -29,6 +29,11 @@ REQUIRED = [
     "SECURITY.md",
     "CONTRIBUTING.md",
     "docs/production_readiness.md",
+    "docs/architecture.md",
+    "docs/dataflow.md",
+    "docs/assets/spritz_logo.svg",
+    "docs/assets/spritz_architecture.svg",
+    "docs/assets/spritz_dataflow.svg",
     "docs/getting_started.md",
     "docs/parallelization.md",
     "docs/validation.md",
@@ -43,6 +48,9 @@ REQUIRED = [
     "usecases/04_production_incidents/events.csv",
     "src/sprtz/py.typed",
     "src/sprtz/models/terrain.py",
+    "src/sprtz/terrain/acquisition.py",
+    "examples/highres_terrain_local.json",
+    "examples/highres_terrain_auto.json",
 ]
 
 

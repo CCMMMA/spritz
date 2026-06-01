@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1180" role="img" aria-labelledby="title desc">
+  <title id="title">Spritz scientific data flow</title>
+  <desc id="desc">End-to-end data flow from user configuration through terrain acquisition, preprocessing, dispersion, post-processing, and diagnostics.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0l10 5-10 5z" fill="#2e4d60"/>
+    </marker>
+    <style>
+      .external{fill:#e8f2ff;stroke:#386fa4;stroke-width:2;rx:10}
+      .cache{fill:#f4edff;stroke:#7b57a3;stroke-width:2;rx:10}
+      .step{fill:#eef8f0;stroke:#548763;stroke-width:2;rx:10}
+      .model{fill:#fff4e2;stroke:#a86b22;stroke-width:2;rx:10}
+      .output{fill:#fef2f2;stroke:#ad4d4d;stroke-width:2;rx:10}
+      .text{font-family:Arial,Helvetica,sans-serif;font-size:20px;fill:#17313f}
+      .small{font-family:Arial,Helvetica,sans-serif;font-size:15px;fill:#385566}
+      .line{stroke:#2e4d60;stroke-width:2.2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1260" height="1180" fill="#ffffff"/>
+  <text x="630" y="48" text-anchor="middle" class="text" font-size="32">Spritz Data Flow</text>
+
+  <rect x="430" y="80" width="400" height="68" class="external"/>
+  <text x="630" y="122" text-anchor="middle" class="text">User configuration</text>
+
+  <rect x="430" y="190" width="400" height="78" class="step"/>
+  <text x="630" y="222" text-anchor="middle" class="text">Domain / projection / grid</text>
+  <text x="630" y="248" text-anchor="middle" class="small">center, CRS, nx/ny, dx/dy, buffer</text>
+
+  <rect x="70" y="320" width="310" height="82" class="external"/>
+  <text x="225" y="352" text-anchor="middle" class="text">DEM source</text>
+  <text x="225" y="378" text-anchor="middle" class="small">local raster or Copernicus DEM</text>
+  <rect x="475" y="320" width="310" height="82" class="cache"/>
+  <text x="630" y="352" text-anchor="middle" class="text">Local terrain cache</text>
+  <text x="630" y="378" text-anchor="middle" class="small">keys include provider, AOI, CRS</text>
+  <rect x="880" y="320" width="310" height="82" class="external"/>
+  <text x="1035" y="352" text-anchor="middle" class="text">Land-cover source</text>
+  <text x="1035" y="378" text-anchor="middle" class="small">local raster or ESA WorldCover</text>
+
+  <rect x="430" y="455" width="400" height="78" class="step"/>
+  <text x="630" y="487" text-anchor="middle" class="text">Mosaic / clip / reproject</text>
+  <text x="630" y="513" text-anchor="middle" class="small">AOI plus buffer into target CRS</text>
+
+  <rect x="110" y="590" width="360" height="78" class="step"/>
+  <text x="290" y="622" text-anchor="middle" class="text">DEM resampling</text>
+  <text x="290" y="648" text-anchor="middle" class="small">continuous bilinear/cubic policy</text>
+  <rect x="790" y="590" width="360" height="78" class="step"/>
+  <text x="970" y="622" text-anchor="middle" class="text">Land-cover resampling</text>
+  <text x="970" y="648" text-anchor="middle" class="small">categorical nearest/majority policy</text>
+
+  <rect x="790" y="725" width="360" height="78" class="step"/>
+  <text x="970" y="757" text-anchor="middle" class="text">Land-cover to land-use</text>
+  <text x="970" y="783" text-anchor="middle" class="small">Sprtz classes and surface parameters</text>
+  <rect x="430" y="845" width="400" height="78" class="output"/>
+  <text x="630" y="877" text-anchor="middle" class="text">GEO / terrain NetCDF-CF</text>
+  <text x="630" y="903" text-anchor="middle" class="small">aligned arrays and provenance</text>
+
+  <rect x="70" y="975" width="300" height="72" class="model"/>
+  <text x="220" y="1018" text-anchor="middle" class="text">Meteorological preprocessing</text>
+  <rect x="480" y="975" width="300" height="72" class="model"/>
+  <text x="630" y="1018" text-anchor="middle" class="text">Dispersion backend</text>
+  <rect x="890" y="975" width="300" height="72" class="output"/>
+  <text x="1040" y="1007" text-anchor="middle" class="text">Concentration outputs</text>
+  <text x="1040" y="1031" text-anchor="middle" class="small">post-processing and maps</text>
+
+  <path d="M630 148v42" class="line"/>
+  <path d="M630 268v52" class="line"/>
+  <path d="M380 361h95" class="line"/>
+  <path d="M880 361h-95" class="line"/>
+  <path d="M630 402v53" class="line"/>
+  <path d="M630 533c0 55-260 45-330 57" class="line"/>
+  <path d="M630 533c0 55 260 45 330 57" class="line"/>
+  <path d="M970 668v57" class="line"/>
+  <path d="M290 668c0 122 245 110 300 177" class="line"/>
+  <path d="M970 803c0 65-245 42-300 42" class="line"/>
+  <path d="M630 923v52" class="line"/>
+  <path d="M370 1011h110" class="line"/>
+  <path d="M780 1011h110" class="line"/>
+</svg>
