@@ -15,7 +15,15 @@ sys.path.insert(0, str(USECASES))
 from high_resolution_wind import interpolate_wrf_to_100m, resolve_wrf_input  # noqa: E402
 from model_evaluation import evaluate_wildfire_event  # noqa: E402
 from production_incidents import build_incident_config, load_incident_catalog, select_event  # noqa: E402
-from sailing_forecast import SailingForecastRequest, build_sailing_forecast, parse_bbox  # noqa: E402
+from sailing_forecast import (  # noqa: E402
+    BAY_OF_NAPLES_RACE_BOX,
+    DEFAULT_OUTLOOK_H,
+    DEFAULT_TIME_RESOLUTION_S,
+    DEFAULT_VERTICAL_RESOLUTION_M,
+    SailingForecastRequest,
+    build_sailing_forecast,
+    parse_bbox,
+)
 from wildfire import build_wildfire_config, run_wildfire_event  # noqa: E402
 
 
@@ -141,6 +149,13 @@ def test_sailing_forecast_small_grid(tmp_path: Path) -> None:
     assert result["time_resolution_s"] == 600.0
     assert result["vertical_resolution_m"] == 10.0
     assert len(result["height_m"]) == 3
+
+
+def test_sailing_forecast_demo_defaults() -> None:
+    assert BAY_OF_NAPLES_RACE_BOX == (14.18, 40.78, 14.33, 40.85)
+    assert DEFAULT_OUTLOOK_H == 24.0
+    assert DEFAULT_VERTICAL_RESOLUTION_M == 10.0
+    assert DEFAULT_TIME_RESOLUTION_S == 600.0
 
 
 def test_usecases_are_not_packaged_as_suite_modules() -> None:

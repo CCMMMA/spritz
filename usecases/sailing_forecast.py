@@ -14,7 +14,12 @@ from sprtz.io.jsonio import write_json
 from sprtz.logging import configure_logging
 
 LOGGER = logging.getLogger(__name__)
-BAY_OF_NAPLES_RACE_BOX = (14.18, 40.70, 14.32, 40.82)
+BAY_OF_NAPLES_RACE_BOX = (14.18, 40.78, 14.33, 40.85)
+DEFAULT_OUTLOOK_H = 24.0
+DEFAULT_HORIZONTAL_RESOLUTION_M = 100.0
+DEFAULT_VERTICAL_RESOLUTION_M = 10.0
+DEFAULT_TIME_RESOLUTION_S = 600.0
+DEFAULT_MAX_POINTS = 60_000_000
 
 
 @dataclass(frozen=True)
@@ -81,7 +86,7 @@ def build_sailing_forecast(
     request: SailingForecastRequest,
     output_path: str | Path,
     *,
-    max_points: int = 30_000_000,
+    max_points: int = DEFAULT_MAX_POINTS,
 ) -> dict[str, Any]:
     """Build a deterministic high-resolution wind forecast product for sailing.
 
@@ -155,13 +160,13 @@ def default_initialization_date() -> date:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a high-resolution sailing wind forecast product")
     parser.add_argument("--initialization-date", default=None, help="UTC initialization date YYYY-MM-DD; defaults to current UTC day at Z00")
-    parser.add_argument("--outlook-hours", type=float, default=6.0)
+    parser.add_argument("--outlook-hours", type=float, default=DEFAULT_OUTLOOK_H)
     parser.add_argument("--bbox", default=",".join(str(v) for v in BAY_OF_NAPLES_RACE_BOX), help="west,south,east,north")
-    parser.add_argument("--horizontal-resolution-m", type=float, default=100.0)
-    parser.add_argument("--vertical-resolution-m", type=float, default=10.0)
-    parser.add_argument("--time-resolution-s", type=float, default=600.0)
+    parser.add_argument("--horizontal-resolution-m", type=float, default=DEFAULT_HORIZONTAL_RESOLUTION_M)
+    parser.add_argument("--vertical-resolution-m", type=float, default=DEFAULT_VERTICAL_RESOLUTION_M)
+    parser.add_argument("--time-resolution-s", type=float, default=DEFAULT_TIME_RESOLUTION_S)
     parser.add_argument("--top-altitude-m", type=float, default=300.0)
-    parser.add_argument("--max-points", type=int, default=30_000_000)
+    parser.add_argument("--max-points", type=int, default=DEFAULT_MAX_POINTS)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     init_date = (
