@@ -26,6 +26,14 @@ This use case consumes the same WRF/SpritzWRF/SpritzMet path as use case 01, the
 
 This use case evaluates Sprtz concentration/deposition output against a satellite-derived mask and reports confusion-matrix metrics, CSI/threat score, false-alarm ratio, probability of detection, and deterministic AI-style calibration output.
 
+## 04 - Production incident catalog
+
+This use case reads a semicolon-delimited incident catalog and builds validated
+Sprtz configurations with event metadata, local receptors, WGS84 receptor
+coordinates, and optional geographic concentration maps. The bundled rows cover
+the supplied Acerra `2021_44` incident on 30/07/2021 at 14:00 for 3 hours and
+the San Marcellino `2023_14` incident on 14/07/2023 at 15:00 for 3 hours.
+
 ## Documentation standard
 
 Each use case README contains purpose, workflow, inputs, commands, outputs, assumptions, and validation checks.  Commands use the same coordinate examples and WRF archive pattern so the use cases remain consistent.

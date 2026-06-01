@@ -190,10 +190,39 @@ def plot_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--output", required=True)
         parser.add_argument("--title", default="Concentration field")
         parser.add_argument("--dpi", type=int, default=300)
+        parser.add_argument("--coordinates", choices=["auto", "local", "geographic"], default="auto")
+        parser.add_argument("--center-lat", type=float, default=None)
+        parser.add_argument("--center-lon", type=float, default=None)
+        parser.add_argument("--value-field", default="concentration")
+        parser.add_argument("--basemap", default=None, help="local raster image used as plot background")
+        parser.add_argument("--basemap-extent", default=None, help="west,south,east,north image extent")
+        parser.add_argument("--tile-provider", default=None, help="contextily provider, e.g. OpenStreetMap.Mapnik")
+        parser.add_argument("--tile-zoom", type=int, default=14)
+        parser.add_argument("--allow-network-basemap", action="store_true")
+        parser.add_argument("--marker-size", type=float, default=None)
+        parser.add_argument("--cmap", default="viridis")
+        parser.add_argument("--log-scale", action="store_true")
         parser.add_argument("--verbose", action="store_true")
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        visualization.concentration_scatter(args.input, args.output, title=args.title, dpi=args.dpi)
+        visualization.concentration_scatter(
+            args.input,
+            args.output,
+            title=args.title,
+            dpi=args.dpi,
+            coordinate_system=args.coordinates,
+            center_lat=args.center_lat,
+            center_lon=args.center_lon,
+            value_field=args.value_field,
+            basemap_path=args.basemap,
+            basemap_extent=visualization.parse_extent(args.basemap_extent),
+            tile_provider=args.tile_provider,
+            tile_zoom=args.tile_zoom,
+            allow_network_basemap=args.allow_network_basemap,
+            marker_size=args.marker_size,
+            cmap=args.cmap,
+            log_scale=args.log_scale,
+        )
         return 0
 
     return _guard(run, argv)

@@ -39,6 +39,8 @@ REQUIRED = [
     "usecases/01_high_resolution_wind_field/README.md",
     "usecases/02_wildfire_arson_effects/README.md",
     "usecases/03_satellite_ai_evaluation/README.md",
+    "usecases/04_production_incidents/README.md",
+    "usecases/04_production_incidents/events.csv",
     "src/sprtz/py.typed",
     "src/sprtz/models/terrain.py",
 ]

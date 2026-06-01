@@ -13,6 +13,7 @@ sys.path.insert(0, str(USECASES))
 
 from high_resolution_wind import interpolate_wrf_to_100m, resolve_wrf_input  # noqa: E402
 from model_evaluation import evaluate_wildfire_event  # noqa: E402
+from production_incidents import build_incident_config, load_incident_catalog, select_event  # noqa: E402
 from wildfire import build_wildfire_config, run_wildfire_event  # noqa: E402
 
 
@@ -96,6 +97,27 @@ def test_resolve_wrf_input_prefers_local_path(tmp_path: Path) -> None:
     wrf = tmp_path / "wrf5_d03_20260527Z0000.nc"
     wrf.write_bytes(b"placeholder")
     assert resolve_wrf_input(wrf, download_date="2026-05-27") == wrf
+
+
+def test_production_incident_catalog_and_config(tmp_path: Path) -> None:
+    events = load_incident_catalog()
+    assert {event.code for event in events} >= {"2021_44", "2023_14"}
+    event = select_event(events, "2023_14")
+    assert event.place == "San Marcellino"
+    assert event.latitude == 40.98472
+    assert event.longitude == 14.18250
+    config_path = tmp_path / "incident.json"
+    config = build_incident_config(
+        event,
+        config_path,
+        receptor_radius_m=500.0,
+        receptor_spacing_m=500.0,
+    )
+    assert config_path.exists()
+    assert config["metadata"]["event"]["cod_gisa"] == "2023_14"
+    assert config["metadata"]["event"]["duration_h"] == 3.0
+    assert "latitude" in config["receptors"][0]
+    assert "longitude" in config["receptors"][0]
 
 
 def test_usecases_are_not_packaged_as_suite_modules() -> None:

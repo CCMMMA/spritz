@@ -88,10 +88,16 @@ class Receptor:
     x: float
     y: float
     z: float = 0.0
+    latitude: float | None = None
+    longitude: float | None = None
 
     def validate(self) -> None:
         if not self.id:
             raise ConfigurationError("receptor id must not be empty")
+        if self.latitude is not None and not -90.0 <= float(self.latitude) <= 90.0:
+            raise ConfigurationError(f"receptor {self.id}: latitude must be in [-90, 90]")
+        if self.longitude is not None and not -180.0 <= float(self.longitude) <= 180.0:
+            raise ConfigurationError(f"receptor {self.id}: longitude must be in [-180, 180]")
 
 
 @dataclass(frozen=True)

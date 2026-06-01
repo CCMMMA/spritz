@@ -27,6 +27,7 @@ dependencies = ["numpy>=1.23", "pyproj>=3.4"]
 [project.optional-dependencies]
 netcdf = ["netCDF4>=1.6"]
 viz = ["matplotlib>=3.7"]
+maps = ["contextily>=1.4", "xyzservices>=2023.10"]
 mpi = ["mpi4py>=3.1"]
 dev = ["pytest>=7", "ruff>=0.4", "mypy>=1.8", "build>=1.0", "matplotlib>=3.7"]
 

@@ -131,6 +131,15 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
             var.units = units
             var.long_name = standard_name
             var[0, :] = [float(r.get(name, 0.0)) for r in rows]
+        if any("latitude" in row and "longitude" in row for row in rows):
+            for name, units, long_name in [
+                ("latitude", "degrees_north", "receptor latitude"),
+                ("longitude", "degrees_east", "receptor longitude"),
+            ]:
+                var = ds.createVariable(name, "f8", ("receptor",), zlib=True)
+                var.units = units
+                var.long_name = long_name
+                var[:] = [float(r.get(name, np.nan)) for r in rows]
 
 
 def read_cf_concentration(path: str | Path) -> list[dict[str, Any]]:
@@ -152,6 +161,8 @@ def read_cf_concentration(path: str | Path) -> list[dict[str, Any]]:
             x = x[0]
         if y.ndim == 2:
             y = y[0]
+        lat = np.asarray(ds.variables["latitude"][:], dtype=float) if "latitude" in ds.variables else None
+        lon = np.asarray(ds.variables["longitude"][:], dtype=float) if "longitude" in ds.variables else None
         return [
             {
                 "time": 0.0,
@@ -161,6 +172,11 @@ def read_cf_concentration(path: str | Path) -> list[dict[str, Any]]:
                 "concentration": float(c[i]),
                 "dry_flux": float(dry[i]),
                 "wet_flux": float(wet[i]),
+                **(
+                    {}
+                    if lat is None or lon is None or np.isnan(lat[i]) or np.isnan(lon[i])
+                    else {"latitude": float(lat[i]), "longitude": float(lon[i])}
+                ),
             }
             for i in range(c.size)
         ]

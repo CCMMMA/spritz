@@ -145,7 +145,7 @@ def compute_concentrations(
             total += conc
             dry_total += conc * max(src.deposition_velocity, 0.0)
             wet_total += conc * max(src.wet_scavenging, 0.0) * mixing_height
-        local_rows.append({
+        row: dict[str, float | str] = {
             "time": 0.0,
             "receptor": rec.id,
             "x": rec.x,
@@ -153,7 +153,11 @@ def compute_concentrations(
             "concentration": total,
             "dry_flux": dry_total,
             "wet_flux": wet_total,
-        })
+        }
+        if rec.latitude is not None and rec.longitude is not None:
+            row["latitude"] = float(rec.latitude)
+            row["longitude"] = float(rec.longitude)
+        local_rows.append(row)
     return ctx.gather_flat(local_rows)
 
 
@@ -161,10 +165,12 @@ def write_csv(path: str | Path, rows: list[dict[str, float | str]]) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     fields = ["time", "receptor", "x", "y", "concentration", "dry_flux", "wet_flux"]
+    if any("latitude" in row and "longitude" in row for row in rows):
+        fields.extend(["latitude", "longitude"])
     with NamedTemporaryFile("w", newline="", encoding="utf-8", dir=p.parent, delete=False) as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows({field: row.get(field, "") for field in fields} for row in rows)
         tmp_name = handle.name
     Path(tmp_name).replace(p)
 

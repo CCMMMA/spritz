@@ -18,6 +18,7 @@ For lightweight tests or classroom demonstrations without WRF data, each relevan
 1. `01_high_resolution_wind_field` — download or read WRF 1 km data, extract near-surface wind with SpritzWRF, and downscale it to 100 m with SpritzMet.
 2. `02_wildfire_arson_effects` — build an arson/wildfire source scenario using the WRF/SpritzMet wind field and run Sprtz dispersion.
 3. `03_satellite_ai_evaluation` — compare model output with a satellite-derived mask and compute deterministic skill metrics plus a lightweight AI calibration diagnostic.
+4. `04_production_incidents` — build catalog-driven production-style incident cases with receptor latitude/longitude and geographic maps.
 
 Run the scripts directly:
 
@@ -25,6 +26,7 @@ Run the scripts directly:
 python usecases/01_high_resolution_wind_field/run.py --help
 python usecases/02_wildfire_arson_effects/run.py --help
 python usecases/03_satellite_ai_evaluation/run.py --help
+python usecases/04_production_incidents/run.py --help
 ```
 
 ## Repository boundary
