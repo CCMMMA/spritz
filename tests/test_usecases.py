@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,7 @@ sys.path.insert(0, str(USECASES))
 from high_resolution_wind import interpolate_wrf_to_100m, resolve_wrf_input  # noqa: E402
 from model_evaluation import evaluate_wildfire_event  # noqa: E402
 from production_incidents import build_incident_config, load_incident_catalog, select_event  # noqa: E402
+from sailing_forecast import SailingForecastRequest, build_sailing_forecast, parse_bbox  # noqa: E402
 from wildfire import build_wildfire_config, run_wildfire_event  # noqa: E402
 
 
@@ -118,6 +120,26 @@ def test_production_incident_catalog_and_config(tmp_path: Path) -> None:
     assert config["metadata"]["event"]["duration_h"] == 3.0
     assert "latitude" in config["receptors"][0]
     assert "longitude" in config["receptors"][0]
+
+
+def test_sailing_forecast_small_grid(tmp_path: Path) -> None:
+    output = tmp_path / "sailing.json"
+    result = build_sailing_forecast(
+        SailingForecastRequest(
+            initialization_date=date(2026, 6, 1),
+            outlook_h=0.25,
+            bbox=parse_bbox("14.20,40.72,14.205,40.725"),
+            horizontal_resolution_m=250.0,
+            vertical_resolution_m=100.0,
+            time_resolution_s=900.0,
+            top_altitude_m=100.0,
+        ),
+        output,
+    )
+    assert output.exists()
+    assert result["initialization_utc"] == "2026-06-01T00:00:00Z"
+    assert result["time_resolution_s"] == 900.0
+    assert len(result["height_m"]) == 2
 
 
 def test_usecases_are_not_packaged_as_suite_modules() -> None:

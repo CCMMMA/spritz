@@ -34,6 +34,17 @@ coordinates, and optional geographic concentration maps. The bundled rows cover
 the supplied Acerra `2021_44` incident on 30/07/2021 at 14:00 for 3 hours and
 the San Marcellino `2023_14` incident on 14/07/2023 at 15:00 for 3 hours.
 
+## 05 - High-resolution sailing wind forecast
+
+This use case creates a forecast-ready wind product over a latitude/longitude
+bounding box, with explicit initialization date at Z00, outlook in hours,
+horizontal resolution, vertical resolution, and time resolution. The default
+example targets a Bay of Naples race area for precision top class professional
+sailing: current UTC day at Z00, 100 m horizontal and vertical resolution, and
+15 minute temporal resolution. The bundled implementation is deterministic and
+offline so downstream race-planning tooling can validate the full
+space-height-time schema before authoritative forecast data are connected.
+
 ## Documentation standard
 
 Each use case README contains purpose, workflow, inputs, commands, outputs, assumptions, and validation checks.  Commands use the same coordinate examples and WRF archive pattern so the use cases remain consistent.

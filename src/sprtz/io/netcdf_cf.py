@@ -111,18 +111,37 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
         return
     from netCDF4 import Dataset  # type: ignore
 
+    times = sorted({float(row.get("time", 0.0)) for row in rows}) or [0.0]
+    receptors = list(dict.fromkeys(str(row.get("receptor", f"R{i}")) for i, row in enumerate(rows)))
+    time_index = {value: i for i, value in enumerate(times)}
+    receptor_index = {value: i for i, value in enumerate(receptors)}
+    by_receptor: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        by_receptor.setdefault(str(row.get("receptor", "")), row)
+
     with Dataset(p, "w") as ds:
-        n = len(rows)
-        ds.createDimension("time", 1)
-        ds.createDimension("receptor", n)
+        ds.createDimension("time", len(times))
+        ds.createDimension("receptor", len(receptors))
         ds.Conventions = "CF-1.8"
         ds.title = "Sprtz receptor concentration"
+        time = ds.createVariable("time", "f8", ("time",))
+        time.units = "seconds since simulation start"
+        time.long_name = "model output time"
+        time[:] = np.asarray(times, dtype=float)
         rec = ds.createVariable("receptor", "i4", ("receptor",))
         rec.long_name = "receptor index"
-        rec[:] = np.arange(n, dtype=np.int32)
+        rec[:] = np.arange(len(receptors), dtype=np.int32)
+        rec_id = ds.createVariable("receptor_id", str, ("receptor",))
+        rec_id.long_name = "receptor identifier"
+        rec_id[:] = np.asarray(receptors, dtype=object)
+        x = ds.createVariable("x", "f8", ("receptor",), zlib=True)
+        y = ds.createVariable("y", "f8", ("receptor",), zlib=True)
+        x.units = y.units = "m"
+        x.long_name = "projection_x_coordinate"
+        y.long_name = "projection_y_coordinate"
+        x[:] = [float(by_receptor.get(receptor, {}).get("x", 0.0)) for receptor in receptors]
+        y[:] = [float(by_receptor.get(receptor, {}).get("y", 0.0)) for receptor in receptors]
         for name, units, standard_name in [
-            ("x", "m", "projection_x_coordinate"),
-            ("y", "m", "projection_y_coordinate"),
             ("concentration", "g m-3", "mass_concentration_of_air_pollutant_in_air"),
             ("dry_flux", "g m-2 s-1", "dry_deposition_flux"),
             ("wet_flux", "g m-2 s-1", "wet_deposition_flux"),
@@ -130,7 +149,12 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
             var = ds.createVariable(name, "f8", ("time", "receptor"), zlib=True)
             var.units = units
             var.long_name = standard_name
-            var[0, :] = [float(r.get(name, 0.0)) for r in rows]
+            values = np.full((len(times), len(receptors)), np.nan, dtype=float)
+            for row in rows:
+                ti = time_index[float(row.get("time", 0.0))]
+                ri = receptor_index[str(row.get("receptor", ""))]
+                values[ti, ri] = float(row.get(name, 0.0))
+            var[:, :] = values
         if any("latitude" in row and "longitude" in row for row in rows):
             for name, units, long_name in [
                 ("latitude", "degrees_north", "receptor latitude"),
@@ -139,7 +163,7 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                 var = ds.createVariable(name, "f8", ("receptor",), zlib=True)
                 var.units = units
                 var.long_name = long_name
-                var[:] = [float(r.get(name, np.nan)) for r in rows]
+                var[:] = [float(by_receptor.get(receptor, {}).get(name, np.nan)) for receptor in receptors]
 
 
 def read_cf_concentration(path: str | Path) -> list[dict[str, Any]]:
@@ -152,31 +176,45 @@ def read_cf_concentration(path: str | Path) -> list[dict[str, Any]]:
     from netCDF4 import Dataset  # type: ignore
 
     with Dataset(p) as ds:
-        c = np.asarray(ds.variables["concentration"][:], dtype=float)[0]
-        dry = np.asarray(ds.variables["dry_flux"][:], dtype=float)[0] if "dry_flux" in ds.variables else np.zeros_like(c)
-        wet = np.asarray(ds.variables["wet_flux"][:], dtype=float)[0] if "wet_flux" in ds.variables else np.zeros_like(c)
-        x = np.asarray(ds.variables.get("x", np.zeros_like(c))[:], dtype=float)
-        y = np.asarray(ds.variables.get("y", np.zeros_like(c))[:], dtype=float)
+        c_all = np.asarray(ds.variables["concentration"][:], dtype=float)
+        if c_all.ndim == 1:
+            c_all = c_all[np.newaxis, :]
+        dry_all = np.asarray(ds.variables["dry_flux"][:], dtype=float) if "dry_flux" in ds.variables else np.zeros_like(c_all)
+        wet_all = np.asarray(ds.variables["wet_flux"][:], dtype=float) if "wet_flux" in ds.variables else np.zeros_like(c_all)
+        if dry_all.ndim == 1:
+            dry_all = dry_all[np.newaxis, :]
+        if wet_all.ndim == 1:
+            wet_all = wet_all[np.newaxis, :]
+        times = np.asarray(ds.variables["time"][:], dtype=float) if "time" in ds.variables else np.asarray([0.0])
+        x = np.asarray(ds.variables.get("x", np.zeros(c_all.shape[1], dtype=float))[:], dtype=float)
+        y = np.asarray(ds.variables.get("y", np.zeros(c_all.shape[1], dtype=float))[:], dtype=float)
         if x.ndim == 2:
             x = x[0]
         if y.ndim == 2:
             y = y[0]
         lat = np.asarray(ds.variables["latitude"][:], dtype=float) if "latitude" in ds.variables else None
         lon = np.asarray(ds.variables["longitude"][:], dtype=float) if "longitude" in ds.variables else None
-        return [
-            {
-                "time": 0.0,
-                "receptor": f"R{i}",
-                "x": float(x[i]),
-                "y": float(y[i]),
-                "concentration": float(c[i]),
-                "dry_flux": float(dry[i]),
-                "wet_flux": float(wet[i]),
-                **(
-                    {}
-                    if lat is None or lon is None or np.isnan(lat[i]) or np.isnan(lon[i])
-                    else {"latitude": float(lat[i]), "longitude": float(lon[i])}
-                ),
-            }
-            for i in range(c.size)
-        ]
+        if "receptor_id" in ds.variables:
+            receptor_ids = [str(value) for value in ds.variables["receptor_id"][:]]
+        else:
+            receptor_ids = [f"R{i}" for i in range(c_all.shape[1])]
+        rows: list[dict[str, Any]] = []
+        for ti, time_value in enumerate(times):
+            for i in range(c_all.shape[1]):
+                rows.append(
+                    {
+                        "time": float(time_value),
+                        "receptor": receptor_ids[i],
+                        "x": float(x[i]),
+                        "y": float(y[i]),
+                        "concentration": float(c_all[ti, i]),
+                        "dry_flux": float(dry_all[ti, i]),
+                        "wet_flux": float(wet_all[ti, i]),
+                        **(
+                            {}
+                            if lat is None or lon is None or np.isnan(lat[i]) or np.isnan(lon[i])
+                            else {"latitude": float(lat[i]), "longitude": float(lon[i])}
+                        ),
+                    }
+                )
+        return rows

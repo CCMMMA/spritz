@@ -23,3 +23,23 @@ def test_run_cli_legacy_interchange(tmp_path):
 def test_run_cli_parallel_auto_fallback(tmp_path):
     assert main(["run", "examples/minimal.json", "--output-dir", str(tmp_path), "--parallel", "auto"]) == 0
     assert (tmp_path / "concentration.nc").exists()
+
+
+def test_run_cli_output_interval(tmp_path):
+    assert (
+        main(
+            [
+                "run",
+                "examples/minimal.json",
+                "--output-dir",
+                str(tmp_path),
+                "--interchange",
+                "json",
+                "--output-interval",
+                "600",
+            ]
+        )
+        == 0
+    )
+    rows = list(__import__("csv").DictReader((tmp_path / "concentration.csv").open()))
+    assert len(rows) == 12

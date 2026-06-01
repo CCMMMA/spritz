@@ -40,11 +40,17 @@ Run-level numerical keys:
 {
   "numerical_mode": "puff",
   "averaging_time_s": 3600,
+  "output_interval_s": 600,
   "stack_tip_downwash": true
 }
 ```
 
 Use `numerical_mode = plume` to reproduce the older steady Gaussian screening pathway.
+Omit `output_interval_s` to keep the legacy single output at `time=0`. When it
+is set, Spritz emits concentration/deposition rows at that interval, independent
+of the meteorological input cadence. Puff-mode time-resolved output advects the
+representative puff center with the mean wind; plume mode remains steady at each
+requested output time.
 
 ## Scientific scope
 

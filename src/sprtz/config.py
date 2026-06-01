@@ -131,6 +131,15 @@ class SuiteConfig:
         averaging_time = self.run.get("averaging_time_s", self.run.get("AVERAGING_TIME_S", 3600.0))
         if float(averaging_time) <= 0:
             raise ConfigurationError("run.averaging_time_s must be positive")
+        output_interval = self.run.get("output_interval_s", self.run.get("OUTPUT_INTERVAL_S"))
+        if output_interval is not None and float(output_interval) <= 0:
+            raise ConfigurationError("run.output_interval_s must be positive")
+        output_duration = self.run.get("output_duration_s", self.run.get("OUTPUT_DURATION_S"))
+        if output_duration is not None and float(output_duration) <= 0:
+            raise ConfigurationError("run.output_duration_s must be positive")
+        output_start = self.run.get("output_start_s", self.run.get("OUTPUT_START_S"))
+        if output_start is not None and float(output_start) < 0:
+            raise ConfigurationError("run.output_start_s must be non-negative")
 
 
 def _grid_from_mapping(data: dict[str, Any]) -> GridConfig:

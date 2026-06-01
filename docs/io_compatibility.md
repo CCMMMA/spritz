@@ -21,6 +21,10 @@ New module-to-module exchange prefers NetCDF-CF:
 - SpritzMet writes `meteo.nc` with `eastward_wind`, `northward_wind`, `air_temperature`, and `atmosphere_boundary_layer_thickness`.
 - Spritz and `sprtz-particles` read `meteo.nc` and write `concentration.nc`.
 - SpritzPost and visualization read NetCDF concentration files directly.
+- Concentration outputs may contain multiple model output times when
+  `run.output_interval_s` or `sprtz run --output-interval` is supplied. This
+  output cadence is independent from the meteorological input cadence; the
+  default remains one legacy-compatible output at `time=0`.
 
 When the optional `netCDF4` dependency is not installed, `.nc` writes fall back to a deterministic CF-shaped JSON payload so the core package remains usable in minimal CI environments. Install `.[netcdf]` for true NetCDF files.
 

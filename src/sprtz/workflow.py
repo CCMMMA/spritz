@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .config import load_config
+from .config import from_mapping, load_config
 from .models import spritzmet, spritzpost, spritz, particles
 from .parallel import get_mpi_context
 from .terrain.acquisition import run_acquisition
@@ -18,6 +18,7 @@ def run_workflow(
     parallel: str = "serial",
     auto_terrain: bool = False,
     allow_terrain_network: bool = False,
+    output_interval_s: float | None = None,
 ) -> dict[str, Any]:
     ctx = get_mpi_context(parallel)
     out = Path(output_dir)
@@ -25,6 +26,10 @@ def run_workflow(
         out.mkdir(parents=True, exist_ok=True)
     ctx.barrier()
     config = load_config(config_path)
+    if output_interval_s is not None:
+        run_config = dict(config.raw.get("run", {}))
+        run_config["output_interval_s"] = float(output_interval_s)
+        config = from_mapping({**config.raw, "run": run_config})
     use_netcdf = interchange == "netcdf"
     terrain_result: dict[str, Any] | None = None
     terrain_cfg = dict(config.raw.get("terrain", {}))
@@ -69,7 +74,8 @@ def run_workflow(
         "meteo": str(meteo_path),
         "concentration": str(conc_path),
         "post": str(post_path),
-        "n_receptors": len(conc),
+        "n_receptors": len({str(row.get("receptor", "")) for row in conc}),
+        "n_output_rows": len(conc),
         "interchange": interchange,
         "parallel": "mpi" if ctx.enabled else "serial",
         "mpi_size": ctx.size,
@@ -78,4 +84,6 @@ def run_workflow(
     if terrain_result is not None:
         result["terrain"] = terrain_result["output"]
         result["terrain_cache_key"] = terrain_result["cache_key"]
+    if output_interval_s is not None:
+        result["output_interval_s"] = float(output_interval_s)
     return ctx.bcast(result, root=0)

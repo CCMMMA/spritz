@@ -46,6 +46,7 @@ REQUIRED = [
     "usecases/03_satellite_ai_evaluation/README.md",
     "usecases/04_production_incidents/README.md",
     "usecases/04_production_incidents/events.csv",
+    "usecases/05_sailing_wind_forecast/README.md",
     "src/sprtz/py.typed",
     "src/sprtz/models/terrain.py",
     "src/sprtz/terrain/acquisition.py",

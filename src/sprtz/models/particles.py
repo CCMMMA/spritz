@@ -11,7 +11,7 @@ from sprtz.core.grid import Grid
 from sprtz.exceptions import DataFormatError
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
 from sprtz.io.netcdf_cf import write_cf_concentration
-from sprtz.models.spritz import read_meteorology, write_csv
+from sprtz.models.spritz import output_times, read_meteorology, write_csv
 from sprtz.parallel import get_mpi_context
 
 
@@ -96,18 +96,21 @@ def simulate_particles(
         for rec_id, value in partial.items():
             totals[rec_id] += float(value)
 
-    return [
-        {
-            "time": 0.0,
-            "receptor": rec.id,
-            "x": rec.x,
-            "y": rec.y,
-            "concentration": totals[rec.id],
-            "dry_flux": totals[rec.id] * sum(max(s.deposition_velocity, 0.0) for s in config.sources),
-            "wet_flux": totals[rec.id] * sum(max(s.wet_scavenging, 0.0) for s in config.sources),
-        }
-        for rec in receptors
-    ]
+    rows: list[dict[str, float | str]] = []
+    for time_value in output_times(config):
+        for rec in receptors:
+            rows.append(
+                {
+                    "time": time_value,
+                    "receptor": rec.id,
+                    "x": rec.x,
+                    "y": rec.y,
+                    "concentration": totals[rec.id],
+                    "dry_flux": totals[rec.id] * sum(max(s.deposition_velocity, 0.0) for s in config.sources),
+                    "wet_flux": totals[rec.id] * sum(max(s.wet_scavenging, 0.0) for s in config.sources),
+                }
+            )
+    return rows
 
 
 def write_particle_output(path: str | Path, rows: list[dict[str, float | str]], output_format: str = "auto") -> None:

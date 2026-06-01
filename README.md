@@ -59,6 +59,7 @@ Preferred NetCDF-CF workflow:
 
 ```bash
 sprtz run examples/minimal.json --output-dir output --interchange netcdf
+sprtz run examples/minimal.json --output-dir output-10min --interchange netcdf --output-interval 600
 sprtz run examples/minimal.json --output-dir output-particles --backend particles --interchange netcdf
 mpiexec -n 4 sprtz run examples/minimal.json --output-dir output-mpi --interchange netcdf --parallel auto
 sprtz-plot --input output/concentration.nc --output output/concentration.png
@@ -129,6 +130,7 @@ Sprtz includes a root-level `usecases/` folder with reproducible templates for:
 - arson/wildfire screening simulations using the same Sprtz configuration and output conventions as the main suite;
 - model evaluation against satellite-derived masks with a lightweight deterministic AI calibration layer.
 - catalog-driven production incident screening with receptor latitude/longitude and geographic maps.
+- high-resolution Bay of Naples sailing wind forecasts with configurable outlook, bounding box, vertical levels, and temporal cadence.
 
 Install the package, then run the root-level didactic scripts. The use cases are intentionally not importable suite modules:
 
@@ -137,6 +139,7 @@ python usecases/01_high_resolution_wind_field/run.py --download-date 2026-05-27 
 python usecases/02_wildfire_arson_effects/run.py --download-date 2026-05-27 --download-cycle-hour 0 --output-dir wildfire_case --center-lat 40.85 --center-lon 14.27 --temperature-k 1100
 python usecases/03_satellite_ai_evaluation/run.py --concentration wildfire_case/model/concentration.nc --satellite-mask satellite_mask.json --output wildfire_case/evaluation.json
 python usecases/04_production_incidents/run.py --code 2021_44 --output-dir production_2021_44 --interchange netcdf
+python usecases/05_sailing_wind_forecast/run.py --output sailing_bay_of_naples.json
 ```
 
 The use cases prefer NetCDF-CF products when `netCDF4` is installed and fall back to JSON/CSV for lightweight runs and automated tests. They are documented examples under `usecases/`, not part of the `sprtz` package namespace.

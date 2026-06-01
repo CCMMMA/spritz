@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Sequence
 
-from .config import load_config
+from .config import from_mapping, load_config
 from .doctor import format_report, run_diagnostics
 from .exceptions import SprtzError
 from .logging import configure_logging
@@ -17,6 +17,15 @@ from .terrain import acquisition as terrain_acquisition
 from .workflow import run_workflow
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _with_output_interval(config_path: str | Path, output_interval: float | None):
+    cfg = load_config(config_path)
+    if output_interval is None:
+        return cfg
+    run_config = dict(cfg.raw.get("run", {}))
+    run_config["output_interval_s"] = float(output_interval)
+    return from_mapping({**cfg.raw, "run": run_config})
 
 
 def _config_parser(description: str) -> argparse.ArgumentParser:
@@ -56,9 +65,16 @@ def spritz_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--output", required=True)
         parser.add_argument("--format", default="auto", choices=["auto", "csv", "legacy", "netcdf"])
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"], help="parallel execution mode")
+        parser.add_argument("--output-interval", type=float, default=None, help="optional concentration output interval in seconds")
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        spritz.run(load_config(args.config), args.meteo, args.output, args.format, parallel=args.parallel)
+        spritz.run(
+            _with_output_interval(args.config, args.output_interval),
+            args.meteo,
+            args.output,
+            args.format,
+            parallel=args.parallel,
+        )
         return 0
 
     return _guard(run, argv)
@@ -321,6 +337,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         workflow.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial")
         workflow.add_argument("--auto-terrain", action="store_true", help="run configured terrain acquisition before meteorology")
         workflow.add_argument("--allow-terrain-network", action="store_true", help="allow explicit online terrain providers")
+        workflow.add_argument("--output-interval", type=float, default=None, help="optional concentration output interval in seconds")
         validate = sub.add_parser("validate", help="load and validate a configuration file")
         validate.add_argument("config")
         doctor = sub.add_parser("doctor", help="run local production-readiness diagnostics")
@@ -339,6 +356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 parallel=args.parallel,
                 auto_terrain=args.auto_terrain,
                 allow_terrain_network=args.allow_terrain_network,
+                output_interval_s=args.output_interval,
             )
             ctx = get_mpi_context(args.parallel)
             if ctx.is_root:

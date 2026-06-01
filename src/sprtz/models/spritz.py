@@ -63,6 +63,41 @@ def read_meteorology(path: str | Path) -> dict[str, Any]:
     return read_json(p)
 
 
+def output_times(config: SuiteConfig) -> tuple[float, ...]:
+    """Resolve optional concentration output times in seconds.
+
+    The default remains the historical single output at ``time=0``. When
+    ``run.output_interval_s`` is present, Spritz emits rows at that interval
+    independently from the meteorological input cadence. The default duration is
+    ``run.averaging_time_s`` so existing one-hour examples can request, for
+    example, 600-second outputs without changing meteorology.
+    """
+    interval_value = config.run.get("output_interval_s", config.run.get("OUTPUT_INTERVAL_S"))
+    if interval_value is None:
+        return (0.0,)
+    interval = float(interval_value)
+    if interval <= 0:
+        raise DataFormatError("run.output_interval_s must be positive")
+    duration = float(
+        config.run.get(
+            "output_duration_s",
+            config.run.get(
+                "OUTPUT_DURATION_S",
+                config.run.get("averaging_time_s", config.run.get("AVERAGING_TIME_S", interval)),
+            ),
+        )
+    )
+    if duration <= 0:
+        raise DataFormatError("run.output_duration_s must be positive")
+    start = float(config.run.get("output_start_s", config.run.get("OUTPUT_START_S", interval)))
+    if start < 0:
+        raise DataFormatError("run.output_start_s must be non-negative")
+    values = np.arange(start, duration + interval * 1.0e-9, interval, dtype=float)
+    if values.size == 0:
+        values = np.asarray([duration], dtype=float)
+    return tuple(float(np.round(value, 9)) for value in values)
+
+
 def compute_concentrations(
     config: SuiteConfig,
     meteo: dict[str, Any],
@@ -76,88 +111,100 @@ def compute_concentrations(
     stability = str(config.run.get("stability", config.run.get("STABILITY", "D")))
     numerical_mode = str(config.run.get("numerical_mode", config.run.get("NUMERICAL_MODE", "puff"))).lower()
     averaging_time = float(config.run.get("averaging_time_s", config.run.get("AVERAGING_TIME_S", 3600.0)))
+    times = output_times(config)
+    output_interval = config.run.get("output_interval_s", config.run.get("OUTPUT_INTERVAL_S"))
+    interval_mass_time = float(output_interval) if output_interval is not None else averaging_time
+    legacy_steady_output = output_interval is None
     ambient_temperature = float(np.nanmean(np.asarray(meteo.get("temperature", [[293.15]]), dtype=float)))
     mixing_height = float(np.nanmean(np.asarray(meteo.get("mixing_height", [[1000.0]]), dtype=float)))
     ctx = get_mpi_context(parallel)
     local_receptors = [receptors[i] for i in ctx.partition(len(receptors))]
     local_rows: list[dict[str, float | str]] = []
     for rec in local_receptors:
-        total = 0.0
-        dry_total = 0.0
-        wet_total = 0.0
-        for src in config.sources:
-            xdown, ycross = _down_cross(rec.x - src.x, rec.y - src.y, u, v, speed)
-            if xdown <= 0:
-                continue
-            travel_time = xdown / speed
-            eff_h = effective_release_height(
-                stack_height=src.stack_height,
-                source_z=src.z,
-                receptor_z=rec.z,
-                wind_speed=speed,
-                downwind_distance=xdown,
-                stack_diameter=src.stack_diameter,
-                exit_velocity=src.exit_velocity,
-                exit_temperature=src.exit_temperature,
-                ambient_temperature=ambient_temperature,
-                heat_release=src.heat_release,
-                downwash=bool(config.run.get("stack_tip_downwash", True)),
-            )
-            depletion = depletion_factor(
-                travel_time_s=travel_time,
-                decay_rate_s=src.decay_rate,
-                deposition_velocity_m_s=src.deposition_velocity,
-                mixing_height_m=mixing_height,
-                wet_scavenging_s=src.wet_scavenging,
-                settling_velocity_m_s=src.settling_velocity,
-            )
-            if numerical_mode == "plume":
-                conc = gaussian_plume(
-                    q=src.emission_rate * depletion,
+        for sample_time in times:
+            total = 0.0
+            dry_total = 0.0
+            wet_total = 0.0
+            for src in config.sources:
+                xdown, ycross = _down_cross(rec.x - src.x, rec.y - src.y, u, v, speed)
+                if xdown <= 0:
+                    continue
+                travel_time = xdown / speed
+                elapsed_s = travel_time if legacy_steady_output else max(sample_time, 1.0)
+                puff_center_x = xdown if legacy_steady_output else speed * sample_time
+                eff_h = effective_release_height(
+                    stack_height=src.stack_height,
+                    source_z=src.z,
+                    receptor_z=rec.z,
                     wind_speed=speed,
-                    x_downwind=xdown,
-                    y_crosswind=ycross,
-                    z=0.0,
-                    h=eff_h,
-                    stability=stability,
+                    downwind_distance=max(puff_center_x, xdown, 1.0),
+                    stack_diameter=src.stack_diameter,
+                    exit_velocity=src.exit_velocity,
+                    exit_temperature=src.exit_temperature,
+                    ambient_temperature=ambient_temperature,
+                    heat_release=src.heat_release,
+                    downwash=bool(config.run.get("stack_tip_downwash", True)),
                 )
-            else:
-                sigmas = dispersion_parameters(
-                    xdown,
-                    stability,
-                    elapsed_s=travel_time,
-                    source_width=src.width,
-                    source_length=src.length,
-                    source_height=max(src.height, 0.0),
+                depletion = depletion_factor(
+                    travel_time_s=elapsed_s,
+                    decay_rate_s=src.decay_rate,
+                    deposition_velocity_m_s=src.deposition_velocity,
+                    mixing_height_m=mixing_height,
+                    wet_scavenging_s=src.wet_scavenging,
+                    settling_velocity_m_s=src.settling_velocity,
                 )
-                mass = src.emission_rate * min(averaging_time, max(travel_time, 1.0)) * depletion
-                conc = gaussian_puff(
-                    mass=mass,
-                    x_receptor=xdown,
-                    y_receptor=ycross,
-                    z_receptor=0.0,
-                    x_center=xdown,
-                    y_center=0.0,
-                    z_center=eff_h,
-                    sigmas=sigmas,
-                )
-                conc = conc / max(min(averaging_time, max(travel_time, 1.0)), 1.0)
-            total += conc
-            dry_total += conc * max(src.deposition_velocity, 0.0)
-            wet_total += conc * max(src.wet_scavenging, 0.0) * mixing_height
-        row: dict[str, float | str] = {
-            "time": 0.0,
-            "receptor": rec.id,
-            "x": rec.x,
-            "y": rec.y,
-            "concentration": total,
-            "dry_flux": dry_total,
-            "wet_flux": wet_total,
-        }
-        if rec.latitude is not None and rec.longitude is not None:
-            row["latitude"] = float(rec.latitude)
-            row["longitude"] = float(rec.longitude)
-        local_rows.append(row)
+                if numerical_mode == "plume":
+                    conc = gaussian_plume(
+                        q=src.emission_rate * depletion,
+                        wind_speed=speed,
+                        x_downwind=xdown,
+                        y_crosswind=ycross,
+                        z=0.0,
+                        h=eff_h,
+                        stability=stability,
+                    )
+                else:
+                    # Time-resolved puff output advects the puff center with the
+                    # mean wind. This lets output cadence differ from the
+                    # meteorological cadence while the default path below keeps
+                    # the legacy steady representative concentration unchanged.
+                    sigmas = dispersion_parameters(
+                        max(puff_center_x, 1.0),
+                        stability,
+                        elapsed_s=elapsed_s,
+                        source_width=src.width,
+                        source_length=src.length,
+                        source_height=max(src.height, 0.0),
+                    )
+                    emission_window = min(interval_mass_time, max(elapsed_s, 1.0))
+                    mass = src.emission_rate * emission_window * depletion
+                    conc = gaussian_puff(
+                        mass=mass,
+                        x_receptor=xdown,
+                        y_receptor=ycross,
+                        z_receptor=0.0,
+                        x_center=puff_center_x,
+                        y_center=0.0,
+                        z_center=eff_h,
+                        sigmas=sigmas,
+                    )
+                    conc = conc / max(emission_window, 1.0)
+                total += conc
+                dry_total += conc * max(src.deposition_velocity, 0.0)
+                wet_total += conc * max(src.wet_scavenging, 0.0) * mixing_height
+            row: dict[str, float | str] = {
+                "time": sample_time,
+                "receptor": rec.id,
+                "x": rec.x,
+                "y": rec.y,
+                "concentration": total,
+                "dry_flux": dry_total,
+                "wet_flux": wet_total,
+            }
+            if rec.latitude is not None and rec.longitude is not None:
+                row["latitude"] = float(rec.latitude)
+                row["longitude"] = float(rec.longitude)
+            local_rows.append(row)
     return ctx.gather_flat(local_rows)
 
 
