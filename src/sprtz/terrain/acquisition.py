@@ -192,7 +192,7 @@ def write_geo_product(
             ds.createDimension("y", ny)
             ds.createDimension("x", nx)
             ds.Conventions = "CF-1.8"
-            ds.title = "Sprtz Terrain GEO product"
+            ds.title = "Spritz Terrain GEO product"
             for key, value in product.provenance.items():
                 setattr(ds, key, str(value))
             for name, values, dims, units, long_name in [
@@ -202,7 +202,7 @@ def write_geo_product(
                 ("longitude", product.grid.longitude, ("y", "x"), "degrees_east", "longitude"),
                 ("surface_altitude", product.elevation_m, ("y", "x"), "m", "surface altitude"),
                 ("land_cover", product.land_cover, ("y", "x"), "1", "source land-cover class"),
-                ("landuse_class", product.landuse_class, ("y", "x"), "1", "Sprtz land-use class"),
+                ("landuse_class", product.landuse_class, ("y", "x"), "1", "Spritz land-use class"),
             ]:
                 dtype = "i4" if name in {"land_cover", "landuse_class"} else "f8"
                 var = ds.createVariable(name, dtype, dims, zlib=True)

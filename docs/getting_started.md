@@ -1,6 +1,6 @@
 # Getting started: from WRF download to visualization
 
-This guide walks through a complete, reproducible Sprtz workflow starting with a WRF 1 km file from the meteo@uniparthenope archive and ending with a publication-ready concentration figure.
+This guide walks through a complete, reproducible Spritz workflow starting with a WRF 1 km file from the meteo@uniparthenope archive and ending with a publication-ready concentration figure.
 
 The guide is intentionally didactic. Each step produces an inspectable file that can be reused by the next step.
 
@@ -11,14 +11,14 @@ The end-to-end path is:
 ```text
 WRF 1 km NetCDF
   -> SpritzWRF extraction
-  -> SpritzMet 100 m local wind field
-  -> Sprtz wildfire/arson scenario
-  -> Gaussian or particle dispersion
+  -> SpritzMet 100 m local wind and precipitation-rate field
+  -> Spritz wildfire/arson scenario
+  -> unified Gaussian or particle dispersion
   -> SpritzPost-style statistics
   -> publishing-quality figure
 ```
 
-Use case 01 demonstrates the SpritzWRF -> SpritzMet meteorological downscaling step. Use case 02 adds a wildfire/arson source and runs Sprtz. The visualization CLI then renders the model concentration output. The offline Terrain example can be run independently with `sprtz-terrain fetch --config examples/highres_terrain_local.json --json`.
+Use case 01 demonstrates the SpritzWRF -> SpritzMet meteorological downscaling step. Use case 02 adds a wildfire/arson source and runs Spritz. The visualization CLI then renders the model concentration output. The offline Terrain example can be run independently with `sprtz-terrain fetch --config examples/highres_terrain_local.json --json`.
 
 ## 1. Create and check the Python environment
 
@@ -53,12 +53,12 @@ sprtz doctor --require-netcdf --require-viz
 Expected result:
 
 ```text
-Sprtz 0.4.4 production diagnostics: OK
+Spritz 0.4.4 production diagnostics: OK
 ```
 
 ## 2. Choose a WRF cycle and build the download URL
 
-Sprtz use cases use the meteo@uniparthenope WRF5 d03 history pattern:
+Spritz use cases use the meteo@uniparthenope WRF5 d03 history pattern:
 
 ```text
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
@@ -70,7 +70,7 @@ For example, the 00 UTC cycle for 2026-05-27 is:
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/2026/05/27/wrf5_d03_20260527Z0000.nc
 ```
 
-To ask Sprtz to print the exact URL without downloading:
+To ask Spritz to print the exact URL without downloading:
 
 ```bash
 python usecases/01_high_resolution_wind_field/run.py \
@@ -113,6 +113,7 @@ Expected NetCDF-CF fields include:
 - `latitude`, `longitude`
 - `eastward_wind`, `northward_wind`
 - `wind_speed`, `wind_from_direction`
+- `precipitation_rate` when WRF precipitation is available, otherwise zeros
 
 To rerun from a WRF file already downloaded:
 
@@ -149,10 +150,10 @@ This does not replace real meteorological data. It is only for checking the inst
 
 ## 5. Build and run a wildfire/arson scenario
 
-Use case 02 creates a Sprtz scenario for a burning place at a known latitude and longitude. It uses the same WRF download mechanism, then generates:
+Use case 02 creates a Spritz scenario for a burning place at a known latitude and longitude. It uses the same WRF download mechanism, then generates:
 
 - a local wind product;
-- a Sprtz scenario configuration;
+- a Spritz scenario configuration;
 - a model output directory containing meteorology, concentration, and postprocessing files.
 
 Example with the particle backend:
@@ -165,9 +166,12 @@ python usecases/02_wildfire_arson_effects/run.py \
   --output-dir output/wildfire_case \
   --center-lat 40.85 \
   --center-lon 14.27 \
-  --temperature-k 1100 \
+  --material plastic \
   --duration-s 3600 \
   --area-m2 2500 \
+  --start 2026-05-27T00:00:00+00:00 \
+  --end 2026-05-27T01:00:00+00:00 \
+  --precipitation-washout \
   --backend particles \
   --interchange netcdf
 ```
@@ -180,11 +184,35 @@ python usecases/02_wildfire_arson_effects/run.py \
   --output-dir output/wildfire_case \
   --center-lat 40.85 \
   --center-lon 14.27 \
-  --temperature-k 1100 \
+  --material paper \
   --duration-s 3600 \
   --area-m2 2500 \
+  --height-agl-m 5 \
   --backend gaussian \
   --interchange netcdf
+```
+
+Use `--material generic`, `--material paper`, or `--material plastic` to choose
+the documented screening material preset. Pass `--height-agl-m` for an
+above-ground source or chimney release height. Add `--firefighters-start`,
+`--firefighters-end`, and `--firefighters-emission-factor` when suppression
+actions should reduce emissions during part of the run.
+
+For multiple simultaneous or staggered fires, pass `--fire-events-json` with a
+JSON list. Each entry can define `latitude`, `longitude`, `height_agl_m`,
+`start_datetime`, `end_datetime`, `material`, `area_m2`, and optional
+temperature or emission overrides:
+
+```bash
+python usecases/02_wildfire_arson_effects/run.py \
+  --allow-synthetic-wrf \
+  --output-dir output/multi_fire \
+  --center-lat 40.85 \
+  --center-lon 14.27 \
+  --fire-events-json '[{"id":"F1","latitude":40.85,"longitude":14.27,"material":"paper","start_datetime":"2026-06-01T00:00:00+00:00","end_datetime":"2026-06-01T03:00:00+00:00"},{"id":"F2","latitude":40.855,"longitude":14.275,"height_agl_m":2.0,"material":"plastic","start_datetime":"2026-06-01T01:00:00+00:00","end_datetime":"2026-06-01T04:00:00+00:00"}]' \
+  --weather-start 2026-06-01T00:00:00+00:00 \
+  --weather-end 2026-06-01T04:00:00+00:00 \
+  --interchange json
 ```
 
 Expected products:
@@ -199,7 +227,7 @@ output/wildfire_case/model/post.json
 
 ## 6. Run the core suite directly from a configuration file
 
-Use case 02 writes a standard Sprtz configuration. You can rerun the suite directly from that file:
+Use case 02 writes a standard Spritz configuration. You can rerun the suite directly from that file:
 
 ```bash
 sprtz validate output/wildfire_case/wildfire_event.json
@@ -214,6 +242,45 @@ sprtz run output/wildfire_case/wildfire_event.json \
   --backend particles \
   --interchange netcdf
 ```
+
+The backend can also be selected in the JSON file:
+
+```json
+{
+  "run": {
+    "backend": "particles"
+  }
+}
+```
+
+For a gridded 3D concentration field, request model-grid output and vertical
+levels in the same `run` block:
+
+```json
+{
+  "run": {
+    "backend": "gaussian",
+    "concentration_output": "grid",
+    "field_z_levels": [0.0, 25.0, 50.0]
+  }
+}
+```
+
+NetCDF-CF output then includes `concentration_field(time, field_z, field_y,
+field_x)` in addition to the receptor table.
+
+To enable precipitation washout in a WRF-driven run:
+
+```json
+{
+  "run": {
+    "precipitation_washout": true,
+    "precipitation_washout_coefficient_s_per_mm_h": 0.00001
+  }
+}
+```
+
+The option uses `precipitation_rate` from the SpritzMet meteorology product.
 
 For MPI execution, use:
 
@@ -233,7 +300,7 @@ Render a concentration scatter plot from the NetCDF-CF output:
 sprtz-plot \
   --input output/wildfire_case/model/concentration.nc \
   --output output/wildfire_case/concentration.png \
-  --title "Sprtz wildfire screening concentration" \
+  --title "Spritz wildfire screening concentration" \
   --dpi 300
 ```
 
@@ -268,7 +335,31 @@ python usecases/03_satellite_ai_evaluation/run.py \
 
 The report includes confusion-matrix counts, accuracy, precision, recall/probability of detection, F1, critical success index, false-alarm ratio, and deterministic logistic calibration diagnostics.
 
-## 9. Recommended directory layout for a real case
+## 9. Run the Acerra waste-to-energy chimney case
+
+Use case 06 builds a 12-hour screening scenario for the waste-to-energy plant in
+Acerra at `40.978473 N, 14.384058 E`, with a 110 m chimney release height and a
+start datetime of `2026-06-01T00:00:00+00:00`.
+
+```bash
+python usecases/06_acerra_waste_to_energy/run.py \
+  --output-dir output/acerra_wte \
+  --interchange netcdf
+```
+
+For configuration review only:
+
+```bash
+python usecases/06_acerra_waste_to_energy/run.py \
+  --output-dir output/acerra_wte \
+  --config-only
+```
+
+The generated `acerra_waste_to_energy.json` uses source-level
+`height_agl_m: 110.0`, weather/event start and end datetimes, hourly output, and
+precipitation washout enabled.
+
+## 10. Recommended directory layout for a real case
 
 A clear case directory helps later audit and publication:
 
@@ -293,20 +384,20 @@ case_YYYYMMDD_hh/
 
 The bundled use cases write to `output/` by default, but operational projects should use case-specific folders like the one above.
 
-## 10. Production checklist
+## 11. Production checklist
 
 Before sharing results, confirm:
 
 1. `sprtz doctor --require-netcdf --require-viz` passes in the execution environment.
 2. The WRF file name, cycle time, and download URL are recorded.
 3. The center latitude/longitude, grid spacing, and grid size are documented.
-4. The generated Sprtz configuration is archived with the outputs.
+4. The generated Spritz configuration is archived with the outputs.
 5. The backend is stated clearly: `gaussian` or `particles`.
 6. The figure was generated from the archived concentration file.
 7. Any satellite mask or AI product is stored with its provenance, threshold, and preprocessing notes.
 8. Scientific/regulatory conclusions are limited to the validation level achieved for the specific case.
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 ### `netCDF4 is required to read WRF NetCDF files`
 

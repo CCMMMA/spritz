@@ -1,27 +1,28 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from sprtz.config import Receptor, SuiteConfig
-from sprtz.core.grid import Grid
+from sprtz.config import SuiteConfig
 from sprtz.exceptions import DataFormatError
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
 from sprtz.io.netcdf_cf import write_cf_concentration
-from sprtz.models.spritz import output_times, read_meteorology, write_csv
+from sprtz.models.spritz import (
+    _firefighters_emission_factor,
+    _grid_receptors,
+    _source_active,
+    concentration_output_mode,
+    field_z_levels,
+    model_receptors,
+    output_times,
+    precipitation_washout_rate,
+    read_meteorology,
+    sample_datetime,
+    write_csv,
+)
 from sprtz.parallel import get_mpi_context
-
-
-def _grid_receptors(config: SuiteConfig) -> tuple[Receptor, ...]:
-    grid = Grid(**asdict(config.grid))
-    return tuple(
-        Receptor(id=f"G{iy}_{ix}", x=float(x), y=float(y), z=0.0)
-        for iy, y in enumerate(grid.y)
-        for ix, x in enumerate(grid.x)
-    )
 
 
 def _wind(meteo: dict[str, Any]) -> tuple[float, float]:
@@ -58,15 +59,22 @@ def simulate_particles(
     sigma_h = float(config.run.get("particle_sigma_h", 250.0))
     sigma_z = float(config.run.get("particle_sigma_z", 80.0))
     receptor_radius = float(config.run.get("particle_receptor_radius", 400.0))
-    receptors = config.receptors or _grid_receptors(config)
-    totals = {rec.id: 0.0 for rec in receptors}
+    washout_rate = precipitation_washout_rate(config, meteo)
+    receptors = model_receptors(config)
+    output_mode = concentration_output_mode(config)
+    field_ids = (
+        {rec.id for rec in _grid_receptors(config, field_z_levels(config))}
+        if output_mode in {"grid", "both"}
+        else set()
+    )
     total_emission = sum(src.emission_rate for src in config.sources) or 1.0
 
     ctx = get_mpi_context(parallel)
     local_sources = [(i, config.sources[i]) for i in ctx.partition(len(config.sources))]
-    local_totals = {rec.id: 0.0 for rec in receptors}
+    local_source_totals: dict[str, dict[str, float]] = {}
 
     for source_index, src in local_sources:
+        source_totals = {rec.id: 0.0 for rec in receptors}
         # Per-source seed keeps results deterministic regardless of MPI size.
         rng = np.random.default_rng(base_seed + source_index * 1000003)
         count = max(1, int(round(n_particles * src.emission_rate / total_emission)))
@@ -79,8 +87,10 @@ def simulate_particles(
             py += rng.uniform(-0.5 * src.width, 0.5 * src.width, count)
         if src.source_type.lower() == "flare":
             pz += max(src.heat_release, 0.0) ** (1.0 / 3.0) * 0.01
-        loss_rate = max(src.decay_rate, 0.0) + max(src.wet_scavenging, 0.0)
-        loss_rate += max(src.deposition_velocity + src.settling_velocity, 0.0) / max(sigma_z * 10.0, 1.0)
+        loss_rate = max(src.decay_rate, 0.0) + max(src.wet_scavenging, 0.0) + washout_rate
+        loss_rate += max(src.deposition_velocity + src.settling_velocity, 0.0) / max(
+            sigma_z * 10.0, 1.0
+        )
         weights = np.exp(-loss_rate * travel)
         particle_mass = src.emission_rate * duration / count
         for rec in receptors:
@@ -89,25 +99,43 @@ def simulate_particles(
             hit_mass = float(np.sum(weights[hits])) * particle_mass
             # Convert hit density to a stable screening concentration proxy.
             volume = max(np.pi * receptor_radius**2 * max(sigma_z, 1.0), 1.0)
-            local_totals[rec.id] += hit_mass / volume
+            source_totals[rec.id] += hit_mass / volume
+        local_source_totals[src.id] = source_totals
 
-    gathered = ctx.allgather(local_totals)
+    source_concentrations = {src.id: {rec.id: 0.0 for rec in receptors} for src in config.sources}
+    gathered = ctx.allgather(local_source_totals)
     for partial in gathered:
-        for rec_id, value in partial.items():
-            totals[rec_id] += float(value)
+        for source_id, values in partial.items():
+            for rec_id, value in values.items():
+                source_concentrations[source_id][rec_id] += float(value)
 
     rows: list[dict[str, float | str]] = []
     for time_value in output_times(config):
+        sample_dt = sample_datetime(config, time_value)
+        firefighter_factor = _firefighters_emission_factor(config, sample_dt)
         for rec in receptors:
+            total = 0.0
+            dry_flux = 0.0
+            wet_flux = 0.0
+            for src in config.sources:
+                if not _source_active(config, src, sample_dt):
+                    continue
+                value = source_concentrations[src.id][rec.id] * firefighter_factor
+                total += value
+                dry_flux += value * max(src.deposition_velocity, 0.0)
+                wet_flux += value * (max(src.wet_scavenging, 0.0) + washout_rate)
             rows.append(
                 {
                     "time": time_value,
+                    **({} if sample_dt is None else {"datetime": sample_dt.isoformat()}),
                     "receptor": rec.id,
+                    "output_kind": "field" if rec.id in field_ids else "receptor",
                     "x": rec.x,
                     "y": rec.y,
-                    "concentration": totals[rec.id],
-                    "dry_flux": totals[rec.id] * sum(max(s.deposition_velocity, 0.0) for s in config.sources),
-                    "wet_flux": totals[rec.id] * sum(max(s.wet_scavenging, 0.0) for s in config.sources),
+                    "z": rec.z,
+                    "concentration": total,
+                    "dry_flux": dry_flux,
+                    "wet_flux": wet_flux,
                 }
             )
     return rows
@@ -118,7 +146,7 @@ def write_particle_output(path: str | Path, rows: list[dict[str, float | str]], 
     if fmt == "netcdf":
         write_cf_concentration(path, rows)
     elif fmt == "legacy":
-        write_legacy_table(path, "Sprtz particle concentration and deposition table", rows)
+        write_legacy_table(path, "Spritz particle concentration and deposition table", rows)
     else:
         write_csv(path, rows)
 

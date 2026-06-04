@@ -1,7 +1,7 @@
 # Terrain Preprocessing
 
-Terrain is the clean-room Sprtz component for preparing terrain elevations,
-land-use classes, and surface parameters on the Sprtz modeling grid.
+Terrain is the clean-room Spritz component for preparing terrain elevations,
+land-use classes, and surface parameters on the Spritz modeling grid.
 
 ## Two Compatible APIs
 
@@ -26,7 +26,7 @@ sprtz-terrain fetch --config examples/highres_terrain_local.json --json
 
 The local example is offline and deterministic. It reads small ASCII fixtures
 under `examples/data/`, aligns DEM and land-cover rasters to the model grid,
-remaps land cover to Sprtz land-use classes, derives surface parameters, and
+remaps land cover to Spritz land-use classes, derives surface parameters, and
 writes a GEO JSON product.
 
 ## Online Providers
@@ -59,7 +59,7 @@ python -m pip install -e .[geo,netcdf]
 
 ## JSON Configuration
 
-Terrain configuration can be embedded in a normal Sprtz run file:
+Terrain configuration can be embedded in a normal Spritz run file:
 
 ```json
 {
@@ -108,12 +108,12 @@ grid metadata so incompatible data is not silently reused.
 ## Scientific Assumptions
 
 DEM, DTM, and DSM are not interchangeable. A DTM is bare-earth terrain; a DSM may
-include buildings or canopy. Sprtz records `dem_source`, `dem_dataset`, and
+include buildings or canopy. Spritz records `dem_source`, `dem_dataset`, and
 `dem_resolution` so users can validate whether the source is appropriate.
 
 Land cover is observed surface class; land use is the model category used for
 surface parameters. ESA WorldCover-style labels are remapped through an explicit
-crosswalk to Sprtz classes. The default parameters are minimal, visible, and
+crosswalk to Spritz classes. The default parameters are minimal, visible, and
 replaceable:
 
 - roughness length;

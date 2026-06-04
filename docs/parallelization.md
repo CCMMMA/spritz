@@ -1,12 +1,12 @@
 # Parallelization schema
 
-Sprtz uses an optional MPI parallelization layer designed for deterministic atmospheric-dispersion workflows on both laptops and HPC clusters. The same code path can run in serial mode, in automatic MPI mode, or in explicit MPI mode without changing the scenario configuration files.
+Spritz uses an optional MPI parallelization layer designed for deterministic atmospheric-dispersion workflows on both laptops and HPC clusters. The same code path can run in serial mode, in automatic MPI mode, or in explicit MPI mode without changing the scenario configuration files. Backend selection can live in JSON `run.backend` or be overridden with `--backend`.
 
 This document describes the production execution schema, how work is partitioned, which files are read and written by each rank, and how to run and validate parallel jobs.
 
 ## Goals
 
-Sprtz parallelization follows five design goals.
+Spritz parallelization follows five design goals.
 
 1. **Serial first**: every model must run without MPI or `mpi4py` installed.
 2. **Optional HPC acceleration**: MPI is enabled only when requested or when `--parallel auto` detects a multi-rank communicator.
@@ -52,7 +52,7 @@ mpiexec -n 4 sprtz run examples/minimal.json \
   --parallel mpi
 ```
 
-Particle backend:
+Particle backend, either by JSON `run.backend: "particles"` or CLI override:
 
 ```bash
 mpiexec -n 4 sprtz run examples/minimal.json \
@@ -72,7 +72,7 @@ src/sprtz/parallel/
 └── mpi.py
 ```
 
-The central object is `MPIContext`. It wraps `MPI.COMM_WORLD` when MPI is active and exposes the same small API when Sprtz is running serially:
+The central object is `MPIContext`. It wraps `MPI.COMM_WORLD` when MPI is active and exposes the same small API when Spritz is running serially:
 
 - `rank`: current rank, or `0` in serial mode.
 - `size`: communicator size, or `1` in serial mode.
@@ -95,7 +95,7 @@ No modeling module imports `mpi4py` directly. This keeps non-MPI installations i
 
 ## Work partitioning
 
-Sprtz currently uses static balanced partitioning with contiguous blocks. For `n_items` units of work, `size` MPI ranks, and one `rank`, the partition is:
+Spritz currently uses static balanced partitioning with contiguous blocks. For `n_items` units of work, `size` MPI ranks, and one `rank`, the partition is:
 
 ```python
 base, remainder = divmod(n_items, size)
@@ -264,7 +264,7 @@ Rank 0 only writing is deliberate. It avoids multi-writer NetCDF corruption and 
 
 ## NetCDF-CF interoperability
 
-Sprtz prefers NetCDF-CF for module interoperability. In a parallel workflow, NetCDF-CF is used as a shared exchange format rather than a parallel write target:
+Spritz prefers NetCDF-CF for module interoperability. In a parallel workflow, NetCDF-CF is used as a shared exchange format rather than a parallel write target:
 
 1. SpritzWRF converts/extracts WRF-derived meteorology.
 2. SpritzMet interpolates or regularizes meteorology onto the modeling grid.
@@ -300,7 +300,7 @@ print(MPI.COMM_WORLD.Get_rank(), MPI.COMM_WORLD.Get_size())
 PY
 ```
 
-Then run Sprtz diagnostics:
+Then run Spritz diagnostics:
 
 ```bash
 sprtz doctor
@@ -360,7 +360,9 @@ For the Gaussian backend, the approximate operation count is:
 O(number_of_receptors × number_of_sources)
 ```
 
-Since receptors are partitioned, scaling is best when the receptor count is large relative to the number of MPI ranks.
+Since receptors are partitioned, scaling is best when the receptor count is
+large relative to the number of MPI ranks. For gridded 3D field output, the
+effective receptor count is `nx × ny × number_of_field_z_levels`.
 
 For the particle backend, the approximate operation count is:
 
@@ -368,7 +370,11 @@ For the particle backend, the approximate operation count is:
 O(number_of_sources × number_of_particles × number_of_receptors)
 ```
 
-Since sources are partitioned, scaling is best when there are multiple sources with similar emission-weighted particle counts. For a single dominant source, the current source-partitioning schema provides limited speedup.
+Since sources are partitioned, scaling is best when there are multiple sources
+with similar emission-weighted particle counts. Gridded 3D field output
+increases the receptor-distance checks by `nx × ny × number_of_field_z_levels`.
+For a single dominant source, the current source-partitioning schema provides
+limited speedup.
 
 ## Practical recommendations
 
@@ -378,6 +384,8 @@ Use these rules of thumb:
 - Use `auto` for didactic scripts and examples that must work on laptops and clusters.
 - Use `mpi` in production batch jobs when MPI startup failure should stop the workflow.
 - Prefer NetCDF-CF for workflow interoperability.
+- Use JSON `concentration_output: "grid"` only at the horizontal and vertical
+  resolution needed for the analysis.
 - Keep all model inputs on a filesystem visible to every MPI rank.
 - Write outputs to a job-specific output directory.
 - Compare a small serial and MPI smoke test before launching large jobs.

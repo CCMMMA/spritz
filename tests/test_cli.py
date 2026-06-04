@@ -1,4 +1,5 @@
-from sprtz.cli import main
+from sprtz.cli import main, spritz_main, spritzmet_main
+from sprtz.io.jsonio import read_json, write_json
 
 
 def test_validate_cli(capsys):
@@ -43,3 +44,41 @@ def test_run_cli_output_interval(tmp_path):
     )
     rows = list(__import__("csv").DictReader((tmp_path / "concentration.csv").open()))
     assert len(rows) == 12
+
+
+def test_run_cli_uses_json_backend(tmp_path, capsys):
+    data = read_json("examples/minimal.json")
+    data["run"]["backend"] = "particles"
+    data["run"]["particles"] = 100
+    config_path = tmp_path / "particles.json"
+    write_json(config_path, data)
+    assert main(["run", str(config_path), "--output-dir", str(tmp_path), "--interchange", "json"]) == 0
+    assert "backend: particles" in capsys.readouterr().out
+
+
+def test_spritz_command_uses_json_backend(tmp_path):
+    data = read_json("examples/minimal.json")
+    data["run"]["backend"] = "particles"
+    data["run"]["particles"] = 100
+    config_path = tmp_path / "particles.json"
+    meteo_path = tmp_path / "meteo.json"
+    concentration_path = tmp_path / "concentration.csv"
+    write_json(config_path, data)
+    assert spritzmet_main(["--config", str(config_path), "--output", str(meteo_path), "--format", "json"]) == 0
+    assert (
+        spritz_main(
+            [
+                "--config",
+                str(config_path),
+                "--meteo",
+                str(meteo_path),
+                "--output",
+                str(concentration_path),
+                "--format",
+                "csv",
+            ]
+        )
+        == 0
+    )
+    rows = list(__import__("csv").DictReader(concentration_path.open()))
+    assert rows[0]["output_kind"] == "receptor"

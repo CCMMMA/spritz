@@ -2,10 +2,11 @@
 
 For the full parallelization schema, work partitioning rules, I/O contract, and HPC batch examples, see [`parallelization.md`](parallelization.md).
 
-Sprtz supports optional MPI parallelism through `mpi4py` for the concentration-producing backends:
+Spritz supports optional MPI parallelism through `mpi4py` for the unified concentration-producing backends:
 
 - `sprtz.models.spritz`, the Gaussian Spritz screening backend;
-- `sprtz.models.particles`, the particle-based Sprtz alternative.
+- `sprtz.models.particles`, the particle-based Spritz backend selected by
+  JSON `run.backend: "particles"` or CLI `--backend particles`.
 
 Serial execution remains the default and requires no MPI libraries.  MPI support is activated only when the package is installed with the `mpi` extra and commands are launched with an MPI runtime.
 
@@ -41,8 +42,10 @@ Direct model commands also accept the same flag:
 
 ```bash
 mpiexec -n 4 spritz --config examples/minimal.json --meteo output/meteo.nc --output output/concentration.nc --format netcdf --parallel mpi
-mpiexec -n 4 sprtz-particles --config examples/minimal.json --meteo output/meteo.nc --output output/particle_concentration.nc --format netcdf --parallel mpi
+mpiexec -n 4 spritz --config examples/minimal.json --meteo output/meteo.nc --output output/particle_concentration.nc --format netcdf --backend particles --parallel mpi
 ```
+
+`sprtz-particles` remains a compatibility alias for older particle-only scripts.
 
 ## Parallelization strategy
 
@@ -54,7 +57,12 @@ In end-to-end workflows, rank 0 produces shared SpritzMet and SpritzPost files. 
 
 ## File semantics
 
-NetCDF-CF remains the preferred interchange format. MPI runs write exactly one concentration output file from rank 0, avoiding multi-writer NetCDF corruption. Future versions may add parallel NetCDF output for very large domains, but the current implementation prioritizes deterministic, portable HPC behavior.
+NetCDF-CF remains the preferred interchange format. MPI runs write exactly one
+concentration output file from rank 0, avoiding multi-writer NetCDF corruption.
+When grid output is requested, that one file contains both receptor-table
+variables and `concentration_field(time, field_z, field_y, field_x)`. Future
+versions may add parallel NetCDF output for very large domains, but the current
+implementation prioritizes deterministic, portable HPC behavior.
 
 ## Operational notes
 

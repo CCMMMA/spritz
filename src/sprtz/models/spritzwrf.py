@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-"""SpritzWRF: clean-room WRF extraction utilities for Sprtz.
+"""SpritzWRF: clean-room WRF extraction utilities for Spritz.
 
 SpritzWRF provides a typed, documented Python API that inspects WRF files and
-extracts wind fields into the common Sprtz interoperability schema used by
+extracts wind and precipitation fields into the common Spritz interoperability schema used by
 SpritzMet and downstream dispersion models.
 """
 
@@ -24,7 +24,7 @@ METEO_UNIPARTHENOPE_BASE = "https://data.meteo.uniparthenope.it/files/wrf5/d03/h
 
 @dataclass(frozen=True)
 class WRFWindField:
-    """Near-surface wind field extracted from WRF or WRF-like NetCDF."""
+    """Near-surface wind and precipitation field extracted from WRF or WRF-like NetCDF."""
 
     latitude: np.ndarray
     longitude: np.ndarray
@@ -33,6 +33,7 @@ class WRFWindField:
     source_path: Path
     time_index: int = 0
     metadata: dict[str, Any] | None = None
+    precipitation_rate: np.ndarray | None = None
 
     @property
     def wind_speed(self) -> np.ndarray:
@@ -111,6 +112,37 @@ def _select_2d(arr: np.ndarray, time_index: int) -> np.ndarray:
     return arr
 
 
+def _select_precipitation_rate(ds: Any, time_index: int) -> np.ndarray | None:
+    """Return a WRF precipitation-rate proxy in mm h-1 when variables exist."""
+
+    def read_raw(name: str) -> np.ndarray | None:
+        if name not in ds.variables:
+            return None
+        return np.asarray(ds.variables[name][:], dtype=float)
+
+    for name in ("RAINRATE", "PRECIP_RATE", "precipitation_rate", "precip_rate"):
+        raw = read_raw(name)
+        if raw is not None:
+            return _select_2d(raw, time_index)
+
+    accum = None
+    for name in ("RAINC", "RAINNC", "RAINSH"):
+        raw = read_raw(name)
+        if raw is not None:
+            accum = raw if accum is None else accum + raw
+    if accum is None:
+        return None
+    arr = np.asarray(accum, dtype=float)
+    if arr.ndim < 3:
+        return np.maximum(_select_2d(arr, time_index), 0.0)
+    index = min(max(time_index, 0), arr.shape[0] - 1)
+    current = _select_2d(arr, index)
+    if index == 0:
+        return np.maximum(current, 0.0)
+    previous = _select_2d(arr, index - 1)
+    return np.maximum(current - previous, 0.0)
+
+
 def load_near_surface_wind(path: str | Path, *, time_index: int = 0) -> WRFWindField:
     """Extract near-surface wind from WRF/WRF-like NetCDF into a SpritzWRF object.
 
@@ -146,8 +178,18 @@ def load_near_surface_wind(path: str | Path, *, time_index: int = 0) -> WRFWindF
         else:
             u = read2d(("eastward_wind", "u", "U"))
             v = read2d(("northward_wind", "v", "V"))
+        precipitation_rate = _select_precipitation_rate(ds, time_index)
         attrs = {name: str(getattr(ds, name)) for name in ds.ncattrs()}
-    return WRFWindField(lat, lon, u, v, p, time_index=time_index, metadata=attrs)
+    return WRFWindField(
+        lat,
+        lon,
+        u,
+        v,
+        p,
+        time_index=time_index,
+        metadata=attrs,
+        precipitation_rate=precipitation_rate,
+    )
 
 
 def describe_wrf_input(path: str | Path) -> dict[str, Any]:

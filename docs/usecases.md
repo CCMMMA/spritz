@@ -1,13 +1,13 @@
 # Operational use cases
 
-The root-level `usecases/` directory contains three documented operational templates.  They are meant to be copied into project-specific case folders and version-controlled with event metadata.
+The root-level `usecases/` directory contains six documented operational templates.  They are meant to be copied into project-specific case folders and version-controlled with event metadata.
 
-## 01 - High-resolution wind field interpolation
+## 01 - High-resolution wind and precipitation interpolation
 
 This use case implements the meteorological preprocessing chain:
 
 ```text
-meteo@uniparthenope WRF5 d03 or local WRF NetCDF -> SpritzWRF -> SpritzMet -> 100 m NetCDF-CF wind field
+meteo@uniparthenope WRF5 d03 or local WRF NetCDF -> SpritzWRF -> SpritzMet -> 100 m NetCDF-CF wind and precipitation-rate field
 ```
 
 It supports direct downloads from:
@@ -20,16 +20,16 @@ The default grid is 101 x 101 points at 100 m spacing, centered on the requested
 
 ## 02 - Arson or wildfire effects
 
-This use case consumes the same WRF/SpritzWRF/SpritzMet path as use case 01, then builds a Sprtz scenario from event location, burning temperature, start time, duration, area, and emission assumptions.  It can run the Gaussian or particle backend and writes the ordinary Sprtz model outputs.
+This use case consumes the same WRF/SpritzWRF/SpritzMet path as use case 01, then builds a Spritz scenario from event location, burning material, source height above ground, start/end datetimes, area, firefighter-action windows, and emission assumptions. It accepts `generic`, `paper`, and `plastic` material presets and can expand a JSON list of multiple fire events into multiple Spritz source records. It can run the configured Gaussian or particle backend and writes the ordinary Spritz model outputs.
 
 ## 03 - Satellite and AI-supported model evaluation
 
-This use case evaluates Sprtz concentration/deposition output against a satellite-derived mask and reports confusion-matrix metrics, CSI/threat score, false-alarm ratio, probability of detection, and deterministic AI-style calibration output.
+This use case evaluates Spritz concentration/deposition output against a satellite-derived mask and reports confusion-matrix metrics, CSI/threat score, false-alarm ratio, probability of detection, and deterministic AI-style calibration output.
 
 ## 04 - Production incident catalog
 
 This use case reads a semicolon-delimited incident catalog and builds validated
-Sprtz configurations with event metadata, local receptors, WGS84 receptor
+Spritz configurations with event metadata, local receptors, WGS84 receptor
 coordinates, and optional geographic concentration maps. The bundled rows cover
 the supplied Acerra `2021_44` incident on 30/07/2021 at 14:00 for 3 hours and
 the San Marcellino `2023_14` incident on 14/07/2023 at 15:00 for 3 hours.
@@ -45,6 +45,16 @@ sailing: current UTC day at Z00, 24 hour outlook, bounding box
 resolution, and 10 minute temporal resolution. The bundled implementation is deterministic and
 offline so downstream race-planning tooling can validate the full
 space-height-time schema before authoritative forecast data are connected.
+
+## 06 - Acerra waste-to-energy chimney screening
+
+This use case creates a 12-hour point-source chimney scenario for the
+waste-to-energy plant in Acerra, starting on 2026-06-01. The source location is
+`40.978473 N, 14.384058 E`, the chimney release height is 110 m above local
+ground level, hourly outputs are enabled, and precipitation washout is enabled
+in the JSON configuration. The scenario uses transparent placeholder emissions
+and stack parameters for workflow testing; operational interpretation requires
+plant-specific data and validation.
 
 ## Documentation standard
 

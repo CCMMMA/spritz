@@ -173,7 +173,7 @@ LOGGER = logging.getLogger(__name__)
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Evaluate wildfire/arson Sprtz output with satellite masks and AI calibration")
+    parser = argparse.ArgumentParser(description="Evaluate wildfire/arson Spritz output with satellite masks and AI calibration")
     parser.add_argument("--concentration", required=True)
     parser.add_argument("--satellite-mask", required=True)
     parser.add_argument("--output", required=True)

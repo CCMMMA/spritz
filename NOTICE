@@ -1,6 +1,6 @@
-Sprtz is an independent clean-room Python implementation inspired by public
+Spritz is an independent clean-room Python implementation inspired by public
 atmospheric puff-modeling workflows and file roles. It does not contain,
 translate, embed, or redistribute proprietary Fortran source code, executables,
 manuals, sample data, or parameter tables from third-party modeling suites.
-Sprtz, SpritzWRF, SpritzMet, Terrain, Spritz, and SpritzPost name the
+Spritz, SpritzWRF, SpritzMet, Terrain, Spritz, and SpritzPost name the
 clean-room components in this project.

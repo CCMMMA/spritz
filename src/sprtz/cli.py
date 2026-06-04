@@ -6,9 +6,9 @@ import logging
 from pathlib import Path
 from typing import Sequence
 
-from .config import from_mapping, load_config
+from .config import SuiteConfig, configured_backend, from_mapping, load_config
 from .doctor import format_report, run_diagnostics
-from .exceptions import SprtzError
+from .exceptions import SpritzError
 from .logging import configure_logging
 from .models import ctgproc, makegeo, particles, spritz, spritzmet, spritzpost, spritzwrf
 from .models import terrain, visualization
@@ -17,6 +17,7 @@ from .terrain import acquisition as terrain_acquisition
 from .workflow import run_workflow
 
 LOGGER = logging.getLogger(__name__)
+_BACKEND_CHOICES = ["gaussian", "gauss", "particles", "particle"]
 
 
 def _with_output_interval(config_path: str | Path, output_interval: float | None):
@@ -35,10 +36,26 @@ def _config_parser(description: str) -> argparse.ArgumentParser:
     return parser
 
 
+def _run_dispersion(
+    config: SuiteConfig,
+    meteo_path: str | Path,
+    output_path: str | Path,
+    output_format: str,
+    *,
+    backend: str | None = None,
+    seed: int | None = None,
+    parallel: str = "serial",
+) -> list[dict[str, float | str]]:
+    model_backend = configured_backend(config.run, backend)
+    if model_backend == "particles":
+        return particles.run(config, meteo_path, output_path, output_format, seed, parallel=parallel)
+    return spritz.run(config, meteo_path, output_path, output_format, parallel=parallel)
+
+
 def _guard(fn, argv: Sequence[str] | None = None) -> int:
     try:
         return fn(argv)
-    except SprtzError as exc:
+    except SpritzError as exc:
         if not logging.getLogger().handlers:
             configure_logging(False)
         LOGGER.error("%s", exc)
@@ -60,19 +77,23 @@ def spritzmet_main(argv: Sequence[str] | None = None) -> int:
 
 def spritz_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = _config_parser("Run the pure Python Spritz screening kernel")
+        parser = _config_parser("Run the unified pure Python Spritz concentration kernel")
         parser.add_argument("--meteo", required=True)
         parser.add_argument("--output", required=True)
         parser.add_argument("--format", default="auto", choices=["auto", "csv", "legacy", "netcdf"])
+        parser.add_argument("--backend", choices=_BACKEND_CHOICES, default=None, help="override run.backend")
+        parser.add_argument("--seed", type=int, default=None, help="particle backend seed override")
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"], help="parallel execution mode")
         parser.add_argument("--output-interval", type=float, default=None, help="optional concentration output interval in seconds")
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        spritz.run(
+        _run_dispersion(
             _with_output_interval(args.config, args.output_interval),
             args.meteo,
             args.output,
             args.format,
+            backend=args.backend,
+            seed=args.seed,
             parallel=args.parallel,
         )
         return 0
@@ -90,7 +111,15 @@ def sprtz_particles_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"], help="parallel execution mode")
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        particles.run(load_config(args.config), args.meteo, args.output, args.format, args.seed, parallel=args.parallel)
+        _run_dispersion(
+            load_config(args.config),
+            args.meteo,
+            args.output,
+            args.format,
+            backend="particles",
+            seed=args.seed,
+            parallel=args.parallel,
+        )
         return 0
 
     return _guard(run, argv)
@@ -195,12 +224,12 @@ def _provider_spec(value: str, *, kind: str) -> dict[str, object]:
         return {"source": "copernicus-dem", "resolution": "30m"}
     if kind == "landuse" and lowered in {"esa-worldcover-2021", "esa-worldcover", "worldcover"}:
         return {"source": "esa-worldcover", "year": 2021}
-    raise SprtzError(f"unsupported {kind} provider or missing local path: {value}")
+    raise SpritzError(f"unsupported {kind} provider or missing local path: {value}")
 
 
 def sprtz_terrain_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = argparse.ArgumentParser(description="Sprtz terrain acquisition and GEO generation")
+        parser = argparse.ArgumentParser(description="Spritz terrain acquisition and GEO generation")
         sub = parser.add_subparsers(dest="command", required=True)
         fetch = sub.add_parser("fetch", help="build a terrain/GEO product from local or online providers")
         fetch.add_argument("--config", default=None, help="JSON configuration with domain and terrain sections")
@@ -232,7 +261,7 @@ def sprtz_terrain_main(argv: Sequence[str] | None = None) -> int:
                 )
             else:
                 if args.center_lat is None or args.center_lon is None or args.output is None:
-                    raise SprtzError("--center-lat, --center-lon, and --output are required without --config")
+                    raise SpritzError("--center-lat, --center-lon, and --output are required without --config")
                 config = {
                     "domain": {
                         "center_lat": args.center_lat,
@@ -326,13 +355,13 @@ def plot_main(argv: Sequence[str] | None = None) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
-        parser = argparse.ArgumentParser(prog="sprtz", description="Pure Python Sprtz toolkit")
+        parser = argparse.ArgumentParser(prog="sprtz", description="Pure Python Spritz toolkit")
         parser.add_argument("--verbose", action="store_true", help="enable debug logging")
         sub = parser.add_subparsers(dest="command", required=True)
         workflow = sub.add_parser("run", help="run SpritzMet -> Spritz/particles -> SpritzPost workflow")
         workflow.add_argument("config")
         workflow.add_argument("--output-dir", default="output")
-        workflow.add_argument("--backend", choices=["gaussian", "particles"], default="gaussian")
+        workflow.add_argument("--backend", choices=_BACKEND_CHOICES, default=None, help="override run.backend")
         workflow.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
         workflow.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial")
         workflow.add_argument("--auto-terrain", action="store_true", help="run configured terrain acquisition before meteorology")

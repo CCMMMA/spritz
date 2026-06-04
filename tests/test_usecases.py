@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from sprtz.io.jsonio import write_json
+from sprtz.io.netcdf_cf import available as netcdf_available
 from sprtz.models import spritzwrf
 
 USECASES = Path(__file__).resolve().parents[1] / "usecases"
@@ -24,7 +25,15 @@ from sailing_forecast import (  # noqa: E402
     build_sailing_forecast,
     parse_bbox,
 )
-from wildfire import build_wildfire_config, run_wildfire_event  # noqa: E402
+from wildfire import (  # noqa: E402
+    _load_fire_events,
+    build_wildfire_config,
+    run_wildfire_event,
+)
+from acerra_waste_to_energy import (  # noqa: E402
+    ACERRA_STACK_HEIGHT_M,
+    build_acerra_config,
+)
 
 
 def test_high_resolution_wind_json_synthetic(tmp_path: Path) -> None:
@@ -60,6 +69,62 @@ def test_build_wildfire_config(tmp_path: Path) -> None:
     assert len(config["receptors"]) > 0
 
 
+def test_build_wildfire_config_supports_multi_fire_materials_and_windows(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "multi_fire.json"
+    config = build_wildfire_config(
+        cfg_path,
+        center_lat=40.85,
+        center_lon=14.27,
+        burning_start="2026-06-01T00:00:00+00:00",
+        burning_duration_s=3600.0,
+        fire_events=[
+            {
+                "id": "PAPER_FIRE",
+                "latitude": 40.85,
+                "longitude": 14.27,
+                "height_agl_m": 0.0,
+                "start_datetime": "2026-06-01T00:00:00+00:00",
+                "end_datetime": "2026-06-01T01:00:00+00:00",
+                "material": "paper",
+                "area_m2": 100.0,
+            },
+            {
+                "id": "PLASTIC_FIRE",
+                "latitude": 40.851,
+                "longitude": 14.271,
+                "height_agl_m": 2.0,
+                "start_datetime": "2026-06-01T00:30:00+00:00",
+                "end_datetime": "2026-06-01T02:00:00+00:00",
+                "material": "plastic",
+                "area_m2": 200.0,
+            },
+        ],
+        weather_start="2026-06-01T00:00:00+00:00",
+        weather_end="2026-06-01T02:00:00+00:00",
+        firefighters_start="2026-06-01T01:00:00+00:00",
+        firefighters_end="2026-06-01T02:00:00+00:00",
+        firefighters_emission_factor=0.4,
+        precipitation_washout=True,
+    )
+    assert cfg_path.exists()
+    assert len(config["sources"]) == 2
+    assert {source["material"] for source in config["sources"]} == {"paper", "plastic"}
+    assert config["sources"][1]["stack_height"] == 2.0
+    assert config["run"]["firefighters_emission_factor"] == 0.4
+    assert config["run"]["precipitation_washout"] is True
+
+
+def test_wildfire_cli_fire_events_json_accepts_inline_and_file(tmp_path: Path) -> None:
+    inline = '[{"id":"F1","latitude":40.85,"longitude":14.27,"material":"paper"}]'
+    from_inline = _load_fire_events(inline)
+    assert from_inline is not None
+    assert from_inline[0]["material"] == "paper"
+    path = tmp_path / "events.json"
+    path.write_text(inline, encoding="utf-8")
+    from_file = _load_fire_events(str(path))
+    assert from_file == from_inline
+
+
 def test_run_wildfire_event_json_synthetic(tmp_path: Path) -> None:
     result = run_wildfire_event(
         tmp_path / "case",
@@ -74,6 +139,18 @@ def test_run_wildfire_event_json_synthetic(tmp_path: Path) -> None:
     )
     assert result.config_path.exists()
     assert Path(result.workflow["concentration"]).exists()
+
+
+def test_acerra_waste_to_energy_config(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "acerra.json"
+    config = build_acerra_config(cfg_path)
+    assert cfg_path.exists()
+    assert config["sources"][0]["latitude"] == 40.978473
+    assert config["sources"][0]["longitude"] == 14.384058
+    assert config["sources"][0]["stack_height"] == ACERRA_STACK_HEIGHT_M
+    assert config["run"]["event_start_datetime"] == "2026-06-01T00:00:00+00:00"
+    assert config["run"]["event_end_datetime"] == "2026-06-01T12:00:00+00:00"
+    assert config["run"]["output_interval_s"] == 3600.0
 
 
 def test_evaluate_wildfire_event(tmp_path: Path) -> None:
@@ -101,6 +178,31 @@ def test_meteo_uniparthenope_url_builder() -> None:
     assert spritzwrf.meteo_uniparthenope_wrf_url("2026-05-27", "18").endswith(
         "wrf5_d03_20260527Z1800.nc"
     )
+
+
+def test_wrf_precipitation_rate_extraction(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wrf_precip.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("Time", 2)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        for name, values in [
+            ("XLAT", np.full((2, 2, 2), 40.0)),
+            ("XLONG", np.full((2, 2, 2), 14.0)),
+            ("U10", np.full((2, 2, 2), 3.0)),
+            ("V10", np.zeros((2, 2, 2))),
+            ("RAINC", np.asarray([np.zeros((2, 2)), np.full((2, 2), 0.2)])),
+            ("RAINNC", np.asarray([np.ones((2, 2)), np.full((2, 2), 1.7)])),
+        ]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+    wrf = spritzwrf.load_near_surface_wind(path, time_index=1)
+    assert wrf.precipitation_rate is not None
+    np.testing.assert_allclose(wrf.precipitation_rate, np.full((2, 2), 0.9))
 
 
 def test_resolve_wrf_input_prefers_local_path(tmp_path: Path) -> None:

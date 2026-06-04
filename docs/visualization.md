@@ -1,6 +1,6 @@
 # Publishing-quality visualization
 
-`sprtz.models.visualization` provides figure generation for suite outputs. The production scatter plot supports local x/y or WGS84 longitude/latitude coordinates, labelled axes, colorbars, high-DPI output, CSV/JSON/NetCDF-CF concentration inputs, optional local raster basemaps, and explicit opt-in web tile basemaps.
+`sprtz.models.visualization` provides figure generation for suite outputs. The production scatter plot supports local x/y or WGS84 longitude/latitude coordinates, labelled axes, colorbars, high-DPI output, CSV/JSON/NetCDF-CF concentration inputs, optional local raster basemaps, and explicit opt-in web tile basemaps. For NetCDF files that also contain `concentration_field(time, field_z, field_y, field_x)`, the current plotter reads the receptor-table view.
 
 Install visualization dependencies:
 

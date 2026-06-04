@@ -1,4 +1,4 @@
-"""Optional MPI helpers for Sprtz.
+"""Optional MPI helpers for Spritz.
 
 The public helpers in this package are deliberately small and dependency-light:
 serial execution is always available, while MPI execution is enabled only when

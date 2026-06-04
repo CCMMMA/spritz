@@ -1,6 +1,6 @@
-# Sprtz didactic use cases
+# Spritz didactic use cases
 
-This folder contains executable, step-by-step tutorials. They are intentionally **outside** the `src/sprtz` package and are not installed as suite modules. Each use case imports the production Sprtz APIs, but the scenario logic remains here so users can read, copy, adapt, and teach from it without changing the core suite.
+This folder contains executable, step-by-step tutorials. They are intentionally **outside** the `src/sprtz` package and are not installed as suite modules. Each use case imports the production Spritz APIs, but the scenario logic remains here so users can read, copy, adapt, and teach from it without changing the core suite.
 
 ## Prerequisites
 
@@ -16,10 +16,11 @@ For lightweight tests or classroom demonstrations without WRF data, each relevan
 ## Use-case sequence
 
 1. `01_high_resolution_wind_field` — download or read WRF 1 km data, extract near-surface wind with SpritzWRF, and downscale it to 100 m with SpritzMet.
-2. `02_wildfire_arson_effects` — build an arson/wildfire source scenario using the WRF/SpritzMet wind field and run Sprtz dispersion.
+2. `02_wildfire_arson_effects` — build single- or multi-fire arson/wildfire source scenarios using WRF/SpritzMet wind, material presets, source heights, time windows, firefighter actions, and Spritz dispersion.
 3. `03_satellite_ai_evaluation` — compare model output with a satellite-derived mask and compute deterministic skill metrics plus a lightweight AI calibration diagnostic.
 4. `04_production_incidents` — build catalog-driven production-style incident cases with receptor latitude/longitude and geographic maps.
 5. `05_sailing_wind_forecast` — build a high-resolution space-height-time wind forecast product for professional sailing race planning.
+6. `06_acerra_waste_to_energy` — run a 12-hour Acerra waste-to-energy chimney screening case starting on 2026-06-01 with a 110 m release height.
 
 Run the scripts directly:
 
@@ -29,6 +30,7 @@ python usecases/02_wildfire_arson_effects/run.py --help
 python usecases/03_satellite_ai_evaluation/run.py --help
 python usecases/04_production_incidents/run.py --help
 python usecases/05_sailing_wind_forecast/run.py --help
+python usecases/06_acerra_waste_to_energy/run.py --help
 ```
 
 ## Repository boundary

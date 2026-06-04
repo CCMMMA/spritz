@@ -49,7 +49,7 @@
 
   <rect x="790" y="725" width="360" height="78" class="step"/>
   <text x="970" y="757" text-anchor="middle" class="text">Land-cover to land-use</text>
-  <text x="970" y="783" text-anchor="middle" class="small">Sprtz classes and surface parameters</text>
+  <text x="970" y="783" text-anchor="middle" class="small">Spritz classes and surface parameters</text>
   <rect x="430" y="845" width="400" height="78" class="output"/>
   <text x="630" y="877" text-anchor="middle" class="text">GEO / terrain NetCDF-CF</text>
   <text x="630" y="903" text-anchor="middle" class="small">aligned arrays and provenance</text>

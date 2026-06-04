@@ -16,7 +16,7 @@ class ESAWorldCoverProvider:
     """ESA WorldCover land-cover provider facade.
 
     WorldCover classes are land cover, not dispersion-ready land use. The
-    acquisition pipeline remaps them later to Sprtz internal land-use classes and
+    acquisition pipeline remaps them later to Spritz internal land-use classes and
     surface parameters.
     """
 
@@ -38,7 +38,7 @@ class ESAWorldCoverProvider:
         if not self.stac_url:
             raise TerrainProviderError(
                 "ESA WorldCover online acquisition needs a configured catalog/STAC/COG endpoint; "
-                "no network catalog or credentials are bundled with Sprtz"
+                "no network catalog or credentials are bundled with Spritz"
             )
         raise TerrainProviderError(
             f"ESA WorldCover STAC access is configured for {self.stac_url}, but live downloads "

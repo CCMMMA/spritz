@@ -1,6 +1,6 @@
 # Input, output, and configuration compatibility
 
-The suite has one configuration model shared by SpritzWRF, CTGPROC, MakeGeo, SpritzMet, Spritz, the particle alternative, SpritzPost, and visualization tools.
+The suite has one configuration model shared by SpritzWRF, CTGPROC, MakeGeo, SpritzMet, unified Spritz Gaussian/particle dispersion, SpritzPost, and visualization tools.
 
 ## Legacy Suite Files
 
@@ -18,13 +18,23 @@ This is not a byte-for-byte parser for every historical Fortran control record. 
 
 New module-to-module exchange prefers NetCDF-CF:
 
-- SpritzMet writes `meteo.nc` with `eastward_wind`, `northward_wind`, `air_temperature`, and `atmosphere_boundary_layer_thickness`.
-- Spritz and `sprtz-particles` read `meteo.nc` and write `concentration.nc`.
+- SpritzMet writes `meteo.nc` with `eastward_wind`, `northward_wind`, `air_temperature`, `atmosphere_boundary_layer_thickness`, and `precipitation_rate`.
+- Spritz reads `meteo.nc` and writes `concentration.nc`; JSON `run.backend`
+  or CLI `--backend` selects `gaussian`/`gauss` or `particles`.
 - SpritzPost and visualization read NetCDF concentration files directly.
 - Concentration outputs may contain multiple model output times when
   `run.output_interval_s` or `sprtz run --output-interval` is supplied. This
   output cadence is independent from the meteorological input cadence; the
   default remains one legacy-compatible output at `time=0`.
+- Concentration NetCDF files preserve the receptor table in
+  `concentration(time, receptor)`, `dry_flux(time, receptor)`, and
+  `wet_flux(time, receptor)`. When weather datetimes are configured, the file
+  also contains `time_datetime(time)` with ISO-8601 output datetimes. When field
+  rows form a complete grid, the same
+  file also contains `concentration_field(time, field_z, field_y, field_x)`
+  plus gridded dry and wet deposition flux fields. Use JSON
+  `run.concentration_output: "grid"` and `run.field_z_levels` to request a
+  model-grid 3D field when explicit receptors are also present.
 
 When the optional `netCDF4` dependency is not installed, `.nc` writes fall back to a deterministic CF-shaped JSON payload so the core package remains usable in minimal CI environments. Install `.[netcdf]` for true NetCDF files.
 
@@ -40,7 +50,7 @@ SpritzWRF can download and read WRF5 d03 history files from the meteo@uniparthen
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
 ```
 
-The downloader stores files locally and the SpritzWRF reader accepts common WRF near-surface wind variables (`U10`/`V10`, `WSPD10`/`WDIR10`) and CF-like wind names.  SpritzMet converts those fields into the NetCDF-CF local product used by the rest of Sprtz.
+The downloader stores files locally and the SpritzWRF reader accepts common WRF near-surface wind variables (`U10`/`V10`, `WSPD10`/`WDIR10`) and CF-like wind names.  It also extracts precipitation from common rate variables (`RAINRATE`, `PRECIP_RATE`, `precipitation_rate`, `precip_rate`) or accumulated WRF rain variables (`RAINC`, `RAINNC`, `RAINSH`) when present.  SpritzMet converts those fields into the NetCDF-CF local product used by the rest of Spritz.
 
 
 ## Terrain Preprocessing

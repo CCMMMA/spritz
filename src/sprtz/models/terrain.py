@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-"""Terrain: clean-room terrain extraction and interpolation for Sprtz.
+"""Terrain: clean-room terrain extraction and interpolation for Spritz.
 
 Terrain reads terrain rasters, interpolates them to a local modeling grid,
 assigns terrain heights to model cells/receptors, and writes a NetCDF-CF terrain
-product for SpritzMet, MakeGeo, and Sprtz dispersion workflows.
+product for SpritzMet, MakeGeo, and Spritz dispersion workflows.
 """
 
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ from sprtz.models.spritzmet import local_grid_latlon
 
 @dataclass(frozen=True)
 class TerrainProduct:
-    """Terrain on a Sprtz local grid."""
+    """Terrain on a Spritz local grid."""
 
     x: np.ndarray
     y: np.ndarray
@@ -113,7 +113,7 @@ def terrain_to_local_grid(
     source_dy_m: float | None = None,
     source: str = "in-memory terrain",
 ) -> TerrainProduct:
-    """Interpolate a terrain raster to a Sprtz local modeling grid."""
+    """Interpolate a terrain raster to a Spritz local modeling grid."""
     if nx < 2 or ny < 2:
         raise ValueError("nx and ny must be at least 2")
     if dx_m <= 0 or dy_m <= 0:
@@ -156,7 +156,7 @@ def write_terrain_product(path: str | Path, product: TerrainProduct, *, prefer_n
             ds.createDimension("y", ny)
             ds.createDimension("x", nx)
             ds.Conventions = "CF-1.8"
-            ds.title = "Sprtz Terrain product"
+            ds.title = "Spritz Terrain product"
             ds.source = product.source
             ds.center_latitude = float(product.center_lat)
             ds.center_longitude = float(product.center_lon)

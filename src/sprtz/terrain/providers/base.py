@@ -5,12 +5,12 @@ from typing import Any, Literal, Protocol
 
 import numpy as np
 
-from sprtz.exceptions import SprtzError
+from sprtz.exceptions import SpritzError
 
 RasterKind = Literal["dem", "landcover"]
 
 
-class TerrainProviderError(SprtzError, RuntimeError):
+class TerrainProviderError(SpritzError, RuntimeError):
     """Base error for terrain data acquisition failures."""
 
 
@@ -33,7 +33,7 @@ class RasterData:
     Values are stored as a 2-D array. Local lightweight rasters use a centered
     regular grid in metres; GeoTIFF/COG/NetCDF adapters may provide richer CRS
     metadata, but must still expose deterministic source spacing for the current
-    Sprtz regridding pipeline.
+    Spritz regridding pipeline.
     """
 
     values: np.ndarray

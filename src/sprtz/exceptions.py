@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 
-class SprtzError(Exception):
+class SpritzError(Exception):
     """Base exception for sprtz."""
 
 
-class ConfigurationError(SprtzError, ValueError):
+class ConfigurationError(SpritzError, ValueError):
     """Raised when a suite configuration is invalid."""
 
 
-class DataFormatError(SprtzError, ValueError):
+class DataFormatError(SpritzError, ValueError):
     """Raised when an input data file cannot be parsed safely."""
 
 
-class ParallelExecutionError(SprtzError, RuntimeError):
+class ParallelExecutionError(SpritzError, RuntimeError):
     """Raised when requested parallel execution cannot be initialized."""

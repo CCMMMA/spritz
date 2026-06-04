@@ -1,4 +1,4 @@
-"""Sprtz: clean-room pure Python puff and dispersion modeling toolkit."""
+"""Spritz: clean-room pure Python puff and dispersion modeling toolkit."""
 
 from .config import SuiteConfig, load_config
 

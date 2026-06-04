@@ -16,7 +16,8 @@
       "wind_speed": 3.0,
       "wind_dir": 270.0,
       "temperature": 294.0,
-      "mixing_height": 900.0
+      "mixing_height": 900.0,
+      "precipitation_rate": 0.0
     },
     {
       "id": "S2",
@@ -25,7 +26,8 @@
       "wind_speed": 4.0,
       "wind_dir": 260.0,
       "temperature": 296.0,
-      "mixing_height": 1100.0
+      "mixing_height": 1100.0,
+      "precipitation_rate": 0.0
     }
   ],
   "sources": [
@@ -36,7 +38,9 @@
       "z": 0.0,
       "emission_rate": 25.0,
       "stack_height": 40.0,
+      "height_agl_m": 40.0,
       "source_type": "point",
+      "material": "generic",
       "stack_diameter": 1.5,
       "exit_velocity": 12.0,
       "exit_temperature": 370.0,
@@ -60,6 +64,8 @@
     }
   ],
   "run": {
+    "backend": "gaussian",
+    "concentration_output": "receptors",
     "stability": "D",
     "threshold": 1e-05,
     "particles": 1000,
@@ -68,6 +74,7 @@
     "preferred_interchange": "NetCDF-CF",
     "numerical_mode": "puff",
     "averaging_time_s": 3600.0,
-    "stack_tip_downwash": true
+    "stack_tip_downwash": true,
+    "precipitation_washout": false
   }
 }

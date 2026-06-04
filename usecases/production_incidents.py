@@ -169,7 +169,7 @@ def build_incident_config(
     grid_half_width = ((grid_cells - 1) / 2.0) * grid_spacing_m
     config = {
         "metadata": {
-            "title": f"Sprtz production incident {event.code} - {event.place}",
+            "title": f"Spritz production incident {event.code} - {event.place}",
             "event": event.as_metadata(),
             "coordinate_reference": "Local AEQD centered on incident latitude/longitude",
             "scientific_scope": "screening scenario requiring project-specific validation",
@@ -282,7 +282,7 @@ def run_incident_case(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run catalog-driven Sprtz production incident cases"
+        description="Run catalog-driven Spritz production incident cases"
     )
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG))
     parser.add_argument("--code", default="2021_44")

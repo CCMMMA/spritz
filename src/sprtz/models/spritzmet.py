@@ -32,13 +32,16 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
     v = np.zeros_like(u)
     temp = np.zeros_like(u)
     mixh = np.zeros_like(u)
+    precip = np.zeros_like(u)
     weights = np.zeros_like(u)
+    default_precip = float(config.run.get("default_precipitation_rate", 0.0))
 
     if not config.stations:
         u.fill(float(config.run.get("default_u", 2.0)))
         v.fill(float(config.run.get("default_v", 0.0)))
         temp.fill(float(config.run.get("default_temperature", 293.15)))
         mixh.fill(float(config.run.get("default_mixing_height", 1000.0)))
+        precip.fill(default_precip)
     else:
         for station in config.stations:
             dist = np.hypot(xx - station.x, yy - station.y)
@@ -48,11 +51,13 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
             v += w * sv
             temp += w * station.temperature
             mixh += w * station.mixing_height
+            precip += w * station.precipitation_rate
             weights += w
         u = np.divide(u, weights, out=np.zeros_like(u), where=weights > 0)
         v = np.divide(v, weights, out=np.zeros_like(v), where=weights > 0)
         temp = np.divide(temp, weights, out=np.full_like(temp, 293.15), where=weights > 0)
         mixh = np.divide(mixh, weights, out=np.full_like(mixh, 1000.0), where=weights > 0)
+        precip = np.divide(precip, weights, out=np.full_like(precip, default_precip), where=weights > 0)
 
     speed = np.hypot(u, v)
     return {
@@ -63,6 +68,7 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
         "wind_speed": speed.tolist(),
         "temperature": temp.tolist(),
         "mixing_height": mixh.tolist(),
+        "precipitation_rate": precip.tolist(),
         "stations": [asdict(s) for s in config.stations],
         "metadata": {"kernel": "inverse-distance diagnostic", "schema_version": "1.1"},
     }
@@ -86,6 +92,7 @@ class LocalMeteorology:
     longitude: np.ndarray
     u: np.ndarray
     v: np.ndarray
+    precipitation_rate: np.ndarray
     center_lat: float
     center_lon: float
     dx_m: float
@@ -113,6 +120,7 @@ class LocalMeteorology:
             "v": self.v.tolist(),
             "wind_speed": self.wind_speed.tolist(),
             "wind_from_direction": self.wind_from_direction.tolist(),
+            "precipitation_rate": self.precipitation_rate.tolist(),
             "dx_m": self.dx_m,
             "dy_m": self.dy_m,
             "source": self.source,
@@ -198,6 +206,18 @@ def downscale_wrf_to_local_grid(
     xx, yy, dst_lat, dst_lon = local_grid_latlon(center_lat, center_lon, nx, ny, dx_m, dy_m)
     u = _idw_interpolate(wrf.latitude, wrf.longitude, wrf.u, dst_lat, dst_lon, power=power, k=neighbours)
     v = _idw_interpolate(wrf.latitude, wrf.longitude, wrf.v, dst_lat, dst_lon, power=power, k=neighbours)
+    if wrf.precipitation_rate is None:
+        precipitation_rate = np.zeros_like(u)
+    else:
+        precipitation_rate = _idw_interpolate(
+            wrf.latitude,
+            wrf.longitude,
+            wrf.precipitation_rate,
+            dst_lat,
+            dst_lon,
+            power=power,
+            k=neighbours,
+        )
     return LocalMeteorology(
         xx,
         yy,
@@ -205,6 +225,7 @@ def downscale_wrf_to_local_grid(
         dst_lon,
         u,
         v,
+        precipitation_rate,
         center_lat,
         center_lon,
         dx_m,
@@ -216,7 +237,7 @@ def downscale_wrf_to_local_grid(
 def write_local_meteorology(
     path: str | Path, met: LocalMeteorology, *, prefer_netcdf: bool = True
 ) -> str:
-    """Write a SpritzMet local wind product as NetCDF-CF or JSON fallback."""
+    """Write a SpritzMet local meteorology product as NetCDF-CF or JSON fallback."""
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     payload = met.to_payload()
@@ -229,7 +250,7 @@ def write_local_meteorology(
             ds.createDimension("y", ny)
             ds.createDimension("x", nx)
             ds.Conventions = "CF-1.8"
-            ds.title = "Sprtz SpritzMet high-resolution wind field"
+            ds.title = "Spritz SpritzMet high-resolution meteorology field"
             ds.history = "Created by SpritzWRF -> SpritzMet use case pipeline"
             ds.source = met.source
             ds.center_latitude = float(met.center_lat)
@@ -241,6 +262,13 @@ def write_local_meteorology(
                 ("longitude", met.longitude, ("y", "x"), "degrees_east", "longitude"),
                 ("eastward_wind", met.u, ("time", "y", "x"), "m s-1", "eastward wind"),
                 ("northward_wind", met.v, ("time", "y", "x"), "m s-1", "northward wind"),
+                (
+                    "precipitation_rate",
+                    met.precipitation_rate,
+                    ("time", "y", "x"),
+                    "mm h-1",
+                    "precipitation rate",
+                ),
                 ("wind_speed", met.wind_speed, ("time", "y", "x"), "m s-1", "wind speed"),
                 (
                     "wind_from_direction",

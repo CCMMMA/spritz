@@ -1,6 +1,6 @@
 # Use case 04 - Production incident catalog
 
-Goal: run production-style Sprtz screening cases from an auditable incident
+Goal: run production-style Spritz screening cases from an auditable incident
 catalog. The bundled catalog includes the supplied Acerra and San Marcellino
 events:
 
@@ -22,7 +22,7 @@ To run the San Marcellino event, pass `--code 2023_14`.
 
 Expected products:
 
-- `2021_44_config.json` - validated Sprtz configuration with event metadata;
+- `2021_44_config.json` - validated Spritz configuration with event metadata;
 - `model/meteo.nc` - SpritzMet meteorology exchange file;
 - `model/concentration.nc` - Spritz concentration output with receptor lat/lon;
 - `model/post.json` - SpritzPost statistics;

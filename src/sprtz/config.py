@@ -1,12 +1,110 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .exceptions import ConfigurationError
 from .io.jsonio import read_json
 from .io.legacy import parse_legacy_file
+
+
+_BACKEND_ALIASES = {
+    "gauss": "gaussian",
+    "gaussian": "gaussian",
+    "spritz": "gaussian",
+    "particle": "particles",
+    "particles": "particles",
+    "lagrangian": "particles",
+}
+
+_BURNING_MATERIALS = {"generic", "paper", "plastic"}
+
+
+def normalize_backend(value: Any) -> str:
+    """Return the canonical clean-room dispersion backend name."""
+    key = str(value).strip().lower()
+    try:
+        return _BACKEND_ALIASES[key]
+    except KeyError as exc:
+        raise ConfigurationError("run.backend must be gaussian/gauss or particles") from exc
+
+
+def configured_backend(run: dict[str, Any], override: str | None = None) -> str:
+    """Resolve backend selection from an optional CLI override and run config."""
+    if override is not None:
+        return normalize_backend(override)
+    return normalize_backend(
+        run.get(
+            "backend",
+            run.get(
+                "BACKEND",
+                run.get("dispersion_backend", run.get("DISPERSION_BACKEND", "gaussian")),
+            ),
+        )
+    )
+
+
+def parse_field_z_levels(value: Any) -> tuple[float, ...]:
+    """Parse vertical field levels from JSON scalars, arrays, or legacy strings."""
+    if value is None:
+        return (0.0,)
+    if isinstance(value, str):
+        parts = [part.strip() for part in value.split(",") if part.strip()]
+        if not parts:
+            raise ConfigurationError("run.field_z_levels must not be empty")
+        levels = tuple(float(part) for part in parts)
+    elif isinstance(value, (int, float)):
+        levels = (float(value),)
+    else:
+        try:
+            levels = tuple(float(part) for part in value)
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError("run.field_z_levels must be a number or list of numbers") from exc
+    if not levels:
+        raise ConfigurationError("run.field_z_levels must not be empty")
+    if any(level < 0 for level in levels):
+        raise ConfigurationError("run.field_z_levels must be non-negative")
+    return levels
+
+
+def parse_datetime_value(value: Any, *, field_name: str = "datetime") -> datetime | None:
+    """Parse an ISO-8601 datetime value used by time-aware screening runs."""
+    if value is None or value == "":
+        return None
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ConfigurationError(f"{field_name} must be an ISO-8601 datetime") from exc
+
+
+def run_datetime(run: dict[str, Any], *names: str) -> datetime | None:
+    for name in names:
+        value = run.get(name, run.get(name.upper()))
+        if value is not None:
+            return parse_datetime_value(value, field_name=f"run.{name}")
+    return None
+
+
+def _validate_datetime_pair(
+    start: datetime | None,
+    end: datetime | None,
+    *,
+    label: str,
+) -> None:
+    if start is not None and end is not None:
+        try:
+            invalid_order = end < start
+        except TypeError as exc:
+            raise ConfigurationError(
+                f"{label} start and end datetimes must use compatible timezone information"
+            ) from exc
+        if invalid_order:
+            raise ConfigurationError(f"{label} end datetime must not be before start datetime")
 
 
 @dataclass(frozen=True)
@@ -35,6 +133,7 @@ class Station:
     wind_dir: float
     temperature: float = 293.15
     mixing_height: float = 1000.0
+    precipitation_rate: float = 0.0
 
     def validate(self) -> None:
         if not self.id:
@@ -45,6 +144,8 @@ class Station:
             raise ConfigurationError(f"station {self.id}: wind_dir must be in [0, 360]")
         if self.mixing_height <= 0:
             raise ConfigurationError(f"station {self.id}: mixing_height must be positive")
+        if self.precipitation_rate < 0:
+            raise ConfigurationError(f"station {self.id}: precipitation_rate must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -53,12 +154,18 @@ class Source:
     x: float
     y: float
     z: float = 0.0
+    latitude: float | None = None
+    longitude: float | None = None
     emission_rate: float = 1.0
     stack_height: float = 10.0
+    height_agl_m: float | None = None
     exit_velocity: float = 0.0
     exit_temperature: float = 293.15
     stack_diameter: float = 1.0
     source_type: str = "point"
+    material: str = "generic"
+    start_datetime: str | None = None
+    end_datetime: str | None = None
     width: float = 0.0
     length: float = 0.0
     height: float = 0.0
@@ -77,6 +184,19 @@ class Source:
             raise ConfigurationError(f"source {self.id}: emission_rate must be non-negative")
         if self.stack_height < 0:
             raise ConfigurationError(f"source {self.id}: stack_height must be non-negative")
+        if self.height_agl_m is not None and float(self.height_agl_m) < 0:
+            raise ConfigurationError(f"source {self.id}: height_agl_m must be non-negative")
+        if self.latitude is not None and not -90.0 <= float(self.latitude) <= 90.0:
+            raise ConfigurationError(f"source {self.id}: latitude must be in [-90, 90]")
+        if self.longitude is not None and not -180.0 <= float(self.longitude) <= 180.0:
+            raise ConfigurationError(f"source {self.id}: longitude must be in [-180, 180]")
+        if self.material.lower() not in _BURNING_MATERIALS:
+            raise ConfigurationError(f"source {self.id}: material must be generic, paper, or plastic")
+        _validate_datetime_pair(
+            parse_datetime_value(self.start_datetime, field_name=f"source {self.id} start_datetime"),
+            parse_datetime_value(self.end_datetime, field_name=f"source {self.id} end_datetime"),
+            label=f"source {self.id}",
+        )
         for name in ("stack_diameter", "width", "length", "height", "heat_release", "deposition_velocity", "wet_scavenging", "decay_rate", "settling_velocity"):
             if float(getattr(self, name)) < 0:
                 raise ConfigurationError(f"source {self.id}: {name} must be non-negative")
@@ -140,6 +260,44 @@ class SuiteConfig:
         output_start = self.run.get("output_start_s", self.run.get("OUTPUT_START_S"))
         if output_start is not None and float(output_start) < 0:
             raise ConfigurationError("run.output_start_s must be non-negative")
+        configured_backend(self.run)
+        output_mode = self.run.get("concentration_output", self.run.get("CONCENTRATION_OUTPUT"))
+        if output_mode is not None:
+            mode = str(output_mode).strip().lower()
+            if mode not in {"receptor", "receptors", "grid", "field", "grid_field", "both"}:
+                raise ConfigurationError("run.concentration_output must be receptors, grid, or both")
+        field_levels = self.run.get(
+            "field_z_levels",
+            self.run.get("FIELD_Z_LEVELS", self.run.get("z_levels", self.run.get("Z_LEVELS"))),
+        )
+        parse_field_z_levels(field_levels)
+        _validate_datetime_pair(
+            run_datetime(self.run, "weather_start_datetime", "simulation_start_datetime"),
+            run_datetime(self.run, "weather_end_datetime", "simulation_end_datetime"),
+            label="weather simulation",
+        )
+        _validate_datetime_pair(
+            run_datetime(self.run, "event_start_datetime", "fire_start_datetime"),
+            run_datetime(self.run, "event_end_datetime", "fire_end_datetime"),
+            label="fire/arson event",
+        )
+        _validate_datetime_pair(
+            run_datetime(self.run, "firefighters_start_datetime"),
+            run_datetime(self.run, "firefighters_end_datetime"),
+            label="firefighters actions",
+        )
+        washout_coeff = self.run.get(
+            "precipitation_washout_coefficient_s_per_mm_h",
+            self.run.get("PRECIPITATION_WASHOUT_COEFFICIENT_S_PER_MM_H"),
+        )
+        if washout_coeff is not None and float(washout_coeff) < 0:
+            raise ConfigurationError("run.precipitation_washout_coefficient_s_per_mm_h must be non-negative")
+        firefighter_factor = self.run.get(
+            "firefighters_emission_factor",
+            self.run.get("FIREFIGHTERS_EMISSION_FACTOR"),
+        )
+        if firefighter_factor is not None and not 0.0 <= float(firefighter_factor) <= 1.0:
+            raise ConfigurationError("run.firefighters_emission_factor must be in [0, 1]")
 
 
 def _grid_from_mapping(data: dict[str, Any]) -> GridConfig:
@@ -159,8 +317,30 @@ def _stations(data: dict[str, Any]) -> tuple[Station, ...]:
     return tuple(Station(**item) for item in data.get("stations", []))
 
 
+def _source_mapping(item: dict[str, Any]) -> dict[str, Any]:
+    source = dict(item)
+    height_aliases = (
+        "height_agl_m",
+        "height_on_ground_m",
+        "release_height_m",
+        "chimney_height_m",
+        "stack_height_m",
+    )
+    for alias in height_aliases:
+        if alias in source and "stack_height" not in source:
+            source["stack_height"] = source[alias]
+    if "height_agl_m" not in source and "stack_height" in source:
+        source["height_agl_m"] = source["stack_height"]
+    z_aliases = ("source_ground_height_m", "source_z_m", "ground_elevation_m")
+    for alias in z_aliases:
+        if alias in source and "z" not in source:
+            source["z"] = source[alias]
+    allowed = set(Source.__dataclass_fields__)
+    return {key: value for key, value in source.items() if key in allowed}
+
+
 def _sources(data: dict[str, Any]) -> tuple[Source, ...]:
-    return tuple(Source(**item) for item in data.get("sources", []))
+    return tuple(Source(**_source_mapping(item)) for item in data.get("sources", []))
 
 
 def _receptors(data: dict[str, Any]) -> tuple[Receptor, ...]:
@@ -209,7 +389,20 @@ def _legacy_to_mapping(path: Path) -> dict[str, Any]:
 
 
 def _csv_record(value: str, cls: type[Any]) -> dict[str, Any]:
-    names = [f.name for f in cls.__dataclass_fields__.values()]
+    if cls is Source:
+        names = [
+            "id",
+            "x",
+            "y",
+            "z",
+            "emission_rate",
+            "stack_height",
+            "exit_velocity",
+            "exit_temperature",
+            "stack_diameter",
+        ]
+    else:
+        names = [f.name for f in cls.__dataclass_fields__.values()]
     parts = [p.strip() for p in value.split(",")]
     if len(parts) > len(names):
         raise ConfigurationError(f"too many CSV fields for {cls.__name__}: {value}")

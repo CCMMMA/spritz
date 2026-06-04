@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Production readiness diagnostics for Sprtz installations."""
+"""Production readiness diagnostics for Spritz installations."""
 
 import importlib.util
 import json
@@ -70,7 +70,7 @@ def run_diagnostics(*, require_netcdf: bool = False, require_viz: bool = False, 
 
 
 def format_report(report: dict[str, Any]) -> str:
-    lines = [f"Sprtz {report['version']} production diagnostics", f"overall: {'OK' if report['ok'] else 'FAILED'}"]
+    lines = [f"Spritz {report['version']} production diagnostics", f"overall: {'OK' if report['ok'] else 'FAILED'}"]
     for check in report["checks"]:
         mark = "OK" if check["ok"] else "FAIL"
         lines.append(f"- {mark} {check['name']}: {check['detail']}")
@@ -80,7 +80,7 @@ def format_report(report: dict[str, Any]) -> str:
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run local Sprtz production-readiness diagnostics")
+    parser = argparse.ArgumentParser(description="Run local Spritz production-readiness diagnostics")
     parser.add_argument("--require-netcdf", action="store_true", help="fail if netCDF4 is unavailable")
     parser.add_argument("--require-viz", action="store_true", help="fail if matplotlib is unavailable")
     parser.add_argument("--require-mpi", action="store_true", help="fail if mpi4py is unavailable")

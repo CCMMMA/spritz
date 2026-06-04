@@ -2,13 +2,13 @@
 
 ![Spritz architecture](assets/spritz_architecture.svg)
 
-Sprtz is organized as a clean-room Python suite with one shared configuration
+Spritz is organized as a clean-room Python suite with one shared configuration
 model and independent model components. Every production component exposes a
 small Python API and a deterministic command-line surface.
 
 ## Input Configuration Layer
 
-Sprtz accepts JSON configuration, tolerant INP-style legacy control files, and
+Spritz accepts JSON configuration, tolerant INP-style legacy control files, and
 CLI options. JSON remains the richest format because it can carry domain,
 terrain, meteorology, source, receptor, workflow, and provenance settings in one
 portable document.
@@ -19,7 +19,7 @@ portable document.
 
 1. optional Terrain acquisition and GEO generation;
 2. SpritzMet meteorology;
-3. Spritz Gaussian or particle dispersion;
+3. unified Spritz Gaussian or particle dispersion;
 4. SpritzPost statistics.
 
 The same modules can be invoked directly through their console scripts or Python
@@ -28,9 +28,10 @@ The same modules can be invoked directly through their console scripts or Python
 ## Meteorological Preprocessing
 
 SpritzWRF reads WRF-oriented NetCDF inputs and normalizes clean-room near-surface
-wind fields. SpritzMet creates diagnostic meteorology on the model grid, supports
-WRF-to-local-grid interpolation in didactic use cases, and writes NetCDF-CF or
-JSON outputs. The meteorology layer remains optional-dependency friendly:
+wind and precipitation fields. SpritzMet creates diagnostic meteorology on the
+model grid, supports WRF-to-local-grid interpolation in didactic use cases, and
+writes NetCDF-CF or JSON outputs. The meteorology layer remains
+optional-dependency friendly:
 NetCDF support is used when installed, while JSON fallback keeps tests and
 lightweight deployments deterministic.
 
@@ -43,7 +44,7 @@ Terrain now has two layers:
 - `sprtz.terrain` provides production-style acquisition concepts: local and
   online provider interfaces, deterministic cache metadata, AOI/domain handling,
   continuous DEM resampling, categorical land-cover resampling, land-cover to
-  Sprtz land-use remapping, surface-parameter derivation, and NetCDF-CF/JSON GEO
+  Spritz land-use remapping, surface-parameter derivation, and NetCDF-CF/JSON GEO
   output with provenance.
 
 MakeGeo and CTGPROC remain lightweight clean-room helpers for GEO tables and
@@ -51,18 +52,24 @@ category aggregation.
 
 ## Dispersion Engines
 
-The Gaussian Spritz backend supports puff and plume modes, finite source
-dimensions, effective release height, dry/wet deposition fluxes, first-order
-losses, and deterministic receptor outputs. The particle backend consumes the
-same configuration and meteorology exchange products and is deterministic for a
+The unified Spritz concentration layer selects the Gaussian or particle backend
+from JSON `run.backend` or CLI `--backend`. The Gaussian backend supports puff
+and plume modes, finite source dimensions, effective release height, dry/wet
+deposition fluxes, first-order losses, precipitation washout, source/event time
+windows, firefighter emission factors, deterministic receptor outputs, and
+model-grid 3D concentration fields. The particle backend consumes the same
+configuration and meteorology exchange products, honors the same time-window and
+washout controls, writes the same output schema, and is deterministic for a
 fixed seed.
 
 ## Post-Processing And Outputs
 
 SpritzPost computes maxima, averages, ranked values, percentiles, and threshold
 summaries from concentration/deposition outputs. Module exchange prefers
-NetCDF-CF; CSV, JSON, and legacy-style outputs remain available for portability
-and migration workflows.
+NetCDF-CF. Concentration NetCDF files keep the receptor table and, for complete
+grid outputs, include `concentration_field(time, field_z, field_y, field_x)`.
+CSV, JSON, and legacy-style outputs remain available for portability and
+migration workflows.
 
 ## Visualization
 

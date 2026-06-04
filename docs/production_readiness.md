@@ -12,11 +12,21 @@ It is not claimed to be a regulatory replacement for any third-party modeling sy
 - Preferred NetCDF-CF module interoperability.
 - Deterministic Gaussian and particle backends.
 - Stable CSV/JSON/legacy table output pathways.
+- Optional NetCDF-CF/JSON fallback 3D concentration fields for model-grid runs.
+- Time-aware source windows, firefighter action windows, source height above
+  ground level, material metadata, and precipitation washout are represented in
+  the ordinary JSON configuration.
 - GitHub Actions CI for Python 3.10, 3.11, and 3.12.
 
 ## Recommended deployment
 
 Use a virtual environment, install with `pip install .[netcdf,viz]`, or `pip install .[geo,netcdf,viz]` when Terrain acquisition must read GeoTIFF/COG products. Commit exact input files with a run manifest, and archive output artifacts with the package version and Git commit.
+
+For WRF-driven wet-removal studies, archive the WRF file, the selected
+`time_index`, the SpritzMet `precipitation_rate` product, and the configured
+`precipitation_washout_coefficient_s_per_mm_h`. For fire or chimney cases,
+record source `height_agl_m`, material preset or explicit emission assumptions,
+event start/end datetimes, and any firefighter-action period.
 
 
 ## Parallel production execution
@@ -52,7 +62,7 @@ The release check verifies required docs, use-case documentation, typed package 
 
 ## Terrain Preprocessing
 
-Terrain is included as `sprtz.models.terrain`, the backward-compatible `terrain` CLI, and the provider-based `sprtz-terrain fetch` workflow. Offline local rasters are supported without network access. Online Copernicus DEM and ESA WorldCover providers require explicit opt-in and deployment-specific catalog/credential configuration. Derived GEO products must preserve provenance metadata for source datasets, CRS, resampling methods, cache key, and Sprtz software version.
+Terrain is included as `sprtz.models.terrain`, the backward-compatible `terrain` CLI, and the provider-based `sprtz-terrain fetch` workflow. Offline local rasters are supported without network access. Online Copernicus DEM and ESA WorldCover providers require explicit opt-in and deployment-specific catalog/credential configuration. Derived GEO products must preserve provenance metadata for source datasets, CRS, resampling methods, cache key, and Spritz software version.
 
 
 ## Use-case packaging boundary

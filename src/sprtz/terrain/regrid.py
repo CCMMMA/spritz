@@ -12,7 +12,7 @@ from sprtz.terrain.providers.base import RasterData, TerrainConfigurationError
 
 @dataclass(frozen=True)
 class DomainDefinition:
-    """Sprtz modeling domain used to align terrain, land use, meteo, and dispersion grids."""
+    """Spritz modeling domain used to align terrain, land use, meteo, and dispersion grids."""
 
     center_lat: float
     center_lon: float

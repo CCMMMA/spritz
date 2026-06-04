@@ -30,7 +30,7 @@ SPRTZ_LAND_USE: dict[int, LandUseClass] = {
     11: LandUseClass(11, "moss_lichen", 0.04, 0.22, 0.7, 0.40),
 }
 
-# ESA WorldCover encodes land cover. Sprtz needs internal land-use classes and
+# ESA WorldCover encodes land cover. Spritz needs internal land-use classes and
 # surface parameters; this clean-room crosswalk is deliberately visible so users
 # can replace it with project-specific validation data.
 ESA_WORLDCOVER_TO_SPRTZ = {
@@ -52,7 +52,7 @@ def remap_land_cover(
     land_cover: np.ndarray,
     mapping: dict[int, int] | None = None,
 ) -> np.ndarray:
-    """Map source land-cover labels to Sprtz land-use class codes."""
+    """Map source land-cover labels to Spritz land-use class codes."""
     source_to_target = mapping or ESA_WORLDCOVER_TO_SPRTZ
     source = np.asarray(land_cover, dtype=int)
     out = np.zeros_like(source, dtype=int)
@@ -62,7 +62,7 @@ def remap_land_cover(
 
 
 def derive_surface_parameters(landuse: np.ndarray) -> dict[str, np.ndarray]:
-    """Derive minimal surface parameters from Sprtz land-use classes."""
+    """Derive minimal surface parameters from Spritz land-use classes."""
     classes = np.asarray(landuse, dtype=int)
     params = {
         "roughness_length_m": np.zeros(classes.shape, dtype=float),

@@ -1,13 +1,13 @@
 # Use case 01 — High-resolution wind-field interpolation
 
-Goal: obtain a local 100 m wind field centered on a user-supplied latitude and longitude, starting from a 1 km WRF5 d03 file.
+Goal: obtain a local 100 m wind and precipitation-rate field centered on a user-supplied latitude and longitude, starting from a 1 km WRF5 d03 file.
 
 This didactic workflow is deliberately explicit:
 
 1. **Acquire WRF 1 km data.** Use a local WRF NetCDF file or download from the meteo@uniparthenope archive.
-2. **SpritzWRF step.** Extract latitude, longitude, and near-surface wind components from the WRF file.
+2. **SpritzWRF step.** Extract latitude, longitude, near-surface wind components, and precipitation when available from the WRF file.
 3. **SpritzMet step.** Build a local azimuthal-equidistant grid centered on the requested coordinate.
-4. **Interpolation step.** Interpolate SpritzWRF wind vectors onto the SpritzMet 100 m grid.
+4. **Interpolation step.** Interpolate SpritzWRF wind vectors and precipitation onto the SpritzMet 100 m grid.
 5. **Output step.** Write NetCDF-CF by default, or JSON for lightweight runs.
 
 The WRF archive pattern is:
@@ -67,7 +67,7 @@ python usecases/01_high_resolution_wind_field/run.py \
 ## Expected products
 
 - `wrf_100m_wind.nc` or `.json`
-- variables/fields: `latitude`, `longitude`, `eastward_wind`, `northward_wind`, `wind_speed`, `wind_from_direction`
+- variables/fields: `latitude`, `longitude`, `eastward_wind`, `northward_wind`, `wind_speed`, `wind_from_direction`, `precipitation_rate`
 
 ## Teaching notes
 

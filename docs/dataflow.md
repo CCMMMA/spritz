@@ -2,7 +2,7 @@
 
 ![Spritz data flow](assets/spritz_dataflow.svg)
 
-Sprtz data flow is designed so each scientific transformation is explicit,
+Spritz data flow is designed so each scientific transformation is explicit,
 reproducible, and tied to provenance metadata.
 
 ## Workflow Steps
@@ -27,18 +27,22 @@ reproducible, and tied to provenance metadata.
 7. **Land-cover categorical resampling** uses nearest-neighbor selection because
    class labels are not numeric magnitudes. Bilinear interpolation would invent
    invalid land-cover classes.
-8. **Land-cover to Sprtz land-use remapping** converts ESA WorldCover-style
-   classes to internal Sprtz land-use categories.
+8. **Land-cover to Spritz land-use remapping** converts ESA WorldCover-style
+   classes to internal Spritz land-use categories.
 9. **Surface parameter derivation** computes minimal roughness length, albedo,
    Bowen ratio, and vegetation fraction arrays from the internal land-use class.
 10. **GEO/terrain output with provenance** writes NetCDF-CF when available or JSON
     fallback otherwise. Required metadata includes source datasets, resolution,
-    CRS, resampling methods, cache key, and Sprtz software version.
-11. **Meteorological preprocessing** writes SpritzMet outputs aligned with the
-    same grid conventions.
-12. **Emission/source preprocessing and dispersion** run the Gaussian or particle
-    backend.
-13. **Concentration/deposition outputs** feed SpritzPost and visualization.
+    CRS, resampling methods, cache key, and Spritz software version.
+11. **Meteorological preprocessing** writes SpritzMet wind, temperature,
+    mixing-height, and precipitation-rate outputs aligned with the same grid
+    conventions.
+12. **Emission/source preprocessing and dispersion** run the configured
+    Gaussian or particle backend, applying source time windows, source release
+    heights, optional firefighter emission factors, and optional precipitation
+    washout from the meteorology product.
+13. **Concentration/deposition outputs** feed SpritzPost and visualization; when
+    requested, NetCDF-CF output also carries a gridded 3D concentration field.
 14. **Post-processing and visualization** produce statistics, maps, and diagnostic
     figures.
 
@@ -57,5 +61,5 @@ metadata records the source so users can decide whether a surface model warning
 is relevant to their study.
 
 Land cover describes what is physically observed on the surface. Land use is the
-model category used to derive roughness and other parameters. Sprtz keeps the
+model category used to derive roughness and other parameters. Spritz keeps the
 land-cover-to-land-use crosswalk visible and replaceable.
