@@ -10,7 +10,7 @@ from sprtz.models.firefront import demo_firefront_from_config
 from sprtz.models.firefront_io import write_csv, write_geojson, write_netcdf
 
 
-def run_mpi(config_path: str, output_dir: str) -> None:
+def run_mpi(config_path: str, output_dir: str, config_override=None) -> None:
     try:
         from mpi4py import MPI
     except Exception as exc:
@@ -18,7 +18,7 @@ def run_mpi(config_path: str, output_dir: str) -> None:
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
-    config = load_config(config_path) if rank == 0 else None
+    config = config_override if rank == 0 and config_override is not None else (load_config(config_path) if rank == 0 else None)
     config = comm.bcast(config, root=0)
     total = int(config.fire.realizations if config.fire else 100)
     chunk = int(np.ceil(total / size))

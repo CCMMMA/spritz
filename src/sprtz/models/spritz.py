@@ -22,7 +22,7 @@ from sprtz.exceptions import DataFormatError
 from sprtz.io.jsonio import read_json
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
 from sprtz.io.netcdf_cf import read_cf_meteorology, write_cf_concentration
-from sprtz.parallel import get_mpi_context
+from sprtz.parallel import get_gpu_context, get_mpi_context
 
 
 def wildfire_plume_rise(intensity_kw_per_m: float, perimeter_m: float, u_ms: float) -> float:
@@ -259,6 +259,7 @@ def compute_concentrations(
     meteo: dict[str, Any],
     *,
     parallel: str = "serial",
+    gpu_backend: str | None = None,
 ) -> list[dict[str, float | str]]:
     config.validate()
     u, v, speed = _mean_wind(meteo)
@@ -281,6 +282,10 @@ def compute_concentrations(
     mixing_height = float(np.nanmean(np.asarray(meteo.get("mixing_height", [[1000.0]]), dtype=float)))
     washout_rate = precipitation_washout_rate(config, meteo)
     ctx = get_mpi_context(parallel)
+    gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
+    xp = gpu.xp
+    source_x = xp.asarray([src.x for src in config.sources], dtype=float)
+    source_y = xp.asarray([src.y for src in config.sources], dtype=float)
     local_receptors = [receptors[i] for i in ctx.partition(len(receptors))]
     local_rows: list[dict[str, float | str]] = []
     for rec in local_receptors:
@@ -290,10 +295,17 @@ def compute_concentrations(
             total = 0.0
             dry_total = 0.0
             wet_total = 0.0
-            for src in config.sources:
+            dx_all = rec.x - source_x
+            dy_all = rec.y - source_y
+            xdown_all = dx_all * (u / speed) + dy_all * (v / speed)
+            ycross_all = -dx_all * (v / speed) + dy_all * (u / speed)
+            xdown_values = np.asarray(gpu.asnumpy(xdown_all), dtype=float)
+            ycross_values = np.asarray(gpu.asnumpy(ycross_all), dtype=float)
+            for src_index, src in enumerate(config.sources):
                 if not _source_active(config, src, sample_dt):
                     continue
-                xdown, ycross = _down_cross(rec.x - src.x, rec.y - src.y, u, v, speed)
+                xdown = float(xdown_values[src_index])
+                ycross = float(ycross_values[src_index])
                 if xdown <= 0:
                     continue
                 source_wet_rate = max(src.wet_scavenging, 0.0) + washout_rate
@@ -423,10 +435,11 @@ def run(
     output_format: str = "auto",
     *,
     parallel: str = "serial",
+    gpu_backend: str | None = None,
 ) -> list[dict[str, float | str]]:
     ctx = get_mpi_context(parallel)
     meteo = read_meteorology(meteo_path)
-    rows = compute_concentrations(config, meteo, parallel=parallel)
+    rows = compute_concentrations(config, meteo, parallel=parallel, gpu_backend=gpu_backend)
     if ctx.is_root:
         write_concentration(output, rows, output_format)
     ctx.barrier()

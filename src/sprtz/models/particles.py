@@ -22,7 +22,7 @@ from sprtz.models.spritz import (
     sample_datetime,
     write_csv,
 )
-from sprtz.parallel import get_mpi_context
+from sprtz.parallel import get_gpu_context, get_mpi_context
 
 
 def _wind(meteo: dict[str, Any]) -> tuple[float, float]:
@@ -41,6 +41,7 @@ def simulate_particles(
     n_particles: int | None = None,
     seed: int | None = None,
     parallel: str = "serial",
+    gpu_backend: str | None = None,
 ) -> list[dict[str, float | str]]:
     """Run a deterministic Lagrangian particle screening alternative to Spritz.
 
@@ -70,33 +71,47 @@ def simulate_particles(
     total_emission = sum(src.emission_rate for src in config.sources) or 1.0
 
     ctx = get_mpi_context(parallel)
+    gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
+    xp = gpu.xp
     local_sources = [(i, config.sources[i]) for i in ctx.partition(len(config.sources))]
     local_source_totals: dict[str, dict[str, float]] = {}
 
     for source_index, src in local_sources:
         source_totals = {rec.id: 0.0 for rec in receptors}
         # Per-source seed keeps results deterministic regardless of MPI size.
-        rng = np.random.default_rng(base_seed + source_index * 1000003)
+        seed_i = base_seed + source_index * 1000003
+        rng = np.random.default_rng(seed_i)
         count = max(1, int(round(n_particles * src.emission_rate / total_emission)))
-        travel = rng.uniform(0.0, duration, count)
-        px = src.x + u * travel + rng.normal(0.0, sigma_h, count)
-        py = src.y + v * travel + rng.normal(0.0, sigma_h, count)
-        pz = src.z + src.stack_height + rng.normal(0.0, sigma_z, count)
+        if gpu.enabled:
+            grng = xp.random.default_rng(seed_i)
+            travel = grng.uniform(0.0, duration, count)
+            px = src.x + u * travel + grng.normal(0.0, sigma_h, count)
+            py = src.y + v * travel + grng.normal(0.0, sigma_h, count)
+            pz = src.z + src.stack_height + grng.normal(0.0, sigma_z, count)
+        else:
+            travel = rng.uniform(0.0, duration, count)
+            px = src.x + u * travel + rng.normal(0.0, sigma_h, count)
+            py = src.y + v * travel + rng.normal(0.0, sigma_h, count)
+            pz = src.z + src.stack_height + rng.normal(0.0, sigma_z, count)
         if src.width > 0 or src.length > 0:
-            px += rng.uniform(-0.5 * src.length, 0.5 * src.length, count)
-            py += rng.uniform(-0.5 * src.width, 0.5 * src.width, count)
+            if gpu.enabled:
+                px += grng.uniform(-0.5 * src.length, 0.5 * src.length, count)
+                py += grng.uniform(-0.5 * src.width, 0.5 * src.width, count)
+            else:
+                px += rng.uniform(-0.5 * src.length, 0.5 * src.length, count)
+                py += rng.uniform(-0.5 * src.width, 0.5 * src.width, count)
         if src.source_type.lower() == "flare":
             pz += max(src.heat_release, 0.0) ** (1.0 / 3.0) * 0.01
         loss_rate = max(src.decay_rate, 0.0) + max(src.wet_scavenging, 0.0) + washout_rate
         loss_rate += max(src.deposition_velocity + src.settling_velocity, 0.0) / max(
             sigma_z * 10.0, 1.0
         )
-        weights = np.exp(-loss_rate * travel)
+        weights = xp.exp(-loss_rate * travel) if gpu.enabled else np.exp(-loss_rate * travel)
         particle_mass = src.emission_rate * duration / count
         for rec in receptors:
             dist2 = (px - rec.x) ** 2 + (py - rec.y) ** 2 + ((pz - rec.z) * 0.2) ** 2
             hits = dist2 <= receptor_radius**2
-            hit_mass = float(np.sum(weights[hits])) * particle_mass
+            hit_mass = float(gpu.asnumpy(xp.sum(weights[hits])) if gpu.enabled else np.sum(weights[hits])) * particle_mass
             # Convert hit density to a stable screening concentration proxy.
             volume = max(np.pi * receptor_radius**2 * max(sigma_z, 1.0), 1.0)
             source_totals[rec.id] += hit_mass / volume
@@ -159,9 +174,16 @@ def run(
     seed: int | None = None,
     *,
     parallel: str = "serial",
+    gpu_backend: str | None = None,
 ) -> list[dict[str, float | str]]:
     ctx = get_mpi_context(parallel)
-    rows = simulate_particles(config, read_meteorology(meteo_path), seed=seed, parallel=parallel)
+    rows = simulate_particles(
+        config,
+        read_meteorology(meteo_path),
+        seed=seed,
+        parallel=parallel,
+        gpu_backend=gpu_backend,
+    )
     if ctx.is_root:
         write_particle_output(output, rows, output_format)
     ctx.barrier()

@@ -14,6 +14,7 @@ from sprtz.io.jsonio import write_json
 from sprtz.io.legacy_outputs import infer_format
 from sprtz.io.netcdf_cf import available as netcdf_available, write_cf_meteorology
 from sprtz.models.spritzwrf import WRFWindField
+from sprtz.parallel import get_gpu_context, get_mpi_context
 
 
 def rh_t_to_fmc(rh_pct: np.ndarray, temp_k: np.ndarray) -> np.ndarray:
@@ -33,7 +34,13 @@ def rh_t_to_fmc(rh_pct: np.ndarray, temp_k: np.ndarray) -> np.ndarray:
     return np.clip(fmc / 100.0, 0.01, 0.40).astype(np.float32)
 
 
-def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, object]:
+def build_meteorology(
+    config: SuiteConfig,
+    power: float = 2.0,
+    *,
+    parallel: str = "serial",
+    gpu_backend: str | None = None,
+) -> dict[str, object]:
     """Build a deterministic SpritzMet-like diagnostic field.
 
     Station wind vector, temperature, and mixing height are interpolated by
@@ -43,14 +50,25 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
     config.validate()
     if power <= 0:
         raise ValueError("interpolation power must be positive")
+    ctx = get_mpi_context(parallel)
+    gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
+    xp = gpu.xp
     grid = Grid(**asdict(config.grid))
     xx, yy = grid.mesh()
-    u = np.zeros((grid.ny, grid.nx), dtype=float)
-    v = np.zeros_like(u)
-    temp = np.zeros_like(u)
-    mixh = np.zeros_like(u)
-    precip = np.zeros_like(u)
-    weights = np.zeros_like(u)
+    row_range = ctx.partition(grid.ny) if ctx.enabled else range(grid.ny)
+    row_start = row_range.start
+    row_stop = row_range.stop
+    local_xx = xx[row_start:row_stop, :]
+    local_yy = yy[row_start:row_stop, :]
+    xxa = xp.asarray(local_xx)
+    yya = xp.asarray(local_yy)
+    local_shape = (row_stop - row_start, grid.nx)
+    u = xp.zeros(local_shape, dtype=float)
+    v = xp.zeros_like(u)
+    temp = xp.zeros_like(u)
+    mixh = xp.zeros_like(u)
+    precip = xp.zeros_like(u)
+    weights = xp.zeros_like(u)
     default_precip = float(config.run.get("default_precipitation_rate", 0.0))
 
     if not config.stations:
@@ -61,8 +79,8 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
         precip.fill(default_precip)
     else:
         for station in config.stations:
-            dist = np.hypot(xx - station.x, yy - station.y)
-            w = 1.0 / np.maximum(dist, 1.0) ** power
+            dist = xp.hypot(xxa - station.x, yya - station.y)
+            w = 1.0 / xp.maximum(dist, 1.0) ** power
             su, sv = wind_components(station.wind_speed, station.wind_dir)
             u += w * su
             v += w * sv
@@ -70,12 +88,36 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
             mixh += w * station.mixing_height
             precip += w * station.precipitation_rate
             weights += w
-        u = np.divide(u, weights, out=np.zeros_like(u), where=weights > 0)
-        v = np.divide(v, weights, out=np.zeros_like(v), where=weights > 0)
-        temp = np.divide(temp, weights, out=np.full_like(temp, 293.15), where=weights > 0)
-        mixh = np.divide(mixh, weights, out=np.full_like(mixh, 1000.0), where=weights > 0)
-        precip = np.divide(precip, weights, out=np.full_like(precip, default_precip), where=weights > 0)
+        u = xp.divide(u, weights, out=xp.zeros_like(u), where=weights > 0)
+        v = xp.divide(v, weights, out=xp.zeros_like(v), where=weights > 0)
+        temp = xp.divide(temp, weights, out=xp.full_like(temp, 293.15), where=weights > 0)
+        mixh = xp.divide(mixh, weights, out=xp.full_like(mixh, 1000.0), where=weights > 0)
+        precip = xp.divide(precip, weights, out=xp.full_like(precip, default_precip), where=weights > 0)
 
+    u_local = np.asarray(gpu.asnumpy(u), dtype=float)
+    v_local = np.asarray(gpu.asnumpy(v), dtype=float)
+    temp_local = np.asarray(gpu.asnumpy(temp), dtype=float)
+    mixh_local = np.asarray(gpu.asnumpy(mixh), dtype=float)
+    precip_local = np.asarray(gpu.asnumpy(precip), dtype=float)
+    if ctx.enabled:
+        pieces = ctx.allgather((row_start, row_stop, u_local, v_local, temp_local, mixh_local, precip_local))
+        u = np.zeros((grid.ny, grid.nx), dtype=float)
+        v = np.zeros_like(u)
+        temp = np.zeros_like(u)
+        mixh = np.zeros_like(u)
+        precip = np.zeros_like(u)
+        for start, stop, uu, vv, tt, mm, pp in pieces:
+            u[start:stop, :] = uu
+            v[start:stop, :] = vv
+            temp[start:stop, :] = tt
+            mixh[start:stop, :] = mm
+            precip[start:stop, :] = pp
+    else:
+        u = u_local
+        v = v_local
+        temp = temp_local
+        mixh = mixh_local
+        precip = precip_local
     speed = np.hypot(u, v)
     rh = np.full_like(temp, float(config.run.get("default_relative_humidity", 50.0)))
     fmc = rh_t_to_fmc(rh, temp)
@@ -91,17 +133,33 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
         "relative_humidity": rh.tolist(),
         "fmc": fmc.tolist(),
         "stations": [asdict(s) for s in config.stations],
-        "metadata": {"kernel": "inverse-distance diagnostic", "schema_version": "1.1"},
+        "metadata": {
+            "kernel": "inverse-distance diagnostic",
+            "schema_version": "1.1",
+            "parallel": "mpi-domain" if ctx.enabled else "serial",
+            "gpu_backend": gpu.backend,
+            "gpu_device_id": gpu.device_id if gpu.enabled else None,
+        },
     }
 
 
-def run(config: SuiteConfig, output: str | Path, output_format: str = "auto") -> dict[str, object]:
-    result = build_meteorology(config)
+def run(
+    config: SuiteConfig,
+    output: str | Path,
+    output_format: str = "auto",
+    *,
+    parallel: str = "serial",
+    gpu_backend: str | None = None,
+) -> dict[str, object]:
+    ctx = get_mpi_context(parallel)
+    result = build_meteorology(config, parallel=parallel, gpu_backend=gpu_backend)
     fmt = infer_format(output, output_format)
-    if fmt == "netcdf":
-        write_cf_meteorology(output, result)
-    else:
-        write_json(output, result)
+    if ctx.is_root:
+        if fmt == "netcdf":
+            write_cf_meteorology(output, result)
+        else:
+            write_json(output, result)
+    ctx.barrier()
     return result
 
 

@@ -13,3 +13,7 @@ Add a `fire` block with ignitions, realizations, moisture fallback, runtime, see
 ## Advanced Features
 
 RandomFront spotting, FIRMS ignition ingestion, semi-coupled buoyancy correction, and GPU detection are optional. CPU serial execution remains the baseline.
+
+## Parallel Execution
+
+SpritzFire uses realization splitting for MPI. Optional CUDA is selected per rank with `--gpu-backend auto` or `--gpu-backend cupy`; NumPy CPU execution remains the default.

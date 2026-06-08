@@ -2,7 +2,13 @@
 
 ## Overview
 
-SpritzMet MPI uses 2-D Cartesian domain decomposition, unlike SpritzFire realization splitting.
+SpritzMet MPI uses spatial domain decomposition, unlike SpritzFire realization splitting. The current implementation partitions rows across ranks and gathers the complete field to rank 0 for safe shared-file output; the helper module also exposes 2-D Cartesian slice utilities for halo-aware extensions.
+
+CUDA acceleration is optional:
+
+```bash
+mpiexec -n 4 spritzmet --config examples/minimal.json --output output/meteo.nc --parallel mpi --gpu-backend auto
+```
 
 ## Halo Exchange
 

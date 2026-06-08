@@ -36,6 +36,15 @@ def _config_parser(description: str) -> argparse.ArgumentParser:
     return parser
 
 
+def _add_gpu_backend(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--gpu-backend",
+        choices=["numpy", "auto", "cupy"],
+        default=None,
+        help="optional array accelerator backend; cupy requires CUDA",
+    )
+
+
 def _run_dispersion(
     config: SuiteConfig,
     meteo_path: str | Path,
@@ -45,11 +54,20 @@ def _run_dispersion(
     backend: str | None = None,
     seed: int | None = None,
     parallel: str = "serial",
+    gpu_backend: str | None = None,
 ) -> list[dict[str, float | str]]:
     model_backend = configured_backend(config.run, backend)
     if model_backend == "particles":
-        return particles.run(config, meteo_path, output_path, output_format, seed, parallel=parallel)
-    return spritz.run(config, meteo_path, output_path, output_format, parallel=parallel)
+        return particles.run(
+            config,
+            meteo_path,
+            output_path,
+            output_format,
+            seed,
+            parallel=parallel,
+            gpu_backend=gpu_backend,
+        )
+    return spritz.run(config, meteo_path, output_path, output_format, parallel=parallel, gpu_backend=gpu_backend)
 
 
 def _guard(fn, argv: Sequence[str] | None = None) -> int:
@@ -68,13 +86,10 @@ def spritzmet_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--output", required=True)
         parser.add_argument("--format", default="auto", choices=["auto", "json", "netcdf"])
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"])
+        _add_gpu_backend(parser)
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
-        if args.parallel == "mpi":
-            from sprtz.models.spritzmet_mpi import SpritzMetMPI
-
-            SpritzMetMPI(load_config(args.config))
-        spritzmet.run(load_config(args.config), args.output, args.format)
+        spritzmet.run(load_config(args.config), args.output, args.format, parallel=args.parallel, gpu_backend=args.gpu_backend)
         return 0
 
     return _guard(run, argv)
@@ -86,6 +101,7 @@ def sprtzfire_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--output-dir", required=True)
         parser.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
         parser.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial")
+        _add_gpu_backend(parser)
         parser.add_argument("--firms", action="store_true")
         parser.add_argument("--firms-source", default=None)
         parser.add_argument("--firms-date", default=None)
@@ -94,7 +110,14 @@ def sprtzfire_main(argv: Sequence[str] | None = None) -> int:
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
         backend = "firms+fire" if args.firms else "firefront"
-        result = run_workflow(args.config, args.output_dir, backend=backend, interchange=args.interchange, parallel=args.parallel)
+        result = run_workflow(
+            args.config,
+            args.output_dir,
+            backend=backend,
+            interchange=args.interchange,
+            parallel=args.parallel,
+            gpu_backend=args.gpu_backend,
+        )
         LOGGER.info("%s", result)
         return 0
 
@@ -111,6 +134,7 @@ def spritz_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--seed", type=int, default=None, help="particle backend seed override")
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"], help="parallel execution mode")
         parser.add_argument("--output-interval", type=float, default=None, help="optional concentration output interval in seconds")
+        _add_gpu_backend(parser)
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
         _run_dispersion(
@@ -121,6 +145,7 @@ def spritz_main(argv: Sequence[str] | None = None) -> int:
             backend=args.backend,
             seed=args.seed,
             parallel=args.parallel,
+            gpu_backend=args.gpu_backend,
         )
         return 0
 
@@ -135,6 +160,7 @@ def sprtz_particles_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--format", default="auto", choices=["auto", "csv", "legacy", "netcdf"])
         parser.add_argument("--seed", type=int, default=None)
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"], help="parallel execution mode")
+        _add_gpu_backend(parser)
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
         _run_dispersion(
@@ -145,6 +171,7 @@ def sprtz_particles_main(argv: Sequence[str] | None = None) -> int:
             backend="particles",
             seed=args.seed,
             parallel=args.parallel,
+            gpu_backend=args.gpu_backend,
         )
         return 0
 
@@ -390,6 +417,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         workflow.add_argument("--backend", choices=_BACKEND_CHOICES, default=None, help="override run.backend")
         workflow.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
         workflow.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial")
+        _add_gpu_backend(workflow)
         workflow.add_argument("--auto-terrain", action="store_true", help="run configured terrain acquisition before meteorology")
         workflow.add_argument("--allow-terrain-network", action="store_true", help="allow explicit online terrain providers")
         workflow.add_argument("--output-interval", type=float, default=None, help="optional concentration output interval in seconds")
@@ -409,6 +437,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 backend=args.backend,
                 interchange=args.interchange,
                 parallel=args.parallel,
+                gpu_backend=args.gpu_backend,
                 auto_terrain=args.auto_terrain,
                 allow_terrain_network=args.allow_terrain_network,
                 output_interval_s=args.output_interval,

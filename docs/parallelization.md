@@ -2,6 +2,8 @@
 
 Spritz uses an optional MPI parallelization layer designed for deterministic atmospheric-dispersion workflows on both laptops and HPC clusters. The same code path can run in serial mode, in automatic MPI mode, or in explicit MPI mode without changing the scenario configuration files. Backend selection can live in JSON `run.backend` or be overridden with `--backend`.
 
+Spritz also supports optional CUDA acceleration through CuPy. GPU execution is requested with `--gpu-backend auto` or `--gpu-backend cupy`; CPU NumPy remains the default and always works without CUDA libraries.
+
 This document describes the production execution schema, how work is partitioned, which files are read and written by each rank, and how to run and validate parallel jobs.
 
 ## Goals
@@ -23,6 +25,14 @@ All concentration-producing commands accept one of the following modes:
 | `serial` | Disable MPI even if the process was started by `mpiexec`. | Local debugging, tests, notebooks, small jobs. |
 | `auto` | Use MPI only when `mpi4py` is installed and the communicator has more than one rank. Otherwise fall back to serial. | Portable scripts and teaching material. |
 | `mpi` | Require `mpi4py`; fail if MPI cannot be initialized. | Production batch jobs where MPI is expected. |
+
+GPU backend modes:
+
+| Mode | Behavior | Recommended use |
+|---|---|---|
+| `numpy` | CPU arrays only. | Reproducibility tests, CPU-only systems. |
+| `auto` | Use CuPy only when CUDA allocation succeeds. | Portable scripts that can benefit from GPU nodes. |
+| `cupy` | Require CUDA/CuPy and fail fast if unavailable. | Batch jobs where GPU allocation is expected. |
 
 Example serial run:
 
@@ -49,7 +59,8 @@ mpiexec -n 4 sprtz run examples/minimal.json \
   --output-dir output-mpi \
   --backend gaussian \
   --interchange netcdf \
-  --parallel mpi
+  --parallel mpi \
+  --gpu-backend auto
 ```
 
 Particle backend, either by JSON `run.backend: "particles"` or CLI override:
@@ -118,6 +129,17 @@ Example for 10 receptors and 4 ranks:
 | 2 | 6, 7 | 2 |
 | 3 | 8, 9 | 2 |
 
+## Stage-specific best models
+
+Spritz uses different parallelization units for different numerical kernels:
+
+| Stage | MPI unit | GPU unit | Reason |
+|---|---|---|---|
+| SpritzMet | spatial grid rows, extendable to 2-D tiles with halos | local grid-array operations | meteorology is cell-wise gridded interpolation. |
+| Spritz Gaussian | receptors | source/receptor vector geometry | receptor rows are independent after meteorology is known. |
+| Spritz particles | sources | particles for each local source | source RNG streams stay deterministic across MPI sizes. |
+| SpritzFire | stochastic realizations | CA arrays per rank | ensemble realizations are independent; one GPU per rank avoids communication. |
+
 ## Gaussian backend schema
 
 The Gaussian/non-steady puff backend is implemented in:
@@ -127,6 +149,8 @@ src/sprtz/models/spritz.py
 ```
 
 Parallelization unit: **receptors**.
+
+Optional CUDA unit: **source/receptor geometry arrays**. CuPy accelerates the vector projection from source coordinates to downwind/crosswind distances; stability, depletion, and plume/puff formulas remain scalar and deterministic.
 
 Each rank receives a balanced subset of receptors and evaluates every source for those receptors. The current schema is:
 
@@ -177,6 +201,8 @@ src/sprtz/models/particles.py
 ```
 
 Parallelization unit: **sources**.
+
+Optional CUDA unit: **particle arrays within each local source**. Travel time, stochastic offsets, loss weights, and receptor hit tests can run on CuPy arrays. Source-level RNG seeds remain independent of MPI rank count.
 
 Each rank receives a balanced subset of emission sources. For each local source, particles are generated and transported using a deterministic per-source random-number stream. The current schema is:
 

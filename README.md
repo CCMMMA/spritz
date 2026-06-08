@@ -36,6 +36,14 @@ sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire --int
 sprtz run examples/wildfire_minimal.json --backend firefront --output-dir output_fire --interchange json
 ```
 
+MPI plus optional CUDA examples:
+
+```bash
+mpiexec -n 4 spritzmet --config examples/minimal.json --output output_mpi/meteo.nc --parallel mpi --gpu-backend auto
+mpiexec -n 4 spritz --config examples/minimal.json --meteo output_mpi/meteo.nc --output output_mpi/concentration.nc --parallel mpi --gpu-backend auto
+mpiexec -n 4 sprtz run examples/wildfire_minimal.json --backend firefront --output-dir output_fire_mpi --parallel mpi --gpu-backend auto
+```
+
 See `docs/firefront.md`, `docs/firefront_numerical.md`, `docs/firefront_spotting.md`, `docs/firms_ignition.md`, `docs/firefront_gpu.md`, and `docs/spritzmet_mpi.md`.
 
 ## Installation

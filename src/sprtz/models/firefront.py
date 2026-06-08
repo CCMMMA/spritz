@@ -130,10 +130,13 @@ class FireFront:
         self._gpu_backend = "numpy"
         self._reset_state()
         if self.cfg.gpu.backend in {"auto", "cupy", "numba_cuda"}:
-            from sprtz.models.firefront_gpu import _detect_gpu_backend
+            from sprtz.parallel import get_gpu_context
 
-            detected = _detect_gpu_backend() if self.cfg.gpu.backend == "auto" else self.cfg.gpu.backend
-            self._gpu_backend = detected if detected != "numpy" else "numpy"
+            gpu = get_gpu_context(
+                "cupy" if self.cfg.gpu.backend == "cupy" else "auto",
+                device_id=self.cfg.gpu.device_id,
+            )
+            self._gpu_backend = gpu.backend
         if self.cfg.spotting and self.cfg.spotting_config.model == "randomfront":
             from sprtz.models.firefront_spotting import RandomFrontSpotting
 

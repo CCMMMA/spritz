@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from dataclasses import replace
 
 from .config import configured_backend, from_mapping, load_config
 from .io.jsonio import write_json
@@ -17,6 +18,7 @@ def run_workflow(
     backend: str | None = None,
     interchange: str = "netcdf",
     parallel: str = "serial",
+    gpu_backend: str | None = None,
     auto_terrain: bool = False,
     allow_terrain_network: bool = False,
     output_interval_s: float | None = None,
@@ -31,13 +33,18 @@ def run_workflow(
         run_config = dict(config.raw.get("run", {}))
         run_config["output_interval_s"] = float(output_interval_s)
         config = from_mapping({**config.raw, "run": run_config})
+    if gpu_backend is not None:
+        run_config = dict(config.raw.get("run", {}))
+        run_config["gpu_backend"] = gpu_backend
+        config = from_mapping({**config.raw, "run": run_config})
+        if config.fire is not None:
+            config = replace(config, fire=replace(config.fire, gpu=replace(config.fire.gpu, backend=gpu_backend)))
     model_backend = configured_backend(config.run, backend)
     use_netcdf = interchange == "netcdf"
     if model_backend in {"firefront", "fire+puff", "firms", "firms+fire", "firms+fire+puff"}:
         if model_backend.startswith("firms"):
             if config.fire is None:
                 raise ValueError("FIRMS workflow requires a fire configuration block")
-            from dataclasses import replace
             from .terrain.firms import FIRMSDownloader
 
             downloader = FIRMSDownloader(config.fire.firms)
@@ -46,15 +53,15 @@ def run_workflow(
             if not ignitions:
                 raise ValueError("FIRMS returned no hotspots after filtering")
             config = replace(config, fire=replace(config.fire, ignitions=ignitions))
-        if ctx.enabled and config.fire and config.fire.parallel == "mpi":
+        if ctx.enabled and config.fire and config.fire.parallel != "serial":
             from .models.firefront_mpi import run_mpi
 
-            run_mpi(str(config_path), str(out))
+            run_mpi(str(config_path), str(out), config_override=config)
             return ctx.bcast({"backend": model_backend, "firefront": str(out / "firefront.nc"), "parallel": "mpi"}, root=0)
         result = run_firefront_serial(config, out, interchange)
         if model_backend.endswith("+puff"):
             config = from_mapping({**config.raw, "run": {**dict(config.raw.get("run", {})), "backend": "gaussian"}})
-            puff_result = run_workflow(config_path, output_dir, backend="gaussian", interchange=interchange, parallel=parallel)
+            puff_result = run_workflow(config_path, output_dir, backend="gaussian", interchange=interchange, parallel=parallel, gpu_backend=gpu_backend)
             result["puff"] = puff_result.get("concentration")
         return ctx.bcast(result, root=0)
     terrain_result: dict[str, Any] | None = None
@@ -79,16 +86,19 @@ def run_workflow(
     meteo_path = out / ("meteo.nc" if use_netcdf else "meteo.json")
     conc_path = out / ("concentration.nc" if use_netcdf else "concentration.csv")
     post_path = out / "post.json"
-    if ctx.is_root:
-        meteo = spritzmet.run(config, meteo_path, "netcdf" if use_netcdf else "json")
-    else:
-        meteo = {"component": "spritzmet"}
+    meteo = spritzmet.run(
+        config,
+        meteo_path,
+        "netcdf" if use_netcdf else "json",
+        parallel=parallel,
+        gpu_backend=gpu_backend,
+    )
     ctx.barrier()
     if model_backend == "particles":
-        conc = particles.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel)
+        conc = particles.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel, gpu_backend=gpu_backend)
         model_component = "particles"
     elif model_backend == "gaussian":
-        conc = spritz.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel)
+        conc = spritz.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel, gpu_backend=gpu_backend)
         model_component = "spritz"
     else:
         raise ValueError("backend must be gaussian or particles")
@@ -105,6 +115,7 @@ def run_workflow(
         "interchange": interchange,
         "backend": model_backend,
         "parallel": "mpi" if ctx.enabled else "serial",
+        "gpu_backend": gpu_backend or str(config.run.get("gpu_backend", "numpy")),
         "mpi_size": ctx.size,
         "components": [meteo["component"], model_component, post["component"]],
     }
