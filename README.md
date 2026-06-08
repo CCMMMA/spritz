@@ -26,7 +26,17 @@ It provides shared configuration, legacy-control parsing, NetCDF-CF interoperabi
 | `sprtz-particles` | `sprtz.models.particles` | Backward-compatible alias that forces the particle backend. |
 | `spritzpost` | `sprtz.models.spritzpost` | Receptor statistics and threshold summaries. |
 | `sprtz-plot` | `sprtz.models.visualization` | Publishing-quality figures. |
+| `sprtzfire` | `sprtz.models.firefront` | Clean-room stochastic wildfire spread, optional spotting/FIRMS/buoyancy/GPU/MPI. |
 | `sprtz run` | `sprtz.workflow` | End-to-end orchestration. |
+
+## SpritzFire Quick Start
+
+```bash
+sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire --interchange json
+sprtz run examples/wildfire_minimal.json --backend firefront --output-dir output_fire --interchange json
+```
+
+See `docs/firefront.md`, `docs/firefront_numerical.md`, `docs/firefront_spotting.md`, `docs/firms_ignition.md`, `docs/firefront_gpu.md`, and `docs/spritzmet_mpi.md`.
 
 ## Installation
 

@@ -25,6 +25,17 @@ from sprtz.io.netcdf_cf import read_cf_meteorology, write_cf_concentration
 from sprtz.parallel import get_mpi_context
 
 
+def wildfire_plume_rise(intensity_kw_per_m: float, perimeter_m: float, u_ms: float) -> float:
+    """Effective smoke release height using a Briggs buoyancy-dominated estimate."""
+    q_heat_w = max(0.0, intensity_kw_per_m) * max(0.0, perimeter_m) * 1000.0
+    g, cp, rho, t0 = 9.81, 1005.0, 1.2, 293.0
+    fb = (g / (cp * rho * t0)) * q_heat_w
+    u_safe = max(float(u_ms), 0.5)
+    if fb > 55.0:
+        return float(1.6 * fb**0.333 * (10.0 * max(perimeter_m, 1.0)) ** 0.667 / u_safe)
+    return float(21.425 * fb**0.75 / u_safe)
+
+
 def _mean_wind(meteo: dict[str, Any]) -> tuple[float, float, float]:
     try:
         u = np.asarray(meteo.get("u", meteo.get("eastward_wind", [[2.0]])), dtype=float)

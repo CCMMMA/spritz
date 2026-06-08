@@ -219,3 +219,14 @@ When improving the repository, prefer this order:
 ## Terrain and didactic use cases
 
 Terrain is a core clean-room suite model under `src/sprtz/models/terrain.py` and covers terrain interpolation/preprocessing. Didactic use cases must remain under the repository-level `usecases/` folder only. Do not add `src/sprtz/usecases` or install use-case entry points; use-case scripts should import production suite APIs and keep scenario orchestration outside the package namespace.
+
+## SpritzFire coding rules
+
+- SpritzFire code must remain clean-room and must not copy proprietary fire-model source, parameter tables, or manuals.
+- MPI is optional. Serial fire spread must run without `mpi4py`, `netCDF4`, `scipy`, `pandas`, `numba`, or GPU libraries.
+- Fire constants must be named at module scope, not embedded in loops.
+- RandomFront spotting runs after each CA step and must not mutate the nominal transition table.
+- FIRMS MAP_KEY values must never be hard-coded or logged in plaintext.
+- Buoyancy correction is one-way fire-to-wind and must not mutate input arrays.
+- GPU backend detection must be lazy and fall back to NumPy on any error.
+- SpritzMet MPI domain decomposition is independent from SpritzFire realization splitting.

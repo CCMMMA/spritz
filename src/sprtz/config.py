@@ -17,6 +17,12 @@ _BACKEND_ALIASES = {
     "particle": "particles",
     "particles": "particles",
     "lagrangian": "particles",
+    "firefront": "firefront",
+    "fire": "firefront",
+    "fire+puff": "fire+puff",
+    "firms": "firms",
+    "firms+fire": "firms+fire",
+    "firms+fire+puff": "firms+fire+puff",
 }
 
 _BURNING_MATERIALS = {"generic", "paper", "plastic"}
@@ -28,7 +34,9 @@ def normalize_backend(value: Any) -> str:
     try:
         return _BACKEND_ALIASES[key]
     except KeyError as exc:
-        raise ConfigurationError("run.backend must be gaussian/gauss or particles") from exc
+        raise ConfigurationError(
+            "run.backend must be gaussian/gauss, particles, firefront, fire+puff, firms, firms+fire, or firms+fire+puff"
+        ) from exc
 
 
 def configured_backend(run: dict[str, Any], override: str | None = None) -> str:
@@ -221,6 +229,115 @@ class Receptor:
 
 
 @dataclass(frozen=True)
+class FireIgnitionPoint:
+    lat: float | None = None
+    lon: float | None = None
+    time: str = ""
+    row: int | None = None
+    col: int | None = None
+
+
+@dataclass(frozen=True)
+class FireFightingAction:
+    type: str
+    polygon_wkt: str
+    t_start: str
+    t_end: str
+
+
+@dataclass(frozen=True)
+class SpottingConfig:
+    model: str = "randomfront"
+    firebrand_radius_m: float = 0.010
+    abl_height_m: float = 1000.0
+    n_firebrands_per_cell: int = 5
+    intensity_threshold_kw_m: float = 100.0
+    sigma_spotting: float = 0.70
+    sigma_angular_rad: float = 0.785
+    p_percentile: float = 0.995
+
+
+@dataclass(frozen=True)
+class FIRMSConfig:
+    enabled: bool = False
+    source: str = "VIIRS_NOAA20_NRT"
+    day_range: int = 1
+    date: str = ""
+    confidence_filter: tuple[str, ...] = ("n", "h")
+    min_frp_mw: float = 1.0
+    map_key_env: str = "FIRMS_MAP_KEY"
+    cache_dir: str = ""
+    bbox_pad_deg: float = 0.1
+    cluster_distance_m: float = 500.0
+
+
+@dataclass(frozen=True)
+class BuoyancyConfig:
+    enabled: bool = False
+    nc_wind_dominated: float = 2.0
+    nc_plume_dominated: float = 10.0
+    alpha_inflow_max: float = 0.35
+    beta_updraft_max: float = 0.50
+    inflow_radius_cells: int = 3
+    prob_threshold: float = 0.5
+
+
+@dataclass(frozen=True)
+class GPUConfig:
+    backend: str = "numpy"
+    device_id: int = 0
+    cupy_stream: bool = True
+    chunk_realizations: int = 0
+
+
+@dataclass(frozen=True)
+class SpritzMetMPIConfig:
+    enabled: bool = False
+    parallel: str = "auto"
+    halo_cells: int = 1
+    collective_io: bool = True
+    fallback_scatter: bool = True
+
+
+@dataclass(frozen=True)
+class SpritzMetConfig:
+    mpi: SpritzMetMPIConfig = field(default_factory=SpritzMetMPIConfig)
+
+
+@dataclass(frozen=True)
+class FireConfig:
+    ignitions: tuple[FireIgnitionPoint, ...] = ()
+    realizations: int = 100
+    ros_model: str = "wang"
+    moisture_default: float = 0.08
+    spotting: bool = False
+    spotting_model: str = "randomfront"
+    spotting_config: SpottingConfig = field(default_factory=SpottingConfig)
+    firefighting: tuple[FireFightingAction, ...] = ()
+    fuel_map: str = "corine"
+    t_max_seconds: float = 21600.0
+    output_interval_seconds: float = 600.0
+    seed: int = 42
+    numba: bool = False
+    parallel: str = "auto"
+    firms: FIRMSConfig = field(default_factory=FIRMSConfig)
+    buoyancy: BuoyancyConfig = field(default_factory=BuoyancyConfig)
+    gpu: GPUConfig = field(default_factory=GPUConfig)
+
+    def validate(self) -> None:
+        if self.realizations <= 0:
+            raise ConfigurationError("fire.realizations must be positive")
+        if self.ros_model not in {"wang", "classic"}:
+            raise ConfigurationError("fire.ros_model must be wang or classic")
+        if not 0.0 <= self.moisture_default <= 1.0:
+            raise ConfigurationError("fire.moisture_default must be in [0, 1]")
+        if self.t_max_seconds <= 0 or self.output_interval_seconds <= 0:
+            raise ConfigurationError("fire durations must be positive")
+        if self.parallel not in {"auto", "mpi", "serial"}:
+            raise ConfigurationError("fire.parallel must be auto, mpi, or serial")
+
+
+@dataclass(frozen=True)
 class SuiteConfig:
     grid: GridConfig
     stations: tuple[Station, ...] = ()
@@ -228,10 +345,14 @@ class SuiteConfig:
     receptors: tuple[Receptor, ...] = ()
     landuse: dict[str, Any] = field(default_factory=dict)
     run: dict[str, Any] = field(default_factory=dict)
+    fire: FireConfig | None = None
+    spritzmet: SpritzMetConfig = field(default_factory=SpritzMetConfig)
     raw: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
         self.grid.validate()
+        if self.fire is not None:
+            self.fire.validate()
         for group in (self.stations, self.sources, self.receptors):
             seen: set[str] = set()
             for item in group:
@@ -347,6 +468,27 @@ def _receptors(data: dict[str, Any]) -> tuple[Receptor, ...]:
     return tuple(Receptor(**item) for item in data.get("receptors", []))
 
 
+def _fire(data: dict[str, Any]) -> FireConfig | None:
+    block = data.get("fire")
+    if block is None:
+        return None
+    item = dict(block)
+    item["ignitions"] = tuple(FireIgnitionPoint(**dict(v)) for v in item.get("ignitions", []))
+    item["firefighting"] = tuple(FireFightingAction(**dict(v)) for v in item.get("firefighting", []))
+    if "spotting_config" in item:
+        item["spotting_config"] = SpottingConfig(**dict(item["spotting_config"]))
+    if "firms" in item:
+        firms = dict(item["firms"])
+        if isinstance(firms.get("confidence_filter"), list):
+            firms["confidence_filter"] = tuple(str(v) for v in firms["confidence_filter"])
+        item["firms"] = FIRMSConfig(**firms)
+    if "buoyancy" in item:
+        item["buoyancy"] = BuoyancyConfig(**dict(item["buoyancy"]))
+    if "gpu" in item:
+        item["gpu"] = GPUConfig(**dict(item["gpu"]))
+    return FireConfig(**item)
+
+
 def from_mapping(data: dict[str, Any], *, validate: bool = True) -> SuiteConfig:
     cfg = SuiteConfig(
         grid=_grid_from_mapping(data),
@@ -355,6 +497,7 @@ def from_mapping(data: dict[str, Any], *, validate: bool = True) -> SuiteConfig:
         receptors=_receptors(data),
         landuse=dict(data.get("landuse", {})),
         run={**dict(data.get("run", {})), **{str(k).lower(): v for k, v in dict(data.get("run", {})).items()}},
+        fire=_fire(data),
         raw=dict(data),
     )
     if validate:

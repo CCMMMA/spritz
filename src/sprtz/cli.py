@@ -17,7 +17,7 @@ from .terrain import acquisition as terrain_acquisition
 from .workflow import run_workflow
 
 LOGGER = logging.getLogger(__name__)
-_BACKEND_CHOICES = ["gaussian", "gauss", "particles", "particle"]
+_BACKEND_CHOICES = ["gaussian", "gauss", "particles", "particle", "firefront", "fire", "fire+puff", "firms", "firms+fire", "firms+fire+puff"]
 
 
 def _with_output_interval(config_path: str | Path, output_interval: float | None):
@@ -67,9 +67,35 @@ def spritzmet_main(argv: Sequence[str] | None = None) -> int:
         parser = _config_parser("Run the pure Python SpritzMet diagnostic kernel")
         parser.add_argument("--output", required=True)
         parser.add_argument("--format", default="auto", choices=["auto", "json", "netcdf"])
+        parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"])
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
+        if args.parallel == "mpi":
+            from sprtz.models.spritzmet_mpi import SpritzMetMPI
+
+            SpritzMetMPI(load_config(args.config))
         spritzmet.run(load_config(args.config), args.output, args.format)
+        return 0
+
+    return _guard(run, argv)
+
+
+def sprtzfire_main(argv: Sequence[str] | None = None) -> int:
+    def run(argv_: Sequence[str] | None) -> int:
+        parser = _config_parser("Run SpritzFire wildfire spread")
+        parser.add_argument("--output-dir", required=True)
+        parser.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
+        parser.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial")
+        parser.add_argument("--firms", action="store_true")
+        parser.add_argument("--firms-source", default=None)
+        parser.add_argument("--firms-date", default=None)
+        parser.add_argument("--firms-confidence", nargs="*", default=None)
+        parser.add_argument("--firms-min-frp", type=float, default=None)
+        args = parser.parse_args(argv_)
+        configure_logging(args.verbose)
+        backend = "firms+fire" if args.firms else "firefront"
+        result = run_workflow(args.config, args.output_dir, backend=backend, interchange=args.interchange, parallel=args.parallel)
+        LOGGER.info("%s", result)
         return 0
 
     return _guard(run, argv)

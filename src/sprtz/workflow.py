@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import configured_backend, from_mapping, load_config
+from .io.jsonio import write_json
 from .models import spritzmet, spritzpost, spritz, particles
 from .parallel import get_mpi_context
 from .terrain.acquisition import run_acquisition
@@ -32,6 +33,30 @@ def run_workflow(
         config = from_mapping({**config.raw, "run": run_config})
     model_backend = configured_backend(config.run, backend)
     use_netcdf = interchange == "netcdf"
+    if model_backend in {"firefront", "fire+puff", "firms", "firms+fire", "firms+fire+puff"}:
+        if model_backend.startswith("firms"):
+            if config.fire is None:
+                raise ValueError("FIRMS workflow requires a fire configuration block")
+            from dataclasses import replace
+            from .terrain.firms import FIRMSDownloader
+
+            downloader = FIRMSDownloader(config.fire.firms)
+            df = downloader.filter(downloader.download(_domain_bbox(config, config.fire.firms.bbox_pad_deg)))
+            ignitions = tuple(downloader.to_ignition_points(df))
+            if not ignitions:
+                raise ValueError("FIRMS returned no hotspots after filtering")
+            config = replace(config, fire=replace(config.fire, ignitions=ignitions))
+        if ctx.enabled and config.fire and config.fire.parallel == "mpi":
+            from .models.firefront_mpi import run_mpi
+
+            run_mpi(str(config_path), str(out))
+            return ctx.bcast({"backend": model_backend, "firefront": str(out / "firefront.nc"), "parallel": "mpi"}, root=0)
+        result = run_firefront_serial(config, out, interchange)
+        if model_backend.endswith("+puff"):
+            config = from_mapping({**config.raw, "run": {**dict(config.raw.get("run", {})), "backend": "gaussian"}})
+            puff_result = run_workflow(config_path, output_dir, backend="gaussian", interchange=interchange, parallel=parallel)
+            result["puff"] = puff_result.get("concentration")
+        return ctx.bcast(result, root=0)
     terrain_result: dict[str, Any] | None = None
     terrain_cfg = dict(config.raw.get("terrain", {}))
     if auto_terrain or bool(terrain_cfg.get("enabled", False)):
@@ -89,3 +114,52 @@ def run_workflow(
     if output_interval_s is not None:
         result["output_interval_s"] = float(output_interval_s)
     return ctx.bcast(result, root=0)
+
+
+def run_firefront_serial(config, output_dir: str | Path, interchange: str = "netcdf") -> dict[str, Any]:
+    from .models.firefront import demo_firefront_from_config
+    from .models.firefront_io import write_csv, write_geojson, write_netcdf
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    front = demo_firefront_from_config(config)
+    ws = [[float(config.run.get("default_fire_wind_speed", 4.0))] * config.grid.nx for _ in range(config.grid.ny)]
+    wd = [[float(config.run.get("default_fire_wind_dir_rad", 1.5707963267948966))] * config.grid.nx for _ in range(config.grid.ny)]
+    result = front.run(ws, wd)
+    fire_path = out / ("firefront.nc" if interchange == "netcdf" else "firefront.json")
+    if interchange == "netcdf":
+        write_netcdf(fire_path, result, {"dx": config.grid.dx, "dy": config.grid.dy}, front.cfg, "simulation start")
+    else:
+        write_json(fire_path, _jsonable(result))
+    write_csv(out / "firefront.csv", result)
+    write_geojson(out / "fire_perimeter.geojson", result)
+    return {"firefront": str(fire_path), "fire_perimeter": str(out / "fire_perimeter.geojson"), "backend": "firefront"}
+
+
+def _jsonable(value: Any) -> Any:
+    try:
+        import numpy as np
+
+        if isinstance(value, np.ndarray):
+            return _jsonable(value.tolist())
+        if isinstance(value, np.floating):
+            value = float(value)
+        if isinstance(value, np.integer):
+            return int(value)
+    except Exception:
+        pass
+    if isinstance(value, float) and (value != value or value in {float("inf"), float("-inf")}):
+        return None
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def _domain_bbox(config, pad: float) -> tuple[float, float, float, float]:
+    lats = [v for group in (config.sources, config.receptors) for v in [group.latitude] if v is not None]
+    lons = [v for group in (config.sources, config.receptors) for v in [group.longitude] if v is not None]
+    if not lats or not lons:
+        raise ValueError("FIRMS workflows require at least one source or receptor latitude/longitude")
+    return (min(lons) - pad, min(lats) - pad, max(lons) + pad, max(lats) + pad)

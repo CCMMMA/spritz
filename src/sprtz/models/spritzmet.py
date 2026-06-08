@@ -16,6 +16,23 @@ from sprtz.io.netcdf_cf import available as netcdf_available, write_cf_meteorolo
 from sprtz.models.spritzwrf import WRFWindField
 
 
+def rh_t_to_fmc(rh_pct: np.ndarray, temp_k: np.ndarray) -> np.ndarray:
+    """Nelson-style equilibrium moisture content for dead fine fuels."""
+    rh = np.asarray(rh_pct, dtype=np.float32)
+    temp = np.asarray(temp_k, dtype=np.float32)
+    tc = temp - 273.15
+    fmc = np.where(
+        rh < 10,
+        0.03229 + 0.281073 * rh - 0.000578 * rh * tc,
+        np.where(
+            rh < 50,
+            2.22749 + 0.160107 * rh - 0.014780 * tc,
+            21.0606 + 0.005565 * rh**2 - 0.000350 * rh * tc - 0.483199 * rh,
+        ),
+    )
+    return np.clip(fmc / 100.0, 0.01, 0.40).astype(np.float32)
+
+
 def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, object]:
     """Build a deterministic SpritzMet-like diagnostic field.
 
@@ -60,6 +77,8 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
         precip = np.divide(precip, weights, out=np.full_like(precip, default_precip), where=weights > 0)
 
     speed = np.hypot(u, v)
+    rh = np.full_like(temp, float(config.run.get("default_relative_humidity", 50.0)))
+    fmc = rh_t_to_fmc(rh, temp)
     return {
         "component": "spritzmet",
         "grid": asdict(config.grid),
@@ -69,6 +88,8 @@ def build_meteorology(config: SuiteConfig, power: float = 2.0) -> dict[str, obje
         "temperature": temp.tolist(),
         "mixing_height": mixh.tolist(),
         "precipitation_rate": precip.tolist(),
+        "relative_humidity": rh.tolist(),
+        "fmc": fmc.tolist(),
         "stations": [asdict(s) for s in config.stations],
         "metadata": {"kernel": "inverse-distance diagnostic", "schema_version": "1.1"},
     }

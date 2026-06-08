@@ -44,7 +44,8 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
     temp = _as_array(meteo.get("temperature", np.full(u.shape, 293.15)))
     mh = _as_array(meteo.get("mixing_height", np.full(u.shape, 1000.0)))
     precip = _as_array(meteo.get("precipitation_rate", np.zeros(u.shape, dtype=float)))
-    if temp.shape != u.shape or mh.shape != u.shape or precip.shape != u.shape:
+    fmc = _as_array(meteo.get("fmc", np.full(u.shape, 0.08, dtype=float)))
+    if temp.shape != u.shape or mh.shape != u.shape or precip.shape != u.shape or fmc.shape != u.shape:
         raise DataFormatError("temperature, mixing_height, and precipitation_rate must match u/v shape")
 
     with Dataset(p, "w") as ds:
@@ -68,10 +69,15 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
             ("air_temperature", temp, "air_temperature", "K"),
             ("atmosphere_boundary_layer_thickness", mh, "atmosphere_boundary_layer_thickness", "m"),
             ("precipitation_rate", precip, "precipitation_rate", "mm h-1"),
+            ("fmc", fmc, "", "1"),
         ]:
             var = ds.createVariable(name, "f8", ("time", "y", "x"), zlib=True)
-            var.standard_name = standard_name
+            if standard_name:
+                var.standard_name = standard_name
             var.units = units
+            if name == "fmc":
+                var.long_name = "dead fine fuel moisture content"
+                var.valid_range = np.asarray([0.01, 0.40], dtype=np.float32)
             var[0, :, :] = values
 
 
@@ -103,6 +109,7 @@ def read_cf_meteorology(path: str | Path) -> dict[str, Any]:
             "temperature": read_var("air_temperature", "temperature", default=293.15),
             "mixing_height": read_var("atmosphere_boundary_layer_thickness", "mixing_height", default=1000.0),
             "precipitation_rate": read_var("precipitation_rate", "rainfall_rate", default=0.0),
+            "fmc": read_var("fmc", default=0.08),
         }
 
 

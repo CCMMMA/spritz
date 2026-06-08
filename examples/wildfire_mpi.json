@@ -1,0 +1,11 @@
+{
+  "grid": {"nx": 25, "ny": 25, "dx": 100.0, "dy": 100.0},
+  "run": {"backend": "firefront"},
+  "fire": {
+    "realizations": 16,
+    "parallel": "mpi",
+    "t_max_seconds": 1200,
+    "output_interval_seconds": 300,
+    "seed": 42
+  }
+}
