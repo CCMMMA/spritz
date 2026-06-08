@@ -1,0 +1,16 @@
+{
+  "grid": {"nx": 25, "ny": 25, "dx": 100.0, "dy": 100.0},
+  "stations": [{"id": "W1", "x": 0.0, "y": 0.0, "wind_speed": 4.0, "wind_dir": 270.0}],
+  "sources": [{"id": "candidate-placeholder", "x": 0.0, "y": 0.0, "emission_rate": 1.0}],
+  "receptors": [
+    {"id": "odor-1", "x": 1800.0, "y": 1200.0, "z": 0.0},
+    {"id": "odor-2", "x": 1900.0, "y": 1300.0, "z": 0.0}
+  ],
+  "run": {
+    "backend": "gaussian",
+    "observations": {"odor-1": 1.0, "odor-2": 0.7},
+    "backward_sigma_cross_m": 300.0,
+    "backward_particles": 4000,
+    "backward_duration_s": 1800.0
+  }
+}

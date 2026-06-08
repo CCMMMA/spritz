@@ -46,6 +46,79 @@ mpiexec -n 4 sprtz run examples/wildfire_minimal.json --backend firefront --outp
 
 See `docs/firefront.md`, `docs/firefront_numerical.md`, `docs/firefront_spotting.md`, `docs/firms_ignition.md`, `docs/firefront_gpu.md`, and `docs/spritzmet_mpi.md`.
 
+## Documentation Index
+
+| Document | Content |
+| --- | --- |
+| `docs/getting_started.md` | First run, installation assumptions, and basic commands. |
+| `docs/user_manual.md` | Full CLI/configuration reference for routine use. |
+| `docs/architecture.md` | Component architecture and responsibilities. |
+| `docs/dataflow.md` | File and product flow between WRF, SpritzMet, Terrain, dispersion, and post-processing. |
+| `docs/spritzwrf_spritzmet.md` | WRF ingestion and wind-field improvement/downscaling path. |
+| `docs/terrain.md` | Terrain, DEM, land-cover, GEO generation, and provenance. |
+| `docs/io_compatibility.md` | JSON, legacy text, CSV, and NetCDF-CF interoperability. |
+| `docs/numerical_model.md` | Gaussian/particle dispersion assumptions and equations. |
+| `docs/particle_model.md` | Particle backend details. |
+| `docs/firefront.md` | SpritzFire user-facing module reference. |
+| `docs/firefront_numerical.md` | SpritzFire numerical method details. |
+| `docs/firefront_netcdf.md` | Firefront NetCDF-CF output conventions. |
+| `docs/firefront_mpi.md` | SpritzFire MPI realization splitting. |
+| `docs/firefront_gpu.md` | Optional CUDA/CuPy acceleration for SpritzFire. |
+| `docs/firefront_spotting.md` | RandomFront spotting. |
+| `docs/firms_ignition.md` | FIRMS/VIIRS satellite ignition ingestion. |
+| `docs/buoyancy_correction.md` | Semi-coupled fire buoyancy wind correction. |
+| `docs/backward.md` | Backward plume source and fire/arson origin attribution. |
+| `docs/parallelization.md` | MPI/GPU execution models across SpritzMet, Gaussian, particles, and SpritzFire. |
+| `docs/spritzmet_mpi.md` | SpritzMet spatial MPI decomposition. |
+| `docs/hpc.md` | SLURM batch scripts for HPC systems. |
+| `docs/visualization.md` | Plotting and map outputs. |
+| `docs/validation.md` | Validation expectations and limitations. |
+| `docs/production_readiness.md` | Operational readiness checks. |
+| `docs/migration_notes.md` | Migration notes for compatible workflows. |
+| `docs/usecases.md` | Index of runnable use-case templates. |
+
+## Recommended Reading Paths
+
+Run the examples:
+
+1. `docs/getting_started.md`
+2. `examples/README.md`
+3. `docs/usecases.md`
+4. `docs/io_compatibility.md`
+
+Set up a production wind-field improvement from WRF:
+
+1. `docs/spritzwrf_spritzmet.md`
+2. `docs/terrain.md`
+3. `docs/dataflow.md`
+4. `docs/production_readiness.md`
+5. `docs/hpc.md`
+
+Simulate a plume for wildfire, arson, or industrial smoke:
+
+1. `docs/numerical_model.md`
+2. `docs/particle_model.md`
+3. `docs/io_compatibility.md`
+4. `docs/parallelization.md`
+5. `docs/visualization.md`
+
+Simulate fire-front evolution and related smoke plume:
+
+1. `docs/firefront.md`
+2. `docs/firefront_numerical.md`
+3. `docs/firefront_spotting.md`
+4. `docs/buoyancy_correction.md`
+5. `docs/firefront_mpi.md`
+6. `docs/firefront_gpu.md`
+
+Estimate the possible origin of an odor, stink, plume, wildfire, or arson event:
+
+1. `docs/backward.md`
+2. `examples/backward_plume.json`
+3. `examples/backward_firefront.json`
+4. `docs/hpc.md` for larger candidate grids
+5. `docs/validation.md` before operational interpretation
+
 ## Installation
 
 ```bash

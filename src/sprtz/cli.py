@@ -10,7 +10,7 @@ from .config import SuiteConfig, configured_backend, from_mapping, load_config
 from .doctor import format_report, run_diagnostics
 from .exceptions import SpritzError
 from .logging import configure_logging
-from .models import ctgproc, makegeo, particles, spritz, spritzmet, spritzpost, spritzwrf
+from .models import backward, ctgproc, makegeo, particles, spritz, spritzmet, spritzpost, spritzwrf
 from .models import terrain, visualization
 from .parallel import get_mpi_context
 from .terrain import acquisition as terrain_acquisition
@@ -173,6 +173,30 @@ def sprtz_particles_main(argv: Sequence[str] | None = None) -> int:
             parallel=args.parallel,
             gpu_backend=args.gpu_backend,
         )
+        return 0
+
+    return _guard(run, argv)
+
+
+def sprtz_backward_main(argv: Sequence[str] | None = None) -> int:
+    def run(argv_: Sequence[str] | None) -> int:
+        parser = _config_parser("Run backward source or ignition attribution")
+        parser.add_argument("--meteo", default=None, help="SpritzMet JSON/NetCDF product; required for plume models")
+        parser.add_argument("--output", required=True)
+        parser.add_argument("--model", choices=["gaussian", "particles", "firefront"], default="gaussian")
+        parser.add_argument("--format", choices=["json", "csv"], default="json")
+        parser.add_argument("--seed", type=int, default=None)
+        args = parser.parse_args(argv_)
+        configure_logging(args.verbose)
+        result = backward.run_backward(
+            load_config(args.config),
+            args.meteo,
+            args.output,
+            model=args.model,
+            output_format=args.format,
+            seed=args.seed,
+        )
+        LOGGER.info("%s", result.get("component", "spritz.backward"))
         return 0
 
     return _guard(run, argv)
@@ -423,6 +447,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         workflow.add_argument("--output-interval", type=float, default=None, help="optional concentration output interval in seconds")
         validate = sub.add_parser("validate", help="load and validate a configuration file")
         validate.add_argument("config")
+        backward_cmd = sub.add_parser("backward", help="run backward source or ignition attribution")
+        backward_cmd.add_argument("config")
+        backward_cmd.add_argument("--meteo", default=None)
+        backward_cmd.add_argument("--output", required=True)
+        backward_cmd.add_argument("--model", choices=["gaussian", "particles", "firefront"], default="gaussian")
+        backward_cmd.add_argument("--format", choices=["json", "csv"], default="json")
+        backward_cmd.add_argument("--seed", type=int, default=None)
         doctor = sub.add_parser("doctor", help="run local production-readiness diagnostics")
         doctor.add_argument("--require-netcdf", action="store_true")
         doctor.add_argument("--require-viz", action="store_true")
@@ -456,6 +487,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 len(cfg.sources),
                 len(cfg.receptors),
             )
+            return 0
+        if args.command == "backward":
+            result = backward.run_backward(
+                load_config(Path(args.config)),
+                args.meteo,
+                args.output,
+                model=args.model,
+                output_format=args.format,
+                seed=args.seed,
+            )
+            LOGGER.info("%s", result.get("component", "spritz.backward"))
             return 0
         if args.command == "doctor":
             report = run_diagnostics(

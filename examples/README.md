@@ -54,3 +54,22 @@ spritzpost --input output/concentration.csv --output output/post.json
 ```
 
 `sprtz-particles` remains a compatibility alias for older scripts.
+# Examples
+
+Run examples from the repository root. For SLURM/HPC launches, copy the relevant command into a batch script and add `mpiexec -n $SLURM_NTASKS` for MPI-capable commands:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=sprtz_example
+#SBATCH --ntasks=4
+#SBATCH --time=00:10:00
+module load python/3.11 openmpi/4.1
+source .venv/bin/activate
+mpiexec -n $SLURM_NTASKS sprtz run examples/minimal.json --output-dir output_hpc --interchange netcdf --parallel mpi --gpu-backend auto
+```
+
+- `minimal.json`: compact SpritzMet to Gaussian/particle workflow.
+- `wildfire_minimal.json`: SpritzFire fire spread.
+- `wildfire_mpi.json`: SpritzFire realization-splitting MPI example.
+- `backward_plume.json`: backward plume source attribution.
+- `backward_firefront.json`: backward fire/arson ignition attribution.

@@ -59,3 +59,20 @@ plant-specific data and validation.
 ## Documentation standard
 
 Each use case README contains purpose, workflow, inputs, commands, outputs, assumptions, and validation checks.  Commands use the same coordinate examples and WRF archive pattern so the use cases remain consistent.
+# Use Cases
+
+Use cases are runnable teaching and production templates under `usecases/`.
+
+For SLURM, wrap each command in a batch file with environment setup:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=sprtz_usecase
+#SBATCH --ntasks=4
+#SBATCH --time=00:20:00
+module load python/3.11 openmpi/4.1
+source .venv/bin/activate
+mpiexec -n $SLURM_NTASKS python usecases/10_backward_plume_origin/run.py
+```
+
+See `docs/hpc.md` for full SLURM templates.

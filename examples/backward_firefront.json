@@ -1,0 +1,17 @@
+{
+  "grid": {"nx": 30, "ny": 30, "dx": 100.0, "dy": 100.0},
+  "run": {
+    "backend": "firefront",
+    "default_fire_wind_dir_rad": 1.5707963267948966,
+    "backward_fire_sigma_m": 400.0
+  },
+  "fire": {
+    "ignitions": [
+      {"row": 15, "col": 20, "time": "2026-06-05T14:30:00Z"},
+      {"row": 16, "col": 21, "time": "2026-06-05T14:40:00Z"}
+    ],
+    "realizations": 8,
+    "t_max_seconds": 1800,
+    "output_interval_seconds": 300
+  }
+}
