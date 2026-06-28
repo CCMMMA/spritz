@@ -65,7 +65,7 @@ land-cover input when `sprtz[geo]` is installed; see
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
-  --date 20260527Z0000 \
+  --date 20260627Z0000 \
   --hours 24 \
   --download-dir data/wrf \
   --output data/output/wrf_100m_wind.nc \
