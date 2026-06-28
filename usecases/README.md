@@ -69,8 +69,8 @@ notes.
 Run the step scripts directly:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py --help
-python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py --help
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py --help
+python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py --help
 python usecases/02_wildfire_arson_effects/step_02_build_config.py --help
 python usecases/02_wildfire_arson_effects/step_03_run_model.py --help
 python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --help

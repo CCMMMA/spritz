@@ -73,7 +73,7 @@ https://data.meteo.uniparthenope.it/files/wrf5/d03/history/2026/05/27/wrf5_d03_2
 To ask Spritz to print the exact URL without downloading:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --output ignored.nc \
   --center-lat 40.85 \
@@ -91,7 +91,7 @@ coordinate:
 ```bash
 mkdir -p data/wrf output
 
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --date 20260527Z0000 \
   --hours 24 \
   --download-dir data/wrf \
@@ -113,7 +113,7 @@ count. In this mode, `--dx` and `--dy` remain hard constraints; Spritz expands
 the actual covered area outward to the nearest exact 100 m grid multiple:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wrf_100m_wind_bbox.nc \
@@ -147,7 +147,7 @@ WRF filename.
 To rerun from a WRF file already downloaded:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -163,7 +163,7 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 For training, CI, or offline classroom sessions, the same workflow can use a deterministic synthetic WRF-like field:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --allow-synthetic \
   --json \
   --output output/demo_wind.json \
@@ -188,7 +188,7 @@ Use case 02 creates a Spritz scenario for a burning place at a known latitude an
 Prepare the local wind product:
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
+python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wildfire_case/wrf_100m_wind.nc \
@@ -452,7 +452,7 @@ python -m pip install -e .[viz]
 Check the URL first:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --output ignored.nc \
   --center-lat 40.85 \

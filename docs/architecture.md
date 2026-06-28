@@ -29,7 +29,7 @@ The same modules can be invoked directly through their console scripts or Python
 
 SpritzWRF reads WRF-oriented NetCDF inputs and normalizes clean-room near-surface
 wind and precipitation fields. SpritzMet creates diagnostic meteorology on the
-model grid, supports WRF-to-local-grid interpolation in didactic use cases, and
+model grid, supports WRF-to-local-grid downscaling in didactic use cases, and
 writes NetCDF-CF or JSON outputs. The meteorology layer remains
 optional-dependency friendly:
 NetCDF support is used when installed, while JSON fallback keeps tests and

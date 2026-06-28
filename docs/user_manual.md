@@ -111,7 +111,7 @@ values in meters for local-grid workflows.
 ### Stations
 
 Stations provide wind, temperature, and mixing-height observations for
-diagnostic SpritzMet interpolation.
+diagnostic SpritzMet downscaling.
 
 ```json
 {
@@ -233,7 +233,7 @@ accumulated WRF rain fields are available (`RAINC`, `RAINNC`, `RAINSH`), it
 uses the increment at the selected WRF time as a millimeters-per-hour screening
 rate. Four-dimensional WRF wind variables are sliced as `time, level, y, x`
 with independent `time_index` and `level_index` selections. SpritzMet
-interpolates the selected wind and precipitation fields to the local grid and
+downscales the selected wind and precipitation fields to the local grid and
 writes wind as `eastward_wind(time,z,y,x)` / `northward_wind(time,z,y,x)` and
 surface precipitation as `precipitation_rate(time,y,x)`. When washout is
 enabled, Spritz adds `coefficient * mean_precipitation_rate` to each source wet

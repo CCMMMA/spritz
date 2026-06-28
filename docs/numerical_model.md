@@ -103,7 +103,7 @@ washout_rate_s-1 = precipitation_washout_coefficient_s_per_mm_h * mean_precipita
 
 The precipitation rate is read from the SpritzMet meteorology payload. For
 WRF-driven workflows, SpritzWRF extracts common WRF rate fields or accumulated
-rain increments and SpritzMet interpolates them onto the local grid. If no
+rain increments and SpritzMet downscales them onto the local grid. If no
 precipitation field is present, the rate is zero and the option has no effect.
 
 `concentration_output` controls where concentrations are sampled:

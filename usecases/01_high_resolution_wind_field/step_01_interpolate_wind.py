@@ -252,6 +252,8 @@ def _resolve_hourly_wrf_inputs(args: argparse.Namespace) -> list[Path] | None:
 def _resolve_wrf_input(args: argparse.Namespace, download_date: str | None, download_cycle_hour: int) -> Path | None:
     """Step 1: choose the local WRF source or invoke SpritzWRF's downloader."""
     if args.wrf is not None:
+        if args.date is not None:
+            raise ValueError("--wrf and --date are mutually exclusive")
         wrf_path = Path(args.wrf)
         LOGGER.info("step 1/4 input: using local WRF file %s", wrf_path)
         _teach("a local WRF file makes this workflow reproducible without network access")
@@ -349,7 +351,8 @@ def _load_wrf_field(
         _teach("synthetic WRF-like field shape=%s centered near (%.6f, %.6f)", wrf.u.shape, center_lat, center_lon)
         return wrf
     raise FileNotFoundError(
-        "WRF input file is required. Pass --wrf, or use --download-time YYYYMMDDZhhmm, "
+        "WRF input file is required. Pass --wrf, use --date YYYYMMDDZhhmm --hours N, "
+        "or use --download-time YYYYMMDDZhhmm, "
         "or enable --allow-synthetic for tests."
     )
 
@@ -454,7 +457,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Use case 01: SpritzWRF -> SpritzMet downscaling from WRF 1 km winds to a 100 m local grid"
     )
-    parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --download-time or --allow-synthetic")
+    parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --date, --download-time, or --allow-synthetic")
     parser.add_argument("--date", default=None, help="Start UTC timestamp as YYYYMMDDZhhmm for hourly WRF sequence mode")
     parser.add_argument("--hours", type=int, default=1, help="Number of hourly WRF files to downscale when --date is used")
     parser.add_argument("--download-time", default=None, help="Download meteo@uniparthenope WRF5 d03 file for UTC YYYYMMDDZhhmm")

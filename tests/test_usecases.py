@@ -84,7 +84,7 @@ def test_high_resolution_wind_netcdf_synthetic_requires_valid_time(tmp_path: Pat
 
 
 def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
-    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_interpolate_wind.py")
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind.py")
     out = tmp_path / "wind.json"
 
     assert (
@@ -110,7 +110,7 @@ def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
 
 
 def test_high_resolution_wind_run_entrypoint_bbox_synthetic(tmp_path: Path) -> None:
-    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_interpolate_wind.py")
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind.py")
     out = tmp_path / "wind_bbox.json"
 
     assert (
@@ -411,7 +411,7 @@ def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_an
         return
     from netCDF4 import Dataset  # type: ignore
 
-    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_interpolate_wind.py")
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind.py")
     wrf_path = tmp_path / "wrf_all_times_levels.nc"
     with Dataset(wrf_path, "w") as ds:
         ds.createDimension("Time", 2)
@@ -477,7 +477,7 @@ def test_high_resolution_wind_entrypoint_date_hours_writes_one_multitime_file(tm
         return
     from netCDF4 import Dataset  # type: ignore
 
-    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_interpolate_wind.py")
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind.py")
     wrf_dir = tmp_path / "wrf"
     wrf_dir.mkdir()
     for hour in range(2):

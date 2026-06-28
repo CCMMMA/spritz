@@ -49,7 +49,7 @@ fetch` with the same domain settings used by the wildfire run.
 ## Step 1: Prepare wind with WRF download
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
+python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wildfire_case/wrf_100m_wind.nc \
@@ -61,7 +61,7 @@ python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
 ## Step 1 alternative: Prepare wind with an existing WRF file
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
+python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output output/wildfire_case/wrf_100m_wind.nc \
   --center-lat 40.85 \

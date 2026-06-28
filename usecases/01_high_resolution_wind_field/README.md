@@ -3,7 +3,7 @@
 Goal: obtain a local 100 m wind and precipitation-rate field centered on a user-supplied latitude and longitude, starting from a 1 km WRF5 d03 file.
 
 This didactic workflow is deliberately explicit, and
-`step_01_interpolate_wind.py` invokes the production modules in this order:
+`step_01_downscale_wind.py` invokes the production modules in this order:
 
 1. **Input step.** Use a local WRF NetCDF file or call `spritzwrf.download_meteo_uniparthenope_wrf` for the meteo@uniparthenope archive.
 2. **SpritzWRF extraction step.** Call `spritzwrf.load_near_surface_wind` to extract latitude, longitude, near-surface wind components, and precipitation when available.
@@ -64,7 +64,7 @@ land-cover input when `sprtz[geo]` is installed; see
 ## Run with automatic download
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --date 20260527Z0000 \
   --hours 24 \
   --download-dir data/wrf \
@@ -85,7 +85,7 @@ NetCDF file with 24 time slices on the requested 101 by 101 grid at 100 m by
 ## Run with a bounding box
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output data/output/wrf_100m_wind_bbox.nc \
@@ -102,7 +102,7 @@ the box with exact grid spacing.
 ## Print the URL without downloading
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --output ignored.nc \
   --center-lat 40.85 \
@@ -113,7 +113,7 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 ## Run with an existing WRF file
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -126,7 +126,7 @@ This downscales all WRF times and all wind levels into
 indices:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output data/output/wrf_100m_wind_t000_z000.nc \
   --center-lat 40.85 \
@@ -137,7 +137,7 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 
 ## Plot the intermediate/final NetCDF map
 
-When the workflow writes NetCDF, `step_01_interpolate_wind.py` also calls
+When the workflow writes NetCDF, `step_01_downscale_wind.py` also calls
 `tools/plotter.py` and writes a wind-speed map beside the NetCDF product. To
 regenerate the publication map explicitly, run:
 
@@ -160,7 +160,7 @@ python tools/plotter.py data/output/wrf_100m_wind_bbox.nc \
 ## Classroom/demo run without WRF data
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --allow-synthetic \
   --json \
   --output data/output/demo_wind.json \
