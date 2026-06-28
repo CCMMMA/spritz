@@ -12,8 +12,10 @@ This didactic workflow is deliberately explicit, and
 
 SpritzWRF reads WRF valid time strictly from WRF/CF metadata (`Times`, CF
 `time`, or explicit global time attributes). It does not infer datetimes from
-the WRF filename. The NetCDF-CF output includes a CF `time(time)` coordinate
-with absolute UTC units when the WRF file provides valid-time metadata.
+the WRF filename. Four-dimensional WRF wind variables are sliced as
+`time, level, y, x`, using `--time-index` and `--level-index` independently.
+The NetCDF-CF output includes a CF `time(time)` coordinate with absolute UTC
+units when the WRF file provides valid-time metadata.
 
 The grid can be requested in either of two ways:
 
@@ -105,7 +107,9 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
-  --center-lon 14.27
+  --center-lon 14.27 \
+  --time-index 0 \
+  --level-index 0
 ```
 
 ## Plot the intermediate/final NetCDF map
@@ -117,6 +121,8 @@ regenerate the publication map explicitly, run:
 ```bash
 python tools/plotter.py data/output/wrf_100m_wind.nc \
   --variable wind_speed \
+  --time-index 0 \
+  --level-index 0 \
   --output data/output/wrf_100m_wind.png
 ```
 
@@ -144,7 +150,7 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 
 - `wrf_100m_wind.nc` or `.json`
 - `wrf_100m_wind.png` when NetCDF output is selected and plotting dependencies are available
-- variables/fields: `latitude`, `longitude`, `eastward_wind`, `northward_wind`, `wind_speed`, `wind_from_direction`, `precipitation_rate`
+- variables/fields: `latitude`, `longitude`, `z`, `eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, `wind_speed(time,z,y,x)`, `wind_from_direction(time,z,y,x)`, `precipitation_rate(time,y,x)`
 
 ## Teaching notes
 

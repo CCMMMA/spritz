@@ -18,7 +18,10 @@ This is not a byte-for-byte parser for every historical Fortran control record. 
 
 New module-to-module exchange prefers NetCDF-CF:
 
-- SpritzMet writes `meteo.nc` with `eastward_wind`, `northward_wind`, `air_temperature`, `atmosphere_boundary_layer_thickness`, and `precipitation_rate`.
+- SpritzMet writes `meteo.nc` with `eastward_wind(time,z,y,x)`,
+  `northward_wind(time,z,y,x)`, `air_temperature(time,y,x)`,
+  `atmosphere_boundary_layer_thickness(time,y,x)`, and
+  `precipitation_rate(time,y,x)`.
 - Spritz reads `meteo.nc` and writes `concentration.nc`; JSON `run.backend`
   or CLI `--backend` selects `gaussian`/`gauss` or `particles`.
 - SpritzPost and visualization read NetCDF concentration files directly.
@@ -57,7 +60,15 @@ SpritzWRF can download and read WRF5 d03 history files from the meteo@uniparthen
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
 ```
 
-The downloader stores files locally and the SpritzWRF reader accepts common WRF near-surface wind variables (`U10`/`V10`, `WSPD10`/`WDIR10`) and CF-like wind names. It reads valid time only from WRF/CF time metadata, not from the downloaded filename. It also extracts precipitation from common rate variables (`RAINRATE`, `PRECIP_RATE`, `precipitation_rate`, `precip_rate`) or accumulated WRF rain variables (`RAINC`, `RAINNC`, `RAINSH`) when present. SpritzMet converts those fields into the NetCDF-CF local product used by the rest of Spritz.
+The downloader stores files locally and the SpritzWRF reader accepts common WRF
+near-surface wind variables (`U10`/`V10`, `WSPD10`/`WDIR10`) and CF-like wind
+names. Four-dimensional WRF wind variables are sliced as `time, level, y, x`
+with independent `time_index` and `level_index` choices. SpritzWRF reads valid
+time only from WRF/CF time metadata, not from the downloaded filename. It also
+extracts precipitation from common rate variables (`RAINRATE`, `PRECIP_RATE`,
+`precipitation_rate`, `precip_rate`) or accumulated WRF rain variables (`RAINC`,
+`RAINNC`, `RAINSH`) when present. SpritzMet converts those fields into the
+NetCDF-CF local product used by the rest of Spritz.
 
 
 ## Terrain Preprocessing

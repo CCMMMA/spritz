@@ -23,10 +23,11 @@ It is not claimed to be a regulatory replacement for any third-party modeling sy
 Use a virtual environment, install with `pip install .[netcdf,viz]`, or `pip install .[geo,netcdf,viz]` when Terrain acquisition must read GeoTIFF/COG products. Commit exact input files with a run manifest, and archive output artifacts with the package version and Git commit.
 
 For WRF-driven wet-removal studies, archive the WRF file, the selected
-`time_index`, the SpritzMet `precipitation_rate` product, and the configured
-`precipitation_washout_coefficient_s_per_mm_h`. For fire or chimney cases,
-record source `height_agl_m`, material preset or explicit emission assumptions,
-event start/end datetimes, and any firefighter-action period.
+`time_index` and `level_index`, the SpritzMet 4D wind product
+(`time,z,y,x`), the surface `precipitation_rate(time,y,x)` product, and the
+configured `precipitation_washout_coefficient_s_per_mm_h`. For fire or chimney
+cases, record source `height_agl_m`, material preset or explicit emission
+assumptions, event start/end datetimes, and any firefighter-action period.
 
 
 ## Parallel production execution

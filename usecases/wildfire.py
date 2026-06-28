@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from pyproj import CRS, Transformer
 
 from sprtz.config import from_mapping
@@ -21,6 +22,19 @@ from plotting import plot_netcdf_if_available, plot_workflow_netcdfs
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _center_value(values: Any, *, level_index: int = 0) -> float:
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 4:
+        arr = arr[0, min(max(level_index, 0), arr.shape[1] - 1), :, :]
+    elif arr.ndim == 3:
+        arr = arr[0, :, :]
+    if arr.ndim != 2:
+        raise ValueError(f"expected a 2D, 3D, or 4D field, got shape {arr.shape}")
+    cy = arr.shape[0] // 2
+    cx = arr.shape[1] // 2
+    return float(arr[cy, cx])
 
 BURNING_MATERIALS: dict[str, dict[str, float]] = {
     "generic": {
@@ -403,24 +417,18 @@ def run_wildfire_event(
     # Use center-cell wind as representative source wind for the screening config.
     if wind_result.format == "json":
         data = json.loads(wind_out.read_text(encoding="utf-8"))
-        cy = len(data["wind_speed"]) // 2
-        cx = len(data["wind_speed"][0]) // 2
-        wind_speed = float(data["wind_speed"][cy][cx])
-        wind_dir = float(data["wind_from_direction"][cy][cx])
-        precipitation_rate = float(data.get("precipitation_rate", [[0.0]])[cy][cx])
+        wind_speed = _center_value(data["wind_speed"])
+        wind_dir = _center_value(data["wind_from_direction"])
+        precipitation_rate = _center_value(data.get("precipitation_rate", [[0.0]]))
     else:
         try:
             from netCDF4 import Dataset  # type: ignore
 
             with Dataset(wind_out) as ds:
-                speed = ds.variables["wind_speed"][0]
-                direction = ds.variables["wind_from_direction"][0]
-                cy = speed.shape[0] // 2
-                cx = speed.shape[1] // 2
-                wind_speed = float(speed[cy, cx])
-                wind_dir = float(direction[cy, cx])
+                wind_speed = _center_value(ds.variables["wind_speed"][:])
+                wind_dir = _center_value(ds.variables["wind_from_direction"][:])
                 if "precipitation_rate" in ds.variables:
-                    precipitation_rate = float(ds.variables["precipitation_rate"][0, cy, cx])
+                    precipitation_rate = _center_value(ds.variables["precipitation_rate"][:])
                 else:
                     precipitation_rate = 0.0
         except Exception:

@@ -371,6 +371,41 @@ def test_wrf_precipitation_rate_extraction(tmp_path: Path) -> None:
     np.testing.assert_allclose(wrf.precipitation_rate, np.full((2, 2), 0.9))
 
 
+def test_wrf_four_dimensional_wind_selects_time_and_level_independently(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wrf_4d_wind.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("Time", 2)
+        ds.createDimension("bottom_top", 3)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]], [[41.0, 41.0], [41.01, 41.01]]])
+        lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]], [[15.0, 15.01], [15.0, 15.01]]])
+        for name, values in [("XLAT", lat_values), ("XLONG", lon_values)]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+        u_values = np.zeros((2, 3, 2, 2), dtype=float)
+        v_values = np.zeros((2, 3, 2, 2), dtype=float)
+        for time in range(2):
+            for level in range(3):
+                u_values[time, level, :, :] = 100.0 * time + 10.0 * level + 3.0
+                v_values[time, level, :, :] = 100.0 * time + 10.0 * level + 4.0
+        for name, values in [("U", u_values), ("V", v_values)]:
+            var = ds.createVariable(name, "f8", ("Time", "bottom_top", "south_north", "west_east"))
+            var[:, :, :, :] = values
+
+    wrf = spritzwrf.load_near_surface_wind(path, time_index=1, level_index=2)
+    np.testing.assert_allclose(wrf.latitude, lat_values[1])
+    np.testing.assert_allclose(wrf.u, np.full((2, 2), 123.0))
+    np.testing.assert_allclose(wrf.v, np.full((2, 2), 124.0))
+    assert wrf.metadata is not None
+    assert wrf.metadata["time_index"] == "1"
+    assert wrf.metadata["level_index"] == "2"
+
+
 def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> None:
     if not netcdf_available():
         return
@@ -412,6 +447,11 @@ def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> No
 
     with Dataset(out) as ds:
         assert "time" in ds.variables
+        assert ds.variables["eastward_wind"].dimensions == ("time", "z", "y", "x")
+        assert ds.variables["eastward_wind"].shape == (1, 1, 3, 3)
+        assert ds.variables["northward_wind"].shape == (1, 1, 3, 3)
+        assert ds.variables["precipitation_rate"].dimensions == ("time", "y", "x")
+        assert ds.variables["precipitation_rate"].shape == (1, 3, 3)
         assert ds.variables["time"].standard_name == "time"
         assert ds.variables["time"].units == "seconds since 2026-05-27 00:00:00 UTC"
         assert ds.variables["time"][0] == pytest.approx(0.0)

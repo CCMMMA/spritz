@@ -49,12 +49,16 @@ MPLBACKEND=Agg python tools/plotter.py \
 ```
 
 If a NetCDF contains multiple times, select one time step by zero-based index.
-Sprtz NetCDF products with a time axis must provide a CF `time(time)`
-coordinate with units such as `seconds since 2026-05-27 00:00:00 UTC`; products
-may also include `time_datetime(time)` as an ISO-8601 convenience coordinate.
-The plot title includes UTC time when the file provides `time_datetime`, WRF
-`Times`, or CF-style absolute time units. The plotter does not infer scientific
-datetimes from NetCDF filenames or `source` paths:
+For four-dimensional wind products such as `eastward_wind(time,z,y,x)` or WRF
+`U(Time,bottom_top,south_north,west_east)`, select the vertical slice with
+`--level-index`. Surface precipitation products are read as
+`precipitation_rate(time,y,x)`. Sprtz NetCDF products with a time axis must
+provide a CF `time(time)` coordinate with units such as
+`seconds since 2026-05-27 00:00:00 UTC`; products may also include
+`time_datetime(time)` as an ISO-8601 convenience coordinate. The plot title
+includes UTC time when the file provides `time_datetime`, WRF `Times`, or
+CF-style absolute time units. The plotter does not infer scientific datetimes
+from NetCDF filenames or `source` paths:
 
 ```bash
 MPLBACKEND=Agg python tools/plotter.py \
@@ -62,6 +66,13 @@ MPLBACKEND=Agg python tools/plotter.py \
   --variable concentration \
   --time-index 3 \
   --output output/wildfire_case/model/concentration_t003.png
+
+MPLBACKEND=Agg python tools/plotter.py \
+  data/output/wrf_100m_wind.nc \
+  --variable wind_speed \
+  --time-index 0 \
+  --level-index 0 \
+  --output data/output/wrf_100m_wind_z000.png
 ```
 
 For local-grid products that do not contain latitude/longitude, pass the grid

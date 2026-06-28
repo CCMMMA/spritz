@@ -56,7 +56,14 @@ def _synthetic_wrf(center_lat: float, center_lon: float, nx: int = 7, ny: int = 
     lon, lat = np.meshgrid(lon_axis, lat_axis)
     u = 3.5 + 0.4 * np.sin(np.deg2rad((lat - center_lat) * 100.0))
     v = 1.2 + 0.3 * np.cos(np.deg2rad((lon - center_lon) * 100.0))
-    return spritzwrf.WRFWindField(lat, lon, u, v, Path("synthetic-wrf5-d03"), metadata={"synthetic": True})
+    return spritzwrf.WRFWindField(
+        lat,
+        lon,
+        u,
+        v,
+        Path("synthetic-wrf5-d03"),
+        metadata={"synthetic": True, "time_index": "0", "level_index": "0"},
+    )
 
 
 def _require_cf_valid_time_for_netcdf(wrf: spritzwrf.WRFWindField, *, prefer_netcdf: bool) -> None:
@@ -105,6 +112,7 @@ def interpolate_wrf_to_100m(
     dx_m: float = 100.0,
     dy_m: float = 100.0,
     time_index: int = 0,
+    level_index: int = 0,
     prefer_netcdf: bool = True,
     allow_synthetic: bool = False,
     download_time: str | None = None,
@@ -137,7 +145,7 @@ def interpolate_wrf_to_100m(
         download_timeout_s=download_timeout_s,
     )
     if resolved is not None and resolved.exists():
-        wrf = spritzwrf.load_near_surface_wind(resolved, time_index=time_index)
+        wrf = spritzwrf.load_near_surface_wind(resolved, time_index=time_index, level_index=level_index)
     elif allow_synthetic:
         wrf = _synthetic_wrf(center_lat, center_lon)
     else:
@@ -185,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dx", type=float, default=100.0)
     parser.add_argument("--dy", type=float, default=100.0)
     parser.add_argument("--time-index", type=int, default=0)
+    parser.add_argument("--level-index", type=int, default=0)
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--allow-synthetic", action="store_true")
     args = parser.parse_args(argv)
@@ -208,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         dx_m=args.dx,
         dy_m=args.dy,
         time_index=args.time_index,
+        level_index=args.level_index,
         prefer_netcdf=not args.json,
         allow_synthetic=args.allow_synthetic,
         download_date=download_date,

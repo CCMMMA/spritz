@@ -44,6 +44,9 @@ SKIP_VARIABLES = {
     "lat",
     "lon",
 }
+
+TIME_DIMENSION_TOKENS = ("time", "date")
+LEVEL_DIMENSION_TOKENS = ("z", "level", "height", "altitude", "bottom_top", "lev")
 @dataclass(frozen=True)
 class VectorField:
     u: np.ndarray
@@ -116,10 +119,10 @@ def _select_2d(
     dims = [dim.lower() for dim in dimensions]
     while arr.ndim > 2:
         if dims:
-            if any(token in dims[0] for token in ("time", "date")):
+            if any(token in dims[0] for token in TIME_DIMENSION_TOKENS):
                 index = time_index
                 name = "time"
-            elif any(token in dims[0] for token in ("z", "level", "height", "altitude")):
+            elif any(token in dims[0] for token in LEVEL_DIMENSION_TOKENS):
                 index = level_index
                 name = "level"
             else:
@@ -133,10 +136,10 @@ def _select_2d(
     if arr.ndim == 2 and dims:
         lowered = [dim.lower() for dim in dims]
         for axis, dim in enumerate(lowered[:2]):
-            if any(token in dim for token in ("time", "date")):
+            if any(token in dim for token in TIME_DIMENSION_TOKENS):
                 arr = _take_checked(arr, time_index, axis, name="time")
                 break
-            if any(token in dim for token in ("z", "level", "height", "altitude")):
+            if any(token in dim for token in LEVEL_DIMENSION_TOKENS):
                 arr = _take_checked(arr, level_index, axis, name="level")
                 break
     if arr.ndim != 2:

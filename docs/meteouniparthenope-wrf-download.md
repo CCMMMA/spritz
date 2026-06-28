@@ -156,8 +156,17 @@ SpritzWRF to SpritzMet workflow. For example, after the 24-hour `d03` download:
 ```python
 from sprtz.models import spritzwrf
 
-wrf = spritzwrf.load_near_surface_wind("data/wrf/d03/wrf5_d03_20260628Z0000.nc")
+wrf = spritzwrf.load_near_surface_wind(
+    "data/wrf/d03/wrf5_d03_20260628Z0000.nc",
+    time_index=0,
+    level_index=0,
+)
 ```
+
+For four-dimensional WRF wind variables, SpritzWRF treats the axes as
+`time,level,y,x` when WRF/CF dimension names are available. Surface
+precipitation-rate products are carried as `time,y,x` in downstream
+SpritzMet NetCDF files.
 
 See `docs/spritzwrf_spritzmet.md` for the clean-room WRF ingestion and
 meteorological interpolation workflow.

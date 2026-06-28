@@ -18,7 +18,9 @@ outlook is 24 hours.
 NetCDF/time convention: the forecast NetCDF writes a strict CF `time(time)`
 coordinate with absolute UTC units derived from the initialization datetime and
 forecast lead seconds. The JSON payload keeps `valid_time_s` as forecast lead
-seconds for scripting convenience.
+seconds for scripting convenience. Wind variables are written as
+`eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`,
+`wind_speed(time,z,y,x)`, and `wind_from_direction(time,z,y,x)`.
 
 Default race-area polygon:
 
@@ -90,16 +92,18 @@ surface wind-speed map explicitly, run:
 ```bash
 python tools/plotter.py output/sailing/bay_of_naples_forecast.nc \
   --variable wind_speed \
+  --time-index 0 \
+  --level-index 0 \
   --output output/sailing/bay_of_naples_forecast_wind_speed_map.png
 ```
 
 Expected fields include:
 
 - longitude and latitude axes;
-- height levels in metres;
+- `z` height levels in metres;
 - CF `time(time)` coordinates and ISO `time_datetime(time)` values;
 - JSON `valid_time_s` lead times in seconds from initialization;
-- eastward and northward wind;
-- wind speed;
-- wind-from direction;
-- gust-speed proxy.
+- eastward and northward wind as `time,z,y,x`;
+- wind speed as `time,z,y,x`;
+- wind-from direction as `time,z,y,x`;
+- gust-speed proxy as `time,z,y,x`.

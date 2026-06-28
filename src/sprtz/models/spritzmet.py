@@ -186,15 +186,50 @@ class LocalMeteorology:
     valid_datetime_utc: str | None = None
 
     @property
+    def wind_4d(self) -> tuple[np.ndarray, np.ndarray]:
+        u = np.asarray(self.u, dtype=float)
+        v = np.asarray(self.v, dtype=float)
+        if u.shape != v.shape:
+            raise ValueError(f"u/v shape mismatch: {u.shape} vs {v.shape}")
+        if u.ndim == 2:
+            return u[np.newaxis, np.newaxis, :, :], v[np.newaxis, np.newaxis, :, :]
+        if u.ndim == 3:
+            return u[:, np.newaxis, :, :], v[:, np.newaxis, :, :]
+        if u.ndim == 4:
+            return u, v
+        raise ValueError("local wind must be shaped as y,x; time,y,x; or time,z,y,x")
+
+    @property
+    def precipitation_3d(self) -> np.ndarray:
+        precipitation = np.asarray(self.precipitation_rate, dtype=float)
+        if precipitation.ndim == 2:
+            return precipitation[np.newaxis, :, :]
+        if precipitation.ndim == 3:
+            return precipitation
+        raise ValueError("precipitation_rate must be shaped as y,x or time,y,x")
+
+    @property
+    def surface_u(self) -> np.ndarray:
+        return self.wind_4d[0][0, 0, :, :]
+
+    @property
+    def surface_v(self) -> np.ndarray:
+        return self.wind_4d[1][0, 0, :, :]
+
+    @property
     def wind_speed(self) -> np.ndarray:
-        return np.hypot(self.u, self.v)
+        u, v = self.wind_4d
+        return np.hypot(u, v)
 
     @property
     def wind_from_direction(self) -> np.ndarray:
-        return (270.0 - np.rad2deg(np.arctan2(self.v, self.u))) % 360.0
+        u, v = self.wind_4d
+        return (270.0 - np.rad2deg(np.arctan2(v, u))) % 360.0
 
     def to_payload(self) -> dict[str, Any]:
         time_datetime = iso_utc(self.valid_datetime_utc)
+        u4, v4 = self.wind_4d
+        precipitation3 = self.precipitation_3d
         return {
             "component": "spritzmet.local_meteorology",
             "center_lat": self.center_lat,
@@ -203,11 +238,12 @@ class LocalMeteorology:
             "y": self.y.tolist(),
             "latitude": self.latitude.tolist(),
             "longitude": self.longitude.tolist(),
-            "u": self.u.tolist(),
-            "v": self.v.tolist(),
+            "z": [10.0],
+            "u": u4.tolist(),
+            "v": v4.tolist(),
             "wind_speed": self.wind_speed.tolist(),
             "wind_from_direction": self.wind_from_direction.tolist(),
-            "precipitation_rate": self.precipitation_rate.tolist(),
+            "precipitation_rate": precipitation3.tolist(),
             "dx_m": self.dx_m,
             "dy_m": self.dy_m,
             "source": self.source,
@@ -338,8 +374,15 @@ def write_local_meteorology(
         from netCDF4 import Dataset  # type: ignore
 
         with Dataset(out, "w") as ds:
-            ny, nx = met.u.shape
-            ds.createDimension("time", 1)
+            u4, v4 = met.wind_4d
+            precipitation3 = met.precipitation_3d
+            ntime, nz, ny, nx = u4.shape
+            if precipitation3.shape != (ntime, ny, nx):
+                raise ValueError(
+                    f"precipitation_rate shape {precipitation3.shape} must match wind time/y/x {(ntime, ny, nx)}"
+                )
+            ds.createDimension("time", ntime)
+            ds.createDimension("z", nz)
             ds.createDimension("y", ny)
             ds.createDimension("x", nx)
             ds.Conventions = "CF-1.8"
@@ -351,25 +394,31 @@ def write_local_meteorology(
             if met.valid_datetime_utc:
                 ds.valid_datetime_utc = iso_utc(met.valid_datetime_utc) or str(met.valid_datetime_utc)
             write_cf_time_coordinate(ds, [met.valid_datetime_utc] if met.valid_datetime_utc else None)
+            z = ds.createVariable("z", "f8", ("z",))
+            z.standard_name = "height"
+            z.long_name = "height above ground"
+            z.units = "m"
+            z.positive = "up"
+            z[:] = np.asarray([10.0] * nz, dtype=float)
             variables = [
                 ("x", met.x[0], ("x",), "m", "local projection x coordinate"),
                 ("y", met.y[:, 0], ("y",), "m", "local projection y coordinate"),
                 ("latitude", met.latitude, ("y", "x"), "degrees_north", "latitude"),
                 ("longitude", met.longitude, ("y", "x"), "degrees_east", "longitude"),
-                ("eastward_wind", met.u, ("time", "y", "x"), "m s-1", "eastward wind"),
-                ("northward_wind", met.v, ("time", "y", "x"), "m s-1", "northward wind"),
+                ("eastward_wind", u4, ("time", "z", "y", "x"), "m s-1", "eastward wind"),
+                ("northward_wind", v4, ("time", "z", "y", "x"), "m s-1", "northward wind"),
                 (
                     "precipitation_rate",
-                    met.precipitation_rate,
+                    precipitation3,
                     ("time", "y", "x"),
                     "mm h-1",
                     "precipitation rate",
                 ),
-                ("wind_speed", met.wind_speed, ("time", "y", "x"), "m s-1", "wind speed"),
+                ("wind_speed", met.wind_speed, ("time", "z", "y", "x"), "m s-1", "wind speed"),
                 (
                     "wind_from_direction",
                     met.wind_from_direction,
-                    ("time", "y", "x"),
+                    ("time", "z", "y", "x"),
                     "degree",
                     "wind direction from which blowing",
                 ),
@@ -378,10 +427,7 @@ def write_local_meteorology(
                 var = ds.createVariable(name, "f8", dims, zlib=True)
                 var.units = units
                 var.long_name = long_name
-                if len(dims) == 3:
-                    var[0, :, :] = np.asarray(values, dtype=float)
-                else:
-                    var[:] = np.asarray(values, dtype=float)
+                var[:] = np.asarray(values, dtype=float)
         return "NetCDF-CF"
     write_json(out, payload)
     return "json"

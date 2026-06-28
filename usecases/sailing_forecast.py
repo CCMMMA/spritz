@@ -182,7 +182,7 @@ def write_sailing_netcdf_if_available(payload: dict[str, Any], output_path: str 
     out.parent.mkdir(parents=True, exist_ok=True)
     with Dataset(out, "w") as ds:
         ds.createDimension("time", valid_time.size)
-        ds.createDimension("height", height.size)
+        ds.createDimension("z", height.size)
         ds.createDimension("y", lat.size)
         ds.createDimension("x", lon.size)
         ds.Conventions = "CF-1.8"
@@ -196,12 +196,16 @@ def write_sailing_netcdf_if_available(payload: dict[str, Any], output_path: str 
             ],
         )
         for name, values, dims, units in [
-            ("height", height, ("height",), "m"),
+            ("z", height, ("z",), "m"),
             ("latitude", lat, ("y",), "degrees_north"),
             ("longitude", lon, ("x",), "degrees_east"),
         ]:
             var = ds.createVariable(name, "f8", dims)
             var.units = units
+            if name == "z":
+                var.standard_name = "height"
+                var.long_name = "height above sea level"
+                var.positive = "up"
             var[:] = values
         for name, units in [
             ("eastward_wind", "m s-1"),
@@ -210,7 +214,7 @@ def write_sailing_netcdf_if_available(payload: dict[str, Any], output_path: str 
             ("wind_from_direction", "degree"),
             ("gust_speed", "m s-1"),
         ]:
-            var = ds.createVariable(name, "f8", ("time", "height", "y", "x"), zlib=True)
+            var = ds.createVariable(name, "f8", ("time", "z", "y", "x"), zlib=True)
             var.units = units
             var[:, :, :, :] = np.asarray(payload[name], dtype=float)
     return out

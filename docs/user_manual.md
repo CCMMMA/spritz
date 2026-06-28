@@ -231,9 +231,12 @@ SpritzWRF extracts WRF precipitation when common rate variables
 (`RAINRATE`, `PRECIP_RATE`, `precipitation_rate`, `precip_rate`) exist. If only
 accumulated WRF rain fields are available (`RAINC`, `RAINNC`, `RAINSH`), it
 uses the increment at the selected WRF time as a millimeters-per-hour screening
-rate. SpritzMet interpolates that field to the local grid and writes
-`precipitation_rate` in the meteorology product. When washout is enabled,
-Spritz adds `coefficient * mean_precipitation_rate` to each source wet
+rate. Four-dimensional WRF wind variables are sliced as `time, level, y, x`
+with independent `time_index` and `level_index` selections. SpritzMet
+interpolates the selected wind and precipitation fields to the local grid and
+writes wind as `eastward_wind(time,z,y,x)` / `northward_wind(time,z,y,x)` and
+surface precipitation as `precipitation_rate(time,y,x)`. When washout is
+enabled, Spritz adds `coefficient * mean_precipitation_rate` to each source wet
 scavenging rate.
 
 If WRF precipitation is unavailable, SpritzMet writes zero precipitation. For

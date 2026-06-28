@@ -25,6 +25,42 @@ def _as_array(data: Any) -> np.ndarray:
     return arr
 
 
+def _as_wind_4d(data: Any, *, name: str) -> np.ndarray:
+    arr = _as_array(data)
+    if arr.ndim == 2:
+        return arr[np.newaxis, np.newaxis, :, :]
+    if arr.ndim == 3:
+        return arr[:, np.newaxis, :, :]
+    if arr.ndim == 4:
+        return arr
+    raise DataFormatError(f"meteorology {name} must be shaped as y,x; time,y,x; or time,z,y,x")
+
+
+def _as_surface_3d(data: Any, *, name: str, shape: tuple[int, int, int]) -> np.ndarray:
+    arr = _as_array(data)
+    ntime, ny, nx = shape
+    if arr.ndim == 2:
+        arr = arr[np.newaxis, :, :]
+    elif arr.ndim != 3:
+        raise DataFormatError(f"meteorology {name} must be shaped as y,x or time,y,x")
+    if arr.shape == (1, ny, nx) and ntime > 1:
+        arr = np.repeat(arr, ntime, axis=0)
+    if arr.shape != shape:
+        raise DataFormatError(f"meteorology {name} shape {arr.shape} must match time/y/x shape {shape}")
+    return arr
+
+
+def _surface_2d(values: np.ndarray, *, name: str) -> np.ndarray:
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 4:
+        return arr[0, 0, :, :]
+    if arr.ndim == 3:
+        return arr[0, :, :]
+    if arr.ndim == 2:
+        return arr
+    raise DataFormatError(f"meteorology {name} cannot be reduced to a 2D surface slice")
+
+
 def parse_utc_datetime(value: Any) -> datetime | None:
     """Parse a UTC datetime from common Sprtz/CF metadata strings."""
     if value is None:
@@ -103,20 +139,24 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
         return
     from netCDF4 import Dataset  # type: ignore
 
-    u = _as_array(meteo.get("u", [[0.0]]))
-    v = _as_array(meteo.get("v", [[0.0]]))
-    if u.shape != v.shape or u.ndim != 2:
-        raise DataFormatError("meteorology u/v must be two-dimensional arrays with matching shapes")
-    temp = _as_array(meteo.get("temperature", np.full(u.shape, 293.15)))
-    mh = _as_array(meteo.get("mixing_height", np.full(u.shape, 1000.0)))
-    precip = _as_array(meteo.get("precipitation_rate", np.zeros(u.shape, dtype=float)))
-    fmc = _as_array(meteo.get("fmc", np.full(u.shape, 0.08, dtype=float)))
-    if temp.shape != u.shape or mh.shape != u.shape or precip.shape != u.shape or fmc.shape != u.shape:
-        raise DataFormatError("temperature, mixing_height, and precipitation_rate must match u/v shape")
+    u = _as_wind_4d(meteo.get("u", meteo.get("eastward_wind", [[0.0]])), name="u")
+    v = _as_wind_4d(meteo.get("v", meteo.get("northward_wind", [[0.0]])), name="v")
+    if u.shape != v.shape:
+        raise DataFormatError("meteorology u/v arrays must have matching shapes")
+    ntime, nz, ny, nx = u.shape
+    surface_shape = (ntime, ny, nx)
+    temp = _as_surface_3d(meteo.get("temperature", np.full((ny, nx), 293.15)), name="temperature", shape=surface_shape)
+    mh = _as_surface_3d(meteo.get("mixing_height", np.full((ny, nx), 1000.0)), name="mixing_height", shape=surface_shape)
+    precip = _as_surface_3d(
+        meteo.get("precipitation_rate", np.zeros((ny, nx), dtype=float)),
+        name="precipitation_rate",
+        shape=surface_shape,
+    )
+    fmc = _as_surface_3d(meteo.get("fmc", np.full((ny, nx), 0.08, dtype=float)), name="fmc", shape=surface_shape)
 
     with Dataset(p, "w") as ds:
-        ny, nx = u.shape
-        ds.createDimension("time", 1)
+        ds.createDimension("time", ntime)
+        ds.createDimension("z", nz)
         ds.createDimension("y", ny)
         ds.createDimension("x", nx)
         ds.Conventions = "CF-1.8"
@@ -142,6 +182,12 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
         x.units = y.units = "m"
         x[:] = np.arange(nx, dtype=float)
         y[:] = np.arange(ny, dtype=float)
+        z = ds.createVariable("z", "f8", ("z",))
+        z.standard_name = "height"
+        z.long_name = "height above ground"
+        z.units = "m"
+        z.positive = "up"
+        z[:] = np.asarray(meteo.get("z", meteo.get("height_m", [10.0] * nz)), dtype=float)
         for name, values, standard_name, units in [
             ("eastward_wind", u, "eastward_wind", "m s-1"),
             ("northward_wind", v, "northward_wind", "m s-1"),
@@ -150,14 +196,15 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
             ("precipitation_rate", precip, "precipitation_rate", "mm h-1"),
             ("fmc", fmc, "", "1"),
         ]:
-            var = ds.createVariable(name, "f8", ("time", "y", "x"), zlib=True)
+            dims = ("time", "z", "y", "x") if name in {"eastward_wind", "northward_wind"} else ("time", "y", "x")
+            var = ds.createVariable(name, "f8", dims, zlib=True)
             if standard_name:
                 var.standard_name = standard_name
             var.units = units
             if name == "fmc":
                 var.long_name = "dead fine fuel moisture content"
                 var.valid_range = np.asarray([0.01, 0.40], dtype=np.float32)
-            var[0, :, :] = values
+            var[:] = values
 
 
 def read_cf_meteorology(path: str | Path) -> dict[str, Any]:
@@ -174,9 +221,7 @@ def read_cf_meteorology(path: str | Path) -> dict[str, Any]:
             for name in names:
                 if name in ds.variables:
                     values = np.asarray(ds.variables[name][:], dtype=float)
-                    if values.ndim == 3:
-                        values = values[0]
-                    return values.tolist()
+                    return _surface_2d(values, name=name).tolist()
             shape = (len(ds.dimensions.get("y", [])), len(ds.dimensions.get("x", [])))
             return np.full(shape, default, dtype=float).tolist()
 

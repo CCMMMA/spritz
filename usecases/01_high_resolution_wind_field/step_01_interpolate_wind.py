@@ -183,7 +183,14 @@ def _synthetic_wrf(center_lat: float, center_lon: float, nx: int = 7, ny: int = 
     lon, lat = np.meshgrid(lon_axis, lat_axis)
     u = 3.5 + 0.4 * np.sin(np.deg2rad((lat - center_lat) * 100.0))
     v = 1.2 + 0.3 * np.cos(np.deg2rad((lon - center_lon) * 100.0))
-    return spritzwrf.WRFWindField(lat, lon, u, v, Path("synthetic-wrf5-d03"), metadata={"synthetic": True})
+    return spritzwrf.WRFWindField(
+        lat,
+        lon,
+        u,
+        v,
+        Path("synthetic-wrf5-d03"),
+        metadata={"synthetic": True, "time_index": "0", "level_index": "0"},
+    )
 
 
 def _require_cf_valid_time_for_netcdf(wrf: spritzwrf.WRFWindField, *, prefer_netcdf: bool) -> None:
@@ -229,6 +236,7 @@ def _load_wrf_field(
     wrf_path: Path | None,
     *,
     time_index: int,
+    level_index: int,
     allow_synthetic: bool,
     center_lat: float,
     center_lon: float,
@@ -237,11 +245,12 @@ def _load_wrf_field(
     if wrf_path is not None and wrf_path.exists():
         LOGGER.info("step 2/4 SpritzWRF: spritzwrf.load_near_surface_wind")
         _teach("SpritzWRF converts WRF/WRF-like variables into a clean WRFWindField object")
-        wrf = spritzwrf.load_near_surface_wind(wrf_path, time_index=time_index)
+        wrf = spritzwrf.load_near_surface_wind(wrf_path, time_index=time_index, level_index=level_index)
         _teach(
-            "loaded WRF field shape=%s, time_index=%s, precipitation=%s",
+            "loaded WRF field shape=%s, time_index=%s, level_index=%s, precipitation=%s",
             wrf.u.shape,
             wrf.time_index,
+            wrf.metadata.get("level_index") if wrf.metadata else level_index,
             "available" if wrf.precipitation_rate is not None else "not available",
         )
         return wrf
@@ -267,6 +276,7 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
     wrf = _load_wrf_field(
         wrf_path,
         time_index=args.time_index,
+        level_index=args.level_index,
         allow_synthetic=args.allow_synthetic,
         center_lat=center_lat,
         center_lon=center_lon,
@@ -293,8 +303,8 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
         dy_m=args.dy,
     )
     _teach(
-        "interpolated output arrays have shape=%s; derived wind speed min/max are %.3f/%.3f m s-1",
-        met.u.shape,
+        "interpolated output wind has shape=%s after NetCDF expansion; derived wind speed min/max are %.3f/%.3f m s-1",
+        met.wind_4d[0].shape,
         float(np.min(met.wind_speed)),
         float(np.max(met.wind_speed)),
     )
@@ -360,6 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dx", type=float, default=100.0)
     parser.add_argument("--dy", type=float, default=100.0)
     parser.add_argument("--time-index", type=int, default=0)
+    parser.add_argument("--level-index", type=int, default=0, help="vertical level index for 4D WRF wind variables")
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--allow-synthetic", action="store_true")
     return parser

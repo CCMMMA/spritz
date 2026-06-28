@@ -7,6 +7,7 @@ from importlib.machinery import SourceFileLoader
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -218,6 +219,54 @@ def test_plotter_derives_vectors_from_speed_and_direction(tmp_path: Path) -> Non
     assert field.vectors is not None
     assert field.vectors.u[0, 0] == pytest.approx(2.0)
     assert field.vectors.v[0, 0] == pytest.approx(0.0)
+
+
+def test_plotter_reads_4d_wind_and_3d_precipitation(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wind_4d_precip_3d.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 2)
+        ds.createDimension("z", 2)
+        ds.createDimension("y", 2)
+        ds.createDimension("x", 2)
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0, 40.1]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0, 14.1]
+        wind = ds.createVariable("eastward_wind", "f8", ("time", "z", "y", "x"))
+        north = ds.createVariable("northward_wind", "f8", ("time", "z", "y", "x"))
+        precip = ds.createVariable("precipitation_rate", "f8", ("time", "y", "x"))
+        wind[:, :, :, :] = np.asarray(
+            [
+                [[[1.0, 1.0], [1.0, 1.0]], [[2.0, 2.0], [2.0, 2.0]]],
+                [[[3.0, 3.0], [3.0, 3.0]], [[4.0, 4.0], [4.0, 4.0]]],
+            ]
+        )
+        north[:, :, :, :] = 0.0
+        precip[:, :, :] = [[[0.5, 0.5], [0.5, 0.5]], [[1.5, 1.5], [1.5, 1.5]]]
+
+    plotter = load_plotter_tool()
+    wind_field = plotter.read_map_field(
+        path,
+        variable_name="eastward_wind",
+        time_index=1,
+        level_index=1,
+        center_lat=None,
+        center_lon=None,
+    )
+    precip_field = plotter.read_map_field(
+        path,
+        variable_name="precipitation_rate",
+        time_index=1,
+        level_index=0,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    np.testing.assert_allclose(wind_field.values, np.full((2, 2), 4.0))
+    assert wind_field.vectors is not None
+    np.testing.assert_allclose(wind_field.vectors.u, np.full((2, 2), 4.0))
+    np.testing.assert_allclose(precip_field.values, np.full((2, 2), 1.5))
 
 
 def test_plotter_uses_time_index_and_utc_label(tmp_path: Path) -> None:
