@@ -25,6 +25,8 @@ Key paths:
 - `docs/` — architecture, validation, I/O, MPI, numerical, visualization, use-case, and production-readiness documentation.
 - `tests/` — pytest suite.
 - `scripts/check_release.py` — release hygiene checker.
+- `tools/` — miscellaneous developer and maintenance scripts that are not part of
+  the installable package or public CLI.
 
 ## Development environment
 
@@ -82,6 +84,9 @@ mpiexec -n 2 python -m sprtz run examples/minimal.json --output-dir /tmp/sprtz_s
 - Keep optional dependencies optional and import them lazily.
 - Keep CLI behavior deterministic and suitable for batch/HPC runs.
 - Use the standard `logging` module for all operational, diagnostic, and user-facing runtime messages; do not use `print()` in package modules, scripts, or use-case programs.
+- Use unit tests for new behavior and bug fixes. Keep tests deterministic and
+  focused on public behavior, numerical invariants, parsing, validation, and
+  fallback paths.
 - Write outputs atomically where practical.
 - Only rank 0 should write shared output files in MPI workflows.
 - Preserve fallback paths for environments without NetCDF, MPI, or visualization dependencies.
@@ -156,6 +161,11 @@ When changing Terrain:
 ## Use-case conventions
 
 Each use case must remain outside the installable suite namespace and have a runnable documented folder under `usecases/NN_name/`. Shared didactic helpers may live directly under `usecases/`, but do not add `src/sprtz/usecases/` or use-case entry points to `pyproject.toml`.
+
+All use cases must treat the repository-level `data/` directory as their data
+root for file I/O. Read inputs from paths under `data/` and write generated
+use-case products under `data/` unless the user explicitly supplies another
+path.
 
 Use-case documentation should include:
 

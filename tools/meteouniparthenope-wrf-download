@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import logging
+import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from urllib.request import urlopen
+
+LOGGER = logging.getLogger("meteouniparthenope-wrf-download")
+
+BASE_URL = "https://data.meteo.uniparthenope.it/files/wrf5"
+DATE_FORMAT = "%Y%m%dZ%H%M"
+VALID_DOMAINS = ("d01", "d02", "d03")
+
+
+@dataclass(frozen=True)
+class WRFDownload:
+    timestamp: datetime
+    domain: str
+    url: str
+    path: Path
+
+
+def parse_cycle(value: str) -> datetime:
+    """Parse a meteo@uniparthenope WRF cycle timestamp."""
+    try:
+        return datetime.strptime(value, DATE_FORMAT)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("date must use YYYYMMDDZhhmm, e.g. 20260527Z0000") from exc
+
+
+def validate_domain(value: str) -> str:
+    domain = value.lower()
+    if domain not in VALID_DOMAINS:
+        raise argparse.ArgumentTypeError("domain must be one of d01, d02, d03")
+    return domain
+
+
+def wrf_history_url(timestamp: datetime, domain: str) -> str:
+    """Return the public WRF5 history URL for a timestamp and domain."""
+    stamp = timestamp.strftime(DATE_FORMAT)
+    return (
+        f"{BASE_URL}/{domain}/history/{timestamp:%Y/%m/%d}/"
+        f"wrf5_{domain}_{stamp}.nc"
+    )
+
+
+def plan_downloads(
+    start: datetime,
+    *,
+    hours: int,
+    domain: str,
+    output_root: str | Path,
+) -> list[WRFDownload]:
+    if hours < 1:
+        raise ValueError("--hours must be at least 1")
+    output_dir = Path(output_root) / "wrf" / domain
+    downloads: list[WRFDownload] = []
+    for offset in range(hours):
+        timestamp = start + timedelta(hours=offset)
+        url = wrf_history_url(timestamp, domain)
+        downloads.append(
+            WRFDownload(
+                timestamp=timestamp,
+                domain=domain,
+                url=url,
+                path=output_dir / url.rsplit("/", 1)[-1],
+            )
+        )
+    return downloads
+
+
+def download_file(item: WRFDownload, *, timeout_s: float, force: bool) -> Path:
+    """Download one WRF history file atomically."""
+    item.path.parent.mkdir(parents=True, exist_ok=True)
+    if item.path.exists() and item.path.stat().st_size > 0 and not force:
+        LOGGER.info("reusing existing file: %s", item.path)
+        return item.path
+
+    tmp = item.path.with_suffix(item.path.suffix + ".part")
+    LOGGER.info("downloading %s", item.url)
+    try:
+        with urlopen(item.url, timeout=timeout_s) as response, tmp.open("wb") as handle:  # noqa: S310 - explicit public archive download
+            shutil.copyfileobj(response, handle)
+        tmp.replace(item.path)
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
+    LOGGER.info("wrote %s", item.path)
+    return item.path
+
+
+def run_downloads(
+    downloads: list[WRFDownload],
+    *,
+    timeout_s: float,
+    force: bool,
+    workers: int,
+) -> list[Path]:
+    """Download planned files, optionally in parallel."""
+    if workers < 1:
+        raise ValueError("--workers must be at least 1")
+    if workers == 1 or len(downloads) <= 1:
+        return [download_file(item, timeout_s=timeout_s, force=force) for item in downloads]
+
+    results: dict[WRFDownload, Path] = {}
+    executor = ThreadPoolExecutor(max_workers=workers)
+    future_to_item = {}
+    try:
+        for item in downloads:
+            future = executor.submit(download_file, item, timeout_s=timeout_s, force=force)
+            future_to_item[future] = item
+        for future in as_completed(future_to_item):
+            item = future_to_item[future]
+            results[item] = future.result()
+    except KeyboardInterrupt:
+        for future in future_to_item:
+            future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=True)
+    return [results[item] for item in downloads]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Download meteo@uniparthenope WRF5 history NetCDF files."
+    )
+    parser.add_argument("date", type=parse_cycle, help="start timestamp as YYYYMMDDZhhmm")
+    parser.add_argument("--hours", type=int, required=True, help="duration in hourly files")
+    parser.add_argument("--domain", type=validate_domain, required=True, help="WRF domain: d01, d02, d03")
+    parser.add_argument("--data-root", default="data", help="repository data root for downloads")
+    parser.add_argument("--timeout-s", type=float, default=120.0, help="per-file download timeout")
+    parser.add_argument("--workers", type=int, default=1, help="parallel download workers")
+    parser.add_argument("--force", action="store_true", help="download even when files already exist")
+    parser.add_argument("--dry-run", action="store_true", help="log URLs and target paths without downloading")
+    parser.add_argument("--verbose", action="store_true", help="enable debug logging")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(levelname)s %(message)s",
+    )
+    try:
+        downloads = plan_downloads(
+            args.date,
+            hours=args.hours,
+            domain=args.domain,
+            output_root=args.data_root,
+        )
+        for item in downloads:
+            if args.dry_run:
+                LOGGER.info("%s -> %s", item.url, item.path)
+        if not args.dry_run:
+            run_downloads(
+                downloads,
+                timeout_s=args.timeout_s,
+                force=args.force,
+                workers=args.workers,
+            )
+    except KeyboardInterrupt:
+        LOGGER.warning("interrupted; stopping downloads")
+        return 130
+    except Exception as exc:
+        LOGGER.error("%s", exc)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
