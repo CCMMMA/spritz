@@ -634,10 +634,13 @@ def test_spritzmet_uses_dem_and_land_cover_for_wind_and_precipitation() -> None:
     )
 
     assert terrain.downscaling_metadata is not None
+    assert terrain.downscaling_metadata["downscaling_algorithm"] == "clean_room_calmet_style_diagnostic"
     assert terrain.downscaling_metadata["uses_dem_elevation_m"] is True
     assert terrain.downscaling_metadata["uses_land_cover"] is True
+    assert terrain.downscaling_metadata["max_precipitation_factor"] > 1.0
     assert not np.allclose(terrain.wind_speed, plain.wind_speed)
     assert not np.allclose(terrain.precipitation_3d, plain.precipitation_3d)
+    assert float(terrain.precipitation_3d[0, -1, -1]) > float(plain.precipitation_3d[0, -1, -1])
 
     with pytest.raises(ValueError, match="dem_elevation_m shape"):
         spritzmet.downscale_wrf_to_local_grid(

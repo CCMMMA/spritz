@@ -58,11 +58,13 @@ spritzmet.write_local_meteorology("output/wrf_100m_wind.nc", met)
 
 When DEM elevation and land-cover fields have already been regridded to the
 same local SpritzMet grid, pass them as `dem_elevation_m` and `land_cover`.
-SpritzMet then applies bounded clean-room terrain and surface-roughness
-adjustments to both wind and precipitation after WRF interpolation. Elevation
-drives slope/aspect and orographic precipitation factors; land cover maps to a
-roughness length lookup for wind exposure and a small precipitation interception
-factor. Without these optional arrays, the pipeline preserves the original
+SpritzMet then follows a clean-room CALMET-style diagnostic downscaling
+sequence: objective WRF interpolation to the local grid, terrain/slope and
+elevation wind adjustment, land-cover roughness exposure adjustment, and
+orographic plus land-cover precipitation factors. The implementation is not a
+copy, port, or regulatory-equivalent CALMET release; its coefficients are named
+in `sprtz.models.spritzmet` and bounded for deterministic screening workflows.
+Without these optional arrays, the pipeline preserves the original
 WRF-to-local-grid interpolation behavior.
 
 SpritzWRF handles WRF/CF dimensions explicitly. Four-dimensional wind variables

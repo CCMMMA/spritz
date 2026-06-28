@@ -20,6 +20,7 @@ from sprtz.io.netcdf_cf import (
     write_cf_time_coordinate,
 )
 from sprtz.models.spritzwrf import WRFWindField
+from sprtz.parallel import get_gpu_context, get_mpi_context
 
 
 LAND_COVER_ROUGHNESS_M = {
@@ -81,7 +82,13 @@ LAND_COVER_ROUGHNESS_M = {
 
 DEFAULT_ROUGHNESS_M = 0.10
 REFERENCE_ROUGHNESS_M = 0.10
-from sprtz.parallel import get_gpu_context, get_mpi_context
+MIN_ROUGHNESS_M = 1.0e-4
+ROUGHNESS_WIND_EXPONENT = 0.08
+ELEVATION_WIND_SCALE_M = 10000.0
+UPSLOPE_WIND_FACTOR = 0.35
+OROGRAPHIC_PRECIP_SCALE_M = 3000.0
+OROGRAPHIC_UPSLOPE_FACTOR = 0.25
+LAND_PRECIP_FACTOR = 0.03
 
 
 def rh_t_to_fmc(rh_pct: np.ndarray, temp_k: np.ndarray) -> np.ndarray:
@@ -436,6 +443,99 @@ def _land_cover_roughness(land_cover: np.ndarray) -> np.ndarray:
     return roughness
 
 
+def _expand_to_field(field: np.ndarray, target_ndim: int) -> np.ndarray:
+    expanded = np.asarray(field, dtype=float)
+    while expanded.ndim < target_ndim:
+        expanded = expanded[np.newaxis, ...]
+    return expanded
+
+
+def _diagnostic_wind_adjustment(
+    u: np.ndarray,
+    v: np.ndarray,
+    elevation: np.ndarray,
+    roughness: np.ndarray,
+    *,
+    dx_m: float,
+    dy_m: float,
+) -> tuple[np.ndarray, np.ndarray, dict[str, float]]:
+    """Apply clean-room CALMET-style terrain and roughness wind adjustments."""
+    grad_y, grad_x = np.gradient(elevation, dy_m, dx_m)
+    slope = np.hypot(grad_x, grad_y)
+    roughness_factor = np.clip(
+        (REFERENCE_ROUGHNESS_M / np.maximum(roughness, MIN_ROUGHNESS_M)) ** ROUGHNESS_WIND_EXPONENT,
+        0.80,
+        1.20,
+    )
+    elevation_factor = np.clip(
+        1.0 + (elevation - float(np.nanmean(elevation))) / ELEVATION_WIND_SCALE_M,
+        0.90,
+        1.10,
+    )
+
+    u_arr = np.asarray(u, dtype=float)
+    v_arr = np.asarray(v, dtype=float)
+    speed = np.hypot(u_arr, v_arr)
+    upslope_component = np.divide(
+        u_arr * grad_x + v_arr * grad_y,
+        np.maximum(speed, 1.0e-9),
+        out=np.zeros_like(speed),
+        where=speed > 0.0,
+    )
+    terrain_factor = np.clip(1.0 + UPSLOPE_WIND_FACTOR * upslope_component, 0.75, 1.25)
+    wind_factor = _expand_to_field(roughness_factor * elevation_factor, u_arr.ndim)
+    return (
+        u_arr * wind_factor * terrain_factor,
+        v_arr * wind_factor * terrain_factor,
+        {
+            "max_slope_m_per_m": float(np.nanmax(slope)),
+            "max_wind_factor": float(np.nanmax(wind_factor * terrain_factor)),
+            "min_wind_factor": float(np.nanmin(wind_factor * terrain_factor)),
+        },
+    )
+
+
+def _diagnostic_precipitation_adjustment(
+    precipitation_rate: np.ndarray,
+    wind_u: np.ndarray,
+    wind_v: np.ndarray,
+    elevation: np.ndarray,
+    roughness: np.ndarray,
+    *,
+    dx_m: float,
+    dy_m: float,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """Apply clean-room orographic and land-cover precipitation adjustments."""
+    grad_y, grad_x = np.gradient(elevation, dy_m, dx_m)
+    wind_speed = np.hypot(wind_u, wind_v)
+    upslope = np.divide(
+        wind_u * grad_x + wind_v * grad_y,
+        np.maximum(wind_speed, 1.0e-9),
+        out=np.zeros_like(wind_speed),
+        where=wind_speed > 0.0,
+    )
+    relief_factor = np.clip(
+        1.0 + (elevation - float(np.nanmean(elevation))) / OROGRAPHIC_PRECIP_SCALE_M,
+        0.75,
+        1.50,
+    )
+    upslope_factor = np.clip(1.0 + OROGRAPHIC_UPSLOPE_FACTOR * np.maximum(upslope, 0.0), 1.0, 1.30)
+    land_factor = np.clip(
+        1.0 + LAND_PRECIP_FACTOR * np.log1p(roughness / REFERENCE_ROUGHNESS_M),
+        0.95,
+        1.15,
+    )
+    precip_factor = _expand_to_field(relief_factor * upslope_factor * land_factor, np.asarray(precipitation_rate).ndim)
+    corrected = np.clip(np.asarray(precipitation_rate, dtype=float) * precip_factor, 0.0, None)
+    return (
+        corrected,
+        {
+            "max_precipitation_factor": float(np.nanmax(precip_factor)),
+            "min_precipitation_factor": float(np.nanmin(precip_factor)),
+        },
+    )
+
+
 def _apply_surface_downscaling(
     u: np.ndarray,
     v: np.ndarray,
@@ -462,42 +562,33 @@ def _apply_surface_downscaling(
         else np.full(grid_shape, REFERENCE_ROUGHNESS_M, dtype=float)
     )
 
-    grad_y, grad_x = np.gradient(elevation, dy_m, dx_m)
-    slope = np.hypot(grad_x, grad_y)
-    roughness_factor = np.clip((REFERENCE_ROUGHNESS_M / np.maximum(roughness, 1.0e-4)) ** 0.08, 0.80, 1.20)
-    elevation_factor = np.clip(1.0 + (elevation - float(np.nanmean(elevation))) / 10000.0, 0.90, 1.10)
-
-    u_arr = np.asarray(u, dtype=float)
-    v_arr = np.asarray(v, dtype=float)
-    speed = np.hypot(u_arr, v_arr)
-    upslope_component = np.divide(
-        u_arr * grad_x + v_arr * grad_y,
-        np.maximum(speed, 1.0e-9),
-        out=np.zeros_like(speed),
-        where=speed > 0.0,
+    corrected_u, corrected_v, wind_metadata = _diagnostic_wind_adjustment(
+        u,
+        v,
+        elevation,
+        roughness,
+        dx_m=dx_m,
+        dy_m=dy_m,
     )
-    terrain_factor = np.clip(1.0 + 0.35 * upslope_component, 0.75, 1.25)
-    wind_factor = roughness_factor * elevation_factor
-    while wind_factor.ndim < u_arr.ndim:
-        wind_factor = wind_factor[np.newaxis, ...]
-    corrected_u = u_arr * wind_factor * terrain_factor
-    corrected_v = v_arr * wind_factor * terrain_factor
-
-    precip_arr = np.asarray(precipitation_rate, dtype=float)
-    relief_factor = np.clip(1.0 + (elevation - float(np.nanmean(elevation))) / 3000.0, 0.75, 1.50)
-    land_factor = np.clip(1.0 + 0.03 * np.log1p(roughness / REFERENCE_ROUGHNESS_M), 0.95, 1.15)
-    precip_factor = relief_factor * land_factor
-    while precip_factor.ndim < precip_arr.ndim:
-        precip_factor = precip_factor[np.newaxis, ...]
-    corrected_precipitation = np.clip(precip_arr * precip_factor, 0.0, None)
+    corrected_precipitation, precipitation_metadata = _diagnostic_precipitation_adjustment(
+        precipitation_rate,
+        corrected_u,
+        corrected_v,
+        elevation,
+        roughness,
+        dx_m=dx_m,
+        dy_m=dy_m,
+    )
 
     metadata.update(
         {
             "terrain_downscaling": True,
+            "downscaling_algorithm": "clean_room_calmet_style_diagnostic",
             "uses_dem_elevation_m": dem_elevation_m is not None,
             "uses_land_cover": land_cover is not None,
             "roughness_source": "land_cover_lookup" if land_cover is not None else "uniform_reference",
-            "max_slope_m_per_m": float(np.nanmax(slope)),
+            **wind_metadata,
+            **precipitation_metadata,
         }
     )
     return corrected_u, corrected_v, corrected_precipitation, metadata
@@ -528,8 +619,10 @@ def downscale_wrf_to_local_grid(
     """Interpolate SpritzWRF near-surface fields to a local SpritzMet grid.
 
     When aligned DEM elevation and land-cover arrays are supplied, SpritzMet
-    applies bounded terrain and roughness adjustments to both wind and
-    precipitation after WRF-to-local-grid interpolation.
+    applies a clean-room CALMET-style diagnostic adjustment: objective WRF
+    interpolation first, then terrain/slope, elevation, and land-cover
+    roughness corrections for wind and orographic/land-cover precipitation
+    factors.
     """
     if nx < 2 or ny < 2:
         raise ValueError("nx and ny must be at least 2")
