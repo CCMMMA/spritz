@@ -308,6 +308,7 @@ def _add_cartopy_coastlines(
         import cartopy
         import cartopy.crs as ccrs
         import cartopy.feature as cfeature
+        import cartopy.io.shapereader as shpreader
     except Exception:
         LOGGER.warning("cartopy is not installed; skipping high-resolution coastlines")
         return
@@ -315,48 +316,49 @@ def _add_cartopy_coastlines(
         cartopy.config["downloaders"] = {}
     west, east, south, north = extent
     ax.set_extent((west, east, south, north), crs=ccrs.PlateCarree())
-    coastline = cfeature.NaturalEarthFeature(
-        "physical",
-        "coastline",
-        resolution,
-        edgecolor="0.08",
-        facecolor="none",
-        linewidth=0.65,
-    )
-    land = cfeature.NaturalEarthFeature(
-        "physical",
-        "land",
-        resolution,
-        edgecolor="none",
-        facecolor="0.94",
-    )
-    ocean = cfeature.NaturalEarthFeature(
-        "physical",
-        "ocean",
-        resolution,
-        edgecolor="none",
-        facecolor="0.985",
-    )
-    borders = cfeature.NaturalEarthFeature(
+
+    def add_natural_earth(
+        category: str,
+        name: str,
+        *,
+        zorder: int,
+        edgecolor: str,
+        facecolor: str,
+        linewidth: float,
+    ) -> None:
+        try:
+            shpreader.natural_earth(resolution=resolution, category=category, name=name)
+        except Exception as exc:
+            LOGGER.warning(
+                "Cartopy Natural Earth %s/%s at %s is unavailable (%s); "
+                "install local Natural Earth data or pass --allow-cartopy-download",
+                category,
+                name,
+                resolution,
+                exc,
+            )
+            return
+        feature = cfeature.NaturalEarthFeature(
+            category,
+            name,
+            resolution,
+            edgecolor=edgecolor,
+            facecolor=facecolor,
+            linewidth=linewidth,
+        )
+        ax.add_feature(feature, zorder=zorder)
+
+    add_natural_earth("physical", "ocean", zorder=0, edgecolor="none", facecolor="0.985", linewidth=0.0)
+    add_natural_earth("physical", "land", zorder=0, edgecolor="none", facecolor="0.94", linewidth=0.0)
+    add_natural_earth("physical", "coastline", zorder=5, edgecolor="0.08", facecolor="none", linewidth=0.65)
+    add_natural_earth(
         "cultural",
         "admin_0_boundary_lines_land",
-        resolution,
+        zorder=5,
         edgecolor="0.25",
         facecolor="none",
         linewidth=0.3,
     )
-    try:
-        ax.add_feature(ocean, zorder=0)
-        ax.add_feature(land, zorder=0)
-        ax.add_feature(coastline, zorder=5)
-        ax.add_feature(borders, zorder=5)
-    except Exception as exc:
-        LOGGER.warning(
-            "could not draw Cartopy %s coastlines (%s); use --allow-cartopy-download "
-            "or install Natural Earth data locally",
-            resolution,
-            exc,
-        )
 
 
 def plot_map(
