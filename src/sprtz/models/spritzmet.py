@@ -20,6 +20,67 @@ from sprtz.io.netcdf_cf import (
     write_cf_time_coordinate,
 )
 from sprtz.models.spritzwrf import WRFWindField
+
+
+LAND_COVER_ROUGHNESS_M = {
+    10: 0.30,
+    20: 0.10,
+    30: 0.05,
+    40: 0.08,
+    50: 1.00,
+    60: 0.03,
+    70: 0.02,
+    80: 0.0002,
+    90: 0.20,
+    100: 0.02,
+    111: 1.20,
+    112: 0.80,
+    121: 0.60,
+    122: 0.50,
+    123: 0.40,
+    124: 0.50,
+    131: 0.03,
+    132: 0.03,
+    133: 0.05,
+    141: 0.15,
+    142: 0.15,
+    211: 0.08,
+    212: 0.08,
+    213: 0.08,
+    221: 0.25,
+    222: 0.25,
+    223: 0.25,
+    231: 0.05,
+    241: 0.15,
+    242: 0.15,
+    243: 0.15,
+    244: 0.20,
+    311: 1.20,
+    312: 1.00,
+    313: 1.10,
+    321: 0.05,
+    322: 0.20,
+    323: 0.10,
+    324: 0.30,
+    331: 0.03,
+    332: 0.02,
+    333: 0.02,
+    334: 0.02,
+    335: 0.02,
+    411: 0.20,
+    412: 0.15,
+    421: 0.10,
+    422: 0.10,
+    423: 0.10,
+    511: 0.0002,
+    512: 0.0002,
+    521: 0.0002,
+    522: 0.0002,
+    523: 0.0002,
+}
+
+DEFAULT_ROUGHNESS_M = 0.10
+REFERENCE_ROUGHNESS_M = 0.10
 from sprtz.parallel import get_gpu_context, get_mpi_context
 
 
@@ -185,6 +246,7 @@ class LocalMeteorology:
     source: str
     valid_datetime_utc: str | None = None
     valid_datetimes_utc: list[str] | None = None
+    downscaling_metadata: dict[str, Any] | None = None
 
     @property
     def wind_4d(self) -> tuple[np.ndarray, np.ndarray]:
@@ -265,6 +327,7 @@ class LocalMeteorology:
                 "spritzwrf_to_spritzmet": True,
                 "interpolation": "inverse-distance weighting on WRF latitude/longitude nodes",
                 "schema_version": "1.2",
+                **(self.downscaling_metadata or {}),
                 **({"valid_datetime_utc": time_datetime} if time_datetime else {}),
                 **({"valid_datetimes_utc": time_datetimes} if time_datetimes else {}),
             },
@@ -356,6 +419,98 @@ def _wind_time_count(values: np.ndarray) -> int:
     return 1
 
 
+def _require_grid_field(name: str, values: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    field = np.asarray(values, dtype=float)
+    if field.shape != shape:
+        raise ValueError(f"{name} shape {field.shape} must match local grid shape {shape}")
+    if not np.all(np.isfinite(field)):
+        raise ValueError(f"{name} must contain only finite values")
+    return field
+
+
+def _land_cover_roughness(land_cover: np.ndarray) -> np.ndarray:
+    classes = np.asarray(np.rint(land_cover), dtype=int)
+    roughness = np.full(classes.shape, DEFAULT_ROUGHNESS_M, dtype=float)
+    for code, value in LAND_COVER_ROUGHNESS_M.items():
+        roughness[classes == code] = value
+    return roughness
+
+
+def _apply_surface_downscaling(
+    u: np.ndarray,
+    v: np.ndarray,
+    precipitation_rate: np.ndarray,
+    *,
+    dem_elevation_m: np.ndarray | None,
+    land_cover: np.ndarray | None,
+    dx_m: float,
+    dy_m: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+    metadata: dict[str, Any] = {"terrain_downscaling": False}
+    if dem_elevation_m is None and land_cover is None:
+        return u, v, precipitation_rate, metadata
+
+    grid_shape = u.shape[-2:]
+    elevation = (
+        _require_grid_field("dem_elevation_m", dem_elevation_m, grid_shape)
+        if dem_elevation_m is not None
+        else np.zeros(grid_shape, dtype=float)
+    )
+    roughness = (
+        _land_cover_roughness(_require_grid_field("land_cover", land_cover, grid_shape))
+        if land_cover is not None
+        else np.full(grid_shape, REFERENCE_ROUGHNESS_M, dtype=float)
+    )
+
+    grad_y, grad_x = np.gradient(elevation, dy_m, dx_m)
+    slope = np.hypot(grad_x, grad_y)
+    roughness_factor = np.clip((REFERENCE_ROUGHNESS_M / np.maximum(roughness, 1.0e-4)) ** 0.08, 0.80, 1.20)
+    elevation_factor = np.clip(1.0 + (elevation - float(np.nanmean(elevation))) / 10000.0, 0.90, 1.10)
+
+    u_arr = np.asarray(u, dtype=float)
+    v_arr = np.asarray(v, dtype=float)
+    speed = np.hypot(u_arr, v_arr)
+    upslope_component = np.divide(
+        u_arr * grad_x + v_arr * grad_y,
+        np.maximum(speed, 1.0e-9),
+        out=np.zeros_like(speed),
+        where=speed > 0.0,
+    )
+    terrain_factor = np.clip(1.0 + 0.35 * upslope_component, 0.75, 1.25)
+    wind_factor = roughness_factor * elevation_factor
+    while wind_factor.ndim < u_arr.ndim:
+        wind_factor = wind_factor[np.newaxis, ...]
+    corrected_u = u_arr * wind_factor * terrain_factor
+    corrected_v = v_arr * wind_factor * terrain_factor
+
+    precip_arr = np.asarray(precipitation_rate, dtype=float)
+    relief_factor = np.clip(1.0 + (elevation - float(np.nanmean(elevation))) / 3000.0, 0.75, 1.50)
+    land_factor = np.clip(1.0 + 0.03 * np.log1p(roughness / REFERENCE_ROUGHNESS_M), 0.95, 1.15)
+    precip_factor = relief_factor * land_factor
+    while precip_factor.ndim < precip_arr.ndim:
+        precip_factor = precip_factor[np.newaxis, ...]
+    corrected_precipitation = np.clip(precip_arr * precip_factor, 0.0, None)
+
+    metadata.update(
+        {
+            "terrain_downscaling": True,
+            "uses_dem_elevation_m": dem_elevation_m is not None,
+            "uses_land_cover": land_cover is not None,
+            "roughness_source": "land_cover_lookup" if land_cover is not None else "uniform_reference",
+            "max_slope_m_per_m": float(np.nanmax(slope)),
+        }
+    )
+    return corrected_u, corrected_v, corrected_precipitation, metadata
+
+
+def _netcdf_attribute_value(value: Any) -> str | int | float:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float, str)):
+        return value
+    return str(value)
+
+
 def downscale_wrf_to_local_grid(
     wrf: WRFWindField,
     *,
@@ -367,8 +522,15 @@ def downscale_wrf_to_local_grid(
     dy_m: float = 100.0,
     power: float = 2.0,
     neighbours: int = 8,
+    dem_elevation_m: np.ndarray | None = None,
+    land_cover: np.ndarray | None = None,
 ) -> LocalMeteorology:
-    """Interpolate SpritzWRF near-surface wind to a local SpritzMet grid."""
+    """Interpolate SpritzWRF near-surface fields to a local SpritzMet grid.
+
+    When aligned DEM elevation and land-cover arrays are supplied, SpritzMet
+    applies bounded terrain and roughness adjustments to both wind and
+    precipitation after WRF-to-local-grid interpolation.
+    """
     if nx < 2 or ny < 2:
         raise ValueError("nx and ny must be at least 2")
     if dx_m <= 0 or dy_m <= 0:
@@ -404,6 +566,15 @@ def downscale_wrf_to_local_grid(
             power=power,
             neighbours=neighbours,
         )
+    u, v, precipitation_rate, terrain_metadata = _apply_surface_downscaling(
+        u,
+        v,
+        precipitation_rate,
+        dem_elevation_m=dem_elevation_m,
+        land_cover=land_cover,
+        dx_m=dx_m,
+        dy_m=dy_m,
+    )
     valid_datetime = None
     valid_datetimes = None
     if wrf.metadata:
@@ -426,6 +597,7 @@ def downscale_wrf_to_local_grid(
         str(wrf.source_path),
         valid_datetime_utc=valid_datetime,
         valid_datetimes_utc=valid_datetimes,
+        downscaling_metadata=terrain_metadata,
     )
 
 
@@ -457,6 +629,8 @@ def write_local_meteorology(
             ds.source = met.source
             ds.center_latitude = float(met.center_lat)
             ds.center_longitude = float(met.center_lon)
+            for key, value in (met.downscaling_metadata or {}).items():
+                setattr(ds, f"spritzmet_{key}", _netcdf_attribute_value(value))
             time_datetimes = [iso_utc(value) for value in (met.valid_datetimes_utc or [])]
             time_datetimes = [value for value in time_datetimes if value]
             if not time_datetimes and met.valid_datetime_utc:

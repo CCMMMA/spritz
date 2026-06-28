@@ -598,6 +598,61 @@ def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> No
         assert str(ds.variables["time_datetime"][0]) == "2026-05-27T00:00:00Z"
 
 
+def test_spritzmet_uses_dem_and_land_cover_for_wind_and_precipitation() -> None:
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        latitude=lat,
+        longitude=lon,
+        u=np.full((2, 2), 4.0),
+        v=np.full((2, 2), 1.0),
+        source_path=Path("synthetic_wrf.nc"),
+        precipitation_rate=np.full((2, 2), 2.0),
+    )
+    plain = spritzmet.downscale_wrf_to_local_grid(
+        wrf,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+    )
+    terrain = spritzmet.downscale_wrf_to_local_grid(
+        wrf,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+        dem_elevation_m=np.asarray(
+            [[0.0, 50.0, 100.0], [25.0, 100.0, 175.0], [50.0, 150.0, 250.0]],
+            dtype=float,
+        ),
+        land_cover=np.asarray([[80, 80, 80], [50, 50, 50], [311, 311, 311]], dtype=float),
+    )
+
+    assert terrain.downscaling_metadata is not None
+    assert terrain.downscaling_metadata["uses_dem_elevation_m"] is True
+    assert terrain.downscaling_metadata["uses_land_cover"] is True
+    assert not np.allclose(terrain.wind_speed, plain.wind_speed)
+    assert not np.allclose(terrain.precipitation_3d, plain.precipitation_3d)
+
+    with pytest.raises(ValueError, match="dem_elevation_m shape"):
+        spritzmet.downscale_wrf_to_local_grid(
+            wrf,
+            center_lat=40.005,
+            center_lon=14.005,
+            nx=3,
+            ny=3,
+            dx_m=100.0,
+            dy_m=100.0,
+            dem_elevation_m=np.zeros((2, 2)),
+            land_cover=np.zeros((3, 3)),
+        )
+
+
 def test_resolve_wrf_input_prefers_local_path(tmp_path: Path) -> None:
     wrf = tmp_path / "wrf5_d03_20260527Z0000.nc"
     wrf.write_bytes(b"placeholder")

@@ -56,6 +56,15 @@ met = spritzmet.downscale_wrf_to_local_grid(
 spritzmet.write_local_meteorology("output/wrf_100m_wind.nc", met)
 ```
 
+When DEM elevation and land-cover fields have already been regridded to the
+same local SpritzMet grid, pass them as `dem_elevation_m` and `land_cover`.
+SpritzMet then applies bounded clean-room terrain and surface-roughness
+adjustments to both wind and precipitation after WRF interpolation. Elevation
+drives slope/aspect and orographic precipitation factors; land cover maps to a
+roughness length lookup for wind exposure and a small precipitation interception
+factor. Without these optional arrays, the pipeline preserves the original
+WRF-to-local-grid interpolation behavior.
+
 SpritzWRF handles WRF/CF dimensions explicitly. Four-dimensional wind variables
 are interpreted as `time, level, y, x` when dimension names such as `Time`,
 `bottom_top`, `south_north`, and `west_east` are present; `time_index` and
