@@ -2,6 +2,10 @@
 
 Estimate possible upwind source locations from one or more odor, smoke, or pollutant detections.
 
+NetCDF/time convention: backward meteorology and likelihood sidecars follow
+strict CF coordinate metadata. Any physical meteorology time must come from
+upstream SpritzWRF/SpritzMet WRF/CF metadata, not from filenames.
+
 ## Data Preparation
 
 Prepare the forward meteorology and terrain evidence used to interpret backward

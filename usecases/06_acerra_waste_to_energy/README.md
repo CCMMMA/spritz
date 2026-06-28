@@ -7,6 +7,11 @@ scenario.
 The source is centered at `40.978473 N, 14.384058 E`. The chimney release height
 is 110 m above local ground level.
 
+NetCDF/time convention: generated meteorology and concentration NetCDF products
+follow strict CF metadata. Scenario start/end datetimes are encoded in the
+configuration and propagated to model outputs; no use-case step infers
+scientific datetimes from filenames.
+
 ## Data preparation
 
 Prepare WRF and COP30 terrain files for production-style reruns:

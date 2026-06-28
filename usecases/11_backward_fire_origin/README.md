@@ -2,6 +2,10 @@
 
 Estimate likely ignition locations from observed burned/fire points and wind direction.
 
+NetCDF/time convention: backward fire-origin sidecars follow strict CF
+coordinate metadata. Any physical meteorology time must come from upstream
+SpritzWRF/SpritzMet WRF/CF metadata, not from filenames.
+
 ## Data Preparation
 
 Prepare meteorology and terrain for the fire-origin analysis area:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ import numpy as np
 from pyproj import Geod
 
 from sprtz.io.jsonio import write_json
+from sprtz.io.netcdf_cf import write_cf_time_coordinate
 from sprtz.logging import configure_logging
 from datetime_args import parse_script_datetime
 from plotting import plot_netcdf_if_available
@@ -186,8 +187,15 @@ def write_sailing_netcdf_if_available(payload: dict[str, Any], output_path: str 
         ds.createDimension("x", lon.size)
         ds.Conventions = "CF-1.8"
         ds.title = "Sprtz sailing wind forecast"
+        init_dt = datetime.fromisoformat(str(payload["initialization_utc"]).replace("Z", "+00:00"))
+        write_cf_time_coordinate(
+            ds,
+            [
+                (init_dt + timedelta(seconds=float(seconds))).isoformat().replace("+00:00", "Z")
+                for seconds in valid_time
+            ],
+        )
         for name, values, dims, units in [
-            ("time", valid_time, ("time",), "seconds since initialization"),
             ("height", height, ("height",), "m"),
             ("latitude", lat, ("y",), "degrees_north"),
             ("longitude", lon, ("x",), "degrees_east"),

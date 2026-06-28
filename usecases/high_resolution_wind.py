@@ -59,6 +59,18 @@ def _synthetic_wrf(center_lat: float, center_lon: float, nx: int = 7, ny: int = 
     return spritzwrf.WRFWindField(lat, lon, u, v, Path("synthetic-wrf5-d03"), metadata={"synthetic": True})
 
 
+def _require_cf_valid_time_for_netcdf(wrf: spritzwrf.WRFWindField, *, prefer_netcdf: bool) -> None:
+    if not prefer_netcdf:
+        return
+    if wrf.metadata and wrf.metadata.get("time_datetime"):
+        return
+    raise ValueError(
+        "NetCDF output requires WRF valid-time metadata from SpritzWRF. "
+        "Provide a WRF file with Times, CF time units, or explicit global time attributes; "
+        "Sprtz does not infer scientific datetimes from filenames."
+    )
+
+
 def resolve_wrf_input(
     wrf_path: str | Path | None,
     *,
@@ -110,7 +122,9 @@ def interpolate_wrf_to_100m(
        from the meteo@uniparthenope archive.
     2. SpritzMet creates an azimuthal-equidistant grid centered at the requested
        latitude/longitude and interpolates the SpritzWRF wind vectors to that grid.
-    3. The output is written as NetCDF-CF by default, with JSON fallback.
+    3. The output is written as strict NetCDF-CF by default, with JSON fallback.
+       NetCDF output requires SpritzWRF to provide WRF/CF valid-time metadata;
+       datetimes are not inferred from filenames.
     """
     if download_time is not None:
         download_date, download_cycle_hour = script_datetime_to_date_and_hour(download_time)
@@ -131,6 +145,7 @@ def interpolate_wrf_to_100m(
             "WRF input file is required. Pass --wrf, or use --download-time YYYYMMDDZhhmm, "
             "or enable --allow-synthetic for tests."
         )
+    _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=prefer_netcdf)
     met = spritzmet.downscale_wrf_to_local_grid(
         wrf,
         center_lat=center_lat,

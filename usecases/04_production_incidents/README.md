@@ -9,6 +9,11 @@ events:
 | 2020 | 2021_44 | Acerra | 40,926506 | 14,380875 | 30/07/2021 | 14 | 3 ore |
 | 2023 | 2023_14 | San Marcellino | 40,98472 | 14,18250 | 14/07/2023 | 15 | 3 ore |
 
+NetCDF/time convention: generated model NetCDF products follow strict CF
+metadata. Incident datetimes are encoded in configuration fields and propagated
+to model output time metadata; no use-case step infers scientific datetimes from
+filenames.
+
 ## Data preparation
 
 For incident dossiers, archive the exact meteorology and terrain inputs used by

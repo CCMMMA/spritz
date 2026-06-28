@@ -124,6 +124,15 @@ neighbor or a documented majority/aggregation method.
 
 Sprtz should prefer NetCDF-CF for module interoperability while retaining tolerant JSON and legacy-style input support.
 
+All Sprtz-produced NetCDF files must follow strict CF conventions for
+coordinates, dimensions, units, and metadata. Any file with a time dimension
+must provide a CF-compliant `time` coordinate variable with absolute UTC units
+when a physical datetime is known; do not infer scientific datetimes from file
+or directory names. WRF valid time must be managed by SpritzWRF from WRF/CF time
+metadata such as `Times`, CF `time` units, or explicit WRF global time
+attributes, and then propagated to downstream SpritzMet and dispersion NetCDF
+outputs.
+
 When adding new fields:
 
 - Update `src/sprtz/config.py`.

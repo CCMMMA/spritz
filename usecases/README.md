@@ -17,6 +17,13 @@ Script-facing date-time values use compact UTC `YYYYMMDDZhhmm` format, for
 example `20260601Z0000`. Internal JSON configuration files may still contain
 ISO-8601 fields where the Sprtz schema requires them.
 
+All use-case NetCDF products follow the repository's strict NetCDF-CF
+convention. Time-dependent NetCDF products must carry a CF `time(time)`
+coordinate with absolute UTC units when physical time is known. WRF valid time
+comes only from SpritzWRF reading WRF/CF metadata (`Times`, CF `time`, or
+explicit global time attributes); use cases must not infer scientific datetimes
+from filenames or download paths.
+
 ## Data preparation
 
 Use the repository download helpers to prepare shared inputs under `data/`

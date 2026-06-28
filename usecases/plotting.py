@@ -77,6 +77,7 @@ def plot_netcdf_if_available(
             log_scale=False,
             vector_overlay=True,
             vector_stride=8,
+            vector_density=None,
             vector_scale=None,
         )
     except Exception as exc:

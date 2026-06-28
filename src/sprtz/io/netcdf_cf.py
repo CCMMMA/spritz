@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,71 @@ def _as_array(data: Any) -> np.ndarray:
     if arr.size == 0:
         raise DataFormatError("NetCDF variable data must not be empty")
     return arr
+
+
+def parse_utc_datetime(value: Any) -> datetime | None:
+    """Parse a UTC datetime from common Sprtz/CF metadata strings."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    text = text.replace("_", "T")
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def iso_utc(value: Any) -> str | None:
+    dt = parse_utc_datetime(value)
+    if dt is None:
+        return None
+    return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def cf_time_units(value: Any) -> str | None:
+    dt = parse_utc_datetime(value)
+    if dt is None:
+        return None
+    return f"seconds since {dt:%Y-%m-%d %H:%M:%S} UTC"
+
+
+def write_cf_time_coordinate(ds: Any, datetimes: list[Any] | tuple[Any, ...] | np.ndarray | None = None) -> Any:
+    """Create a CF-compliant time coordinate when absolute UTC times are known."""
+    ntime = len(ds.dimensions["time"])
+    time = ds.createVariable("time", "f8", ("time",))
+    time.standard_name = "time"
+    time.long_name = "time"
+    time.axis = "T"
+    time.calendar = "proleptic_gregorian"
+    raw_datetimes = [] if datetimes is None else list(datetimes)
+    parsed = [parse_utc_datetime(value) for value in raw_datetimes]
+    parsed = [value for value in parsed if value is not None]
+    if parsed:
+        base = parsed[0]
+        time.units = f"seconds since {base:%Y-%m-%d %H:%M:%S} UTC"
+        padded = parsed[:ntime]
+        if len(padded) < ntime:
+            padded.extend([padded[-1]] * (ntime - len(padded)))
+        values = [(value - base).total_seconds() for value in padded]
+        time[:] = np.asarray(values, dtype=float)
+        time_dt = ds.createVariable("time_datetime", str, ("time",))
+        time_dt.long_name = "ISO-8601 UTC time"
+        time_dt[:] = np.asarray(
+            [value.isoformat(timespec="seconds").replace("+00:00", "Z") for value in padded],
+            dtype=object,
+        )
+    else:
+        time.units = "seconds since 1970-01-01 00:00:00 UTC"
+        time.comment = "No absolute UTC datetime was available; value is an ordinal timestep."
+        time[:] = np.arange(ntime, dtype=float)
+    return time
 
 
 def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
@@ -56,6 +122,19 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
         ds.Conventions = "CF-1.8"
         ds.title = "Spritz SpritzMet meteorology"
         ds.featureType = "grid"
+        metadata = meteo.get("metadata", {}) if isinstance(meteo.get("metadata", {}), dict) else {}
+        time_candidates = (
+            meteo.get("time_datetime")
+            or meteo.get("valid_datetime_utc")
+            or metadata.get("valid_datetime_utc")
+            or metadata.get("simulation_start_datetime")
+            or metadata.get("weather_start_datetime")
+        )
+        if isinstance(time_candidates, str) or time_candidates is None:
+            time_values = [time_candidates] if time_candidates else None
+        else:
+            time_values = list(time_candidates)
+        write_cf_time_coordinate(ds, time_values)
         x = ds.createVariable("x", "f8", ("x",))
         y = ds.createVariable("y", "f8", ("y",))
         x.standard_name = "projection_x_coordinate"
@@ -194,14 +273,18 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
         ds.createDimension("receptor", len(receptors))
         ds.Conventions = "CF-1.8"
         ds.title = "Spritz receptor concentration"
-        time = ds.createVariable("time", "f8", ("time",))
-        time.units = "seconds since simulation start"
-        time.long_name = "model output time"
-        time[:] = np.asarray(times, dtype=float)
         if datetime_by_time:
-            time_dt = ds.createVariable("time_datetime", str, ("time",))
-            time_dt.long_name = "ISO-8601 model output datetime"
-            time_dt[:] = np.asarray([datetime_by_time.get(value, "") for value in times], dtype=object)
+            time = write_cf_time_coordinate(ds, [datetime_by_time.get(value, "") for value in times])
+            time.long_name = "model output time"
+        else:
+            time = ds.createVariable("time", "f8", ("time",))
+            time.standard_name = "time"
+            time.long_name = "model output time"
+            time.axis = "T"
+            time.calendar = "proleptic_gregorian"
+            time.units = "seconds since 1970-01-01 00:00:00 UTC"
+            time.comment = "No absolute UTC datetime was available; value is seconds since simulation start."
+            time[:] = np.asarray(times, dtype=float)
         rec = ds.createVariable("receptor", "i4", ("receptor",))
         rec.long_name = "receptor index"
         rec[:] = np.arange(len(receptors), dtype=np.int32)

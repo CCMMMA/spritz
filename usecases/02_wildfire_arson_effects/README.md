@@ -12,6 +12,11 @@ The workflow is intentionally step-by-step:
 6. **Run dispersion.** Execute Spritz with the configured Gaussian or particle backend.
 7. **Review outputs.** Inspect the generated configuration, concentration product, and postprocessing summary.
 
+NetCDF/time convention: WRF valid time is read only by SpritzWRF from WRF/CF
+metadata (`Times`, CF `time`, or explicit global time attributes). The workflow
+does not infer datetimes from WRF filenames; NetCDF meteorology and dispersion
+products follow strict CF time coordinates.
+
 ## Data preparation
 
 Prepare WRF forcing before the run:

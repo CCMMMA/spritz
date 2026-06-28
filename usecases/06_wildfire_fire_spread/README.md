@@ -2,6 +2,10 @@
 
 Runs SpritzFire on a small synthetic domain to demonstrate stochastic fire arrival probability, mean arrival time, and perimeter export.
 
+NetCDF/time convention: SpritzFire NetCDF products follow strict CF coordinate
+metadata. For production meteorology inputs, WRF valid time must come through
+SpritzWRF WRF/CF metadata and must not be inferred from filenames.
+
 ## Data Preparation
 
 The default configuration is synthetic, but real-area fire studies should prepare

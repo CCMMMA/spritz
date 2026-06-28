@@ -15,6 +15,11 @@ resolution, 10 m vertical resolution, and 10 minute time resolution. The
 initialization date defaults to the current UTC day at Z00, and the default
 outlook is 24 hours.
 
+NetCDF/time convention: the forecast NetCDF writes a strict CF `time(time)`
+coordinate with absolute UTC units derived from the initialization datetime and
+forecast lead seconds. The JSON payload keeps `valid_time_s` as forecast lead
+seconds for scripting convenience.
+
 Default race-area polygon:
 
 ```json
@@ -92,7 +97,8 @@ Expected fields include:
 
 - longitude and latitude axes;
 - height levels in metres;
-- valid times in seconds from initialization;
+- CF `time(time)` coordinates and ISO `time_datetime(time)` values;
+- JSON `valid_time_s` lead times in seconds from initialization;
 - eastward and northward wind;
 - wind speed;
 - wind-from direction;

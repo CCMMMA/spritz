@@ -11,6 +11,10 @@ The workflow is didactic and auditable:
 5. **Apply lightweight AI calibration.** A deterministic logistic calibration reports how much a simple learned transform improves alignment.
 6. **Write a report.** The output JSON records inputs, thresholds, metrics, and calibration parameters.
 
+NetCDF/time convention: any evaluated NetCDF input is expected to follow strict
+CF metadata. The evaluator reads model times from CF `time`/`time_datetime`
+metadata when present and does not infer datetimes from filenames.
+
 ## Data preparation
 
 This use case evaluates outputs produced by use case 02. Prepare that upstream

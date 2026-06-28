@@ -12,7 +12,13 @@ from sprtz.core.grid import Grid
 from sprtz.core.physics import wind_components
 from sprtz.io.jsonio import write_json
 from sprtz.io.legacy_outputs import infer_format
-from sprtz.io.netcdf_cf import available as netcdf_available, write_cf_meteorology
+from sprtz.io.netcdf_cf import (
+    available as netcdf_available,
+    cf_time_units,
+    iso_utc,
+    write_cf_meteorology,
+    write_cf_time_coordinate,
+)
 from sprtz.models.spritzwrf import WRFWindField
 from sprtz.parallel import get_gpu_context, get_mpi_context
 
@@ -177,6 +183,7 @@ class LocalMeteorology:
     dx_m: float
     dy_m: float
     source: str
+    valid_datetime_utc: str | None = None
 
     @property
     def wind_speed(self) -> np.ndarray:
@@ -187,6 +194,7 @@ class LocalMeteorology:
         return (270.0 - np.rad2deg(np.arctan2(self.v, self.u))) % 360.0
 
     def to_payload(self) -> dict[str, Any]:
+        time_datetime = iso_utc(self.valid_datetime_utc)
         return {
             "component": "spritzmet.local_meteorology",
             "center_lat": self.center_lat,
@@ -203,10 +211,12 @@ class LocalMeteorology:
             "dx_m": self.dx_m,
             "dy_m": self.dy_m,
             "source": self.source,
+            **({"time": [0.0], "time_units": cf_time_units(time_datetime), "time_datetime": [time_datetime]} if time_datetime else {}),
             "metadata": {
                 "spritzwrf_to_spritzmet": True,
                 "interpolation": "inverse-distance weighting on WRF latitude/longitude nodes",
                 "schema_version": "1.2",
+                **({"valid_datetime_utc": time_datetime} if time_datetime else {}),
             },
         }
 
@@ -297,6 +307,9 @@ def downscale_wrf_to_local_grid(
             power=power,
             k=neighbours,
         )
+    valid_datetime = None
+    if wrf.metadata:
+        valid_datetime = str(wrf.metadata.get("time_datetime", "") or "") or None
     return LocalMeteorology(
         xx,
         yy,
@@ -310,6 +323,7 @@ def downscale_wrf_to_local_grid(
         dx_m,
         dy_m,
         str(wrf.source_path),
+        valid_datetime_utc=valid_datetime,
     )
 
 
@@ -334,6 +348,9 @@ def write_local_meteorology(
             ds.source = met.source
             ds.center_latitude = float(met.center_lat)
             ds.center_longitude = float(met.center_lon)
+            if met.valid_datetime_utc:
+                ds.valid_datetime_utc = iso_utc(met.valid_datetime_utc) or str(met.valid_datetime_utc)
+            write_cf_time_coordinate(ds, [met.valid_datetime_utc] if met.valid_datetime_utc else None)
             variables = [
                 ("x", met.x[0], ("x",), "m", "local projection x coordinate"),
                 ("y", met.y[:, 0], ("y",), "m", "local projection y coordinate"),

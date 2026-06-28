@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -43,8 +44,6 @@ SKIP_VARIABLES = {
     "lat",
     "lon",
 }
-
-
 @dataclass(frozen=True)
 class VectorField:
     u: np.ndarray
@@ -62,6 +61,18 @@ class MapField:
     label: str
     title: str
     vectors: VectorField | None = None
+    time_label: str | None = None
+
+
+def _decode_text(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace").strip()
+    if isinstance(value, np.ndarray):
+        if value.dtype.kind in {"S", "U"}:
+            return b"".join(np.asarray(value, dtype="S1").ravel()).decode("utf-8", errors="replace").strip()
+        if value.size == 1:
+            return _decode_text(value.item())
+    return str(value).strip()
 
 
 def _load_netcdf4() -> Any:
@@ -77,6 +88,12 @@ def _variable_array(variable: Any) -> np.ndarray:
     if np.ma.isMaskedArray(values):
         values = np.asarray(values.filled(np.nan))
     return np.asarray(values)
+
+
+def _take_checked(arr: np.ndarray, index: int, axis: int, *, name: str) -> np.ndarray:
+    if index < 0 or index >= arr.shape[axis]:
+        raise IndexError(f"{name} index {index} is out of range for size {arr.shape[axis]}")
+    return np.take(arr, index, axis=axis)
 
 
 def _find_variable(ds: Any, names: Sequence[str]) -> Any | None:
@@ -101,14 +118,27 @@ def _select_2d(
         if dims:
             if any(token in dims[0] for token in ("time", "date")):
                 index = time_index
+                name = "time"
             elif any(token in dims[0] for token in ("z", "level", "height", "altitude")):
                 index = level_index
+                name = "level"
             else:
                 index = 0
+                name = dims[0]
             dims.pop(0)
         else:
             index = time_index if arr.ndim > 3 else level_index
-        arr = np.take(arr, min(index, arr.shape[0] - 1), axis=0)
+            name = "time" if arr.ndim > 3 else "level"
+        arr = _take_checked(arr, index, 0, name=name)
+    if arr.ndim == 2 and dims:
+        lowered = [dim.lower() for dim in dims]
+        for axis, dim in enumerate(lowered[:2]):
+            if any(token in dim for token in ("time", "date")):
+                arr = _take_checked(arr, time_index, axis, name="time")
+                break
+            if any(token in dim for token in ("z", "level", "height", "altitude")):
+                arr = _take_checked(arr, level_index, axis, name="level")
+                break
     if arr.ndim != 2:
         if arr.ndim == 1:
             return arr.reshape(1, arr.size)
@@ -119,7 +149,7 @@ def _select_2d(
 def _select_1d_or_2d(values: np.ndarray, *, time_index: int = 0) -> np.ndarray:
     arr = np.asarray(values, dtype=float)
     while arr.ndim > 2:
-        arr = np.take(arr, min(time_index, arr.shape[0] - 1), axis=0)
+        arr = _take_checked(arr, time_index, 0, name="time")
     if arr.ndim == 2 and 1 in arr.shape:
         arr = arr.reshape(max(arr.shape))
     return arr
@@ -228,6 +258,50 @@ def _read_vectors(ds: Any, shape: tuple[int, int], *, time_index: int, level_ind
     return None
 
 
+def _read_time_label(ds: Any, *, time_index: int) -> str | None:
+    time_datetime = _find_variable(ds, ("time_datetime",))
+    if time_datetime is not None:
+        values = np.asarray(time_datetime[:])
+        if values.size:
+            text = _decode_text(values[min(time_index, values.shape[0] - 1)])
+            if text:
+                return f"UTC: {text.replace('+00:00', 'Z')}"
+
+    wrf_times = _find_variable(ds, ("Times",))
+    if wrf_times is not None:
+        values = np.asarray(wrf_times[:])
+        if values.size:
+            text = _decode_text(values[min(time_index, values.shape[0] - 1)])
+            if text:
+                return f"UTC: {text.replace('_', ' ')}"
+
+    time_var = _find_variable(ds, ("time",))
+    if time_var is None:
+        return None
+    values = np.asarray(time_var[:])
+    if values.size == 0:
+        return None
+    if time_index < 0 or time_index >= values.shape[0]:
+        raise IndexError(f"time index {time_index} is out of range for size {values.shape[0]}")
+    units = str(getattr(time_var, "units", "")).strip()
+    calendar = str(getattr(time_var, "calendar", "standard")).strip()
+    value = float(values[time_index])
+    if "since" in units.lower():
+        try:
+            from netCDF4 import num2date  # type: ignore
+
+            dt = num2date(value, units=units, calendar=calendar, only_use_cftime_datetimes=False)
+            text = dt.isoformat()
+            if text.endswith("+00:00"):
+                text = text[:-6] + "Z"
+            elif getattr(dt, "tzinfo", None) is None:
+                text = f"{text}Z"
+            return f"UTC: {text}"
+        except Exception:
+            pass
+    return f"Time: {value:g} {units}".strip()
+
+
 def _local_to_lat_lon(
     x: np.ndarray,
     y: np.ndarray,
@@ -279,7 +353,8 @@ def read_map_field(
         label = f"{long_name or variable.name}{f' [{units}]' if units else ''}"
         title = f"{Path(input_path).name}: {long_name or variable.name}"
         vectors = _read_vectors(ds, values.shape, time_index=time_index, level_index=level_index)
-        return MapField(variable.name, values, x, y, geographic, label, title, vectors=vectors)
+        time_label = _read_time_label(ds, time_index=time_index)
+        return MapField(variable.name, values, x, y, geographic, label, title, vectors=vectors, time_label=time_label)
 
 
 def _extent(x: np.ndarray, y: np.ndarray, margin_fraction: float) -> tuple[float, float, float, float]:
@@ -374,6 +449,7 @@ def plot_map(
     log_scale: bool,
     vector_overlay: bool,
     vector_stride: int,
+    vector_density: int | None,
     vector_scale: float | None,
 ) -> Path:
     try:
@@ -427,7 +503,12 @@ def plot_map(
     cbar.set_label(field.label)
 
     if vector_overlay and field.vectors is not None and min(field.values.shape) > 1:
-        stride = max(1, int(vector_stride))
+        if vector_density is not None:
+            if vector_density <= 0:
+                raise ValueError("--vector-density must be positive")
+            stride = max(1, int(math.ceil(max(field.values.shape) / float(vector_density))))
+        else:
+            stride = max(1, int(vector_stride))
         vector_kwargs: dict[str, Any] = {
             "angles": "uv",
             "scale_units": "width",
@@ -475,7 +556,10 @@ def plot_map(
         ax.grid(True, linewidth=0.25, alpha=0.45)
         LOGGER.warning("geographic coordinates unavailable; coastlines require latitude/longitude")
 
-    ax.set_title(title or field.title, fontsize=11)
+    title_text = title or field.title
+    if field.time_label:
+        title_text = f"{title_text}\n{field.time_label}"
+    ax.set_title(title_text, fontsize=11)
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
@@ -500,6 +584,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-scale", action="store_true", help="use logarithmic color normalization")
     parser.add_argument("--no-vectors", action="store_true", help="disable automatic wind-vector overlay")
     parser.add_argument("--vector-stride", type=int, default=8, help="plot every Nth wind vector")
+    parser.add_argument("--vector-density", type=int, default=None, help="target number of wind vectors along the longest grid axis")
     parser.add_argument("--vector-scale", type=float, default=None, help="matplotlib quiver scale for wind vectors")
     parser.add_argument(
         "--coastline-resolution",
@@ -546,6 +631,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             log_scale=args.log_scale,
             vector_overlay=not args.no_vectors,
             vector_stride=args.vector_stride,
+            vector_density=args.vector_density,
             vector_scale=args.vector_scale,
         )
     except KeyboardInterrupt:

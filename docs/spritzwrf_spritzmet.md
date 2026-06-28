@@ -59,9 +59,14 @@ the requested `time_index` as a millimeters-per-hour screening rate. SpritzMet
 interpolates the precipitation field using the same local-grid transform as the
 wind field.
 
+SpritzWRF also owns WRF valid-time extraction. It reads datetimes only from
+WRF/CF time metadata such as `Times`, CF `time` units, or explicit global time
+attributes. It does not infer datetimes from WRF filenames. SpritzMet propagates
+that selected UTC datetime to the local NetCDF-CF `time(time)` coordinate.
+
 ## Output conventions
 
-SpritzMet writes a NetCDF-CF product containing local x/y, latitude/longitude, eastward/northward wind, wind speed, meteorological wind direction, and `precipitation_rate` in `mm h-1`.  JSON fallback is available for test and low-dependency environments.
+SpritzMet writes a strict NetCDF-CF product containing local x/y, latitude/longitude, eastward/northward wind, wind speed, meteorological wind direction, and `precipitation_rate` in `mm h-1`. Products with a physical valid time include a CF `time(time)` coordinate with absolute UTC units. JSON fallback is available for test and low-dependency environments.
 
 Set `run.precipitation_washout: true` in the Spritz JSON configuration to use
 the interpolated precipitation rate as an additional wet-removal term in the

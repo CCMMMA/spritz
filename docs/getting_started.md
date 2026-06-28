@@ -125,10 +125,15 @@ output/wrf_100m_wind.nc
 
 Expected NetCDF-CF fields include:
 
+- `time` with strict CF absolute UTC units when the WRF file provides valid-time metadata
 - `latitude`, `longitude`
 - `eastward_wind`, `northward_wind`
 - `wind_speed`, `wind_from_direction`
 - `precipitation_rate` when WRF precipitation is available, otherwise zeros
+
+SpritzWRF reads valid time from WRF/CF metadata such as `Times`, CF `time`
+units, or explicit global time attributes. It does not infer datetimes from the
+WRF filename.
 
 To rerun from a WRF file already downloaded:
 

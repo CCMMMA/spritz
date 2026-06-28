@@ -2,6 +2,10 @@
 
 Demonstrates the documented `fire+puff` workflow: fire spread outputs are generated first, then the standard Spritz puff workflow can be run on the same configuration.
 
+NetCDF/time convention: fire, meteorology, and smoke NetCDF products follow
+strict CF coordinate metadata. Production WRF valid time must come through
+SpritzWRF WRF/CF metadata and must not be inferred from filenames.
+
 ## Data Preparation
 
 Prepare external meteorology and terrain before replacing the bundled synthetic

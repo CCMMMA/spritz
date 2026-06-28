@@ -2,6 +2,10 @@
 
 Documents the optional GPU backend. CPU remains the default fallback when CuPy or Numba CUDA are unavailable.
 
+NetCDF/time convention: GPU acceleration does not change CF metadata
+requirements. NetCDF products keep strict CF coordinates, and any production WRF
+valid time must come from SpritzWRF WRF/CF metadata rather than filenames.
+
 ## Data Preparation
 
 GPU acceleration changes execution, not input provenance. Prepare the same WRF

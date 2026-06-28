@@ -36,6 +36,13 @@ New module-to-module exchange prefers NetCDF-CF:
   `run.concentration_output: "grid"` and `run.field_z_levels` to request a
   model-grid 3D field when explicit receptors are also present.
 
+Sprtz-produced NetCDF files follow strict CF conventions for coordinate
+variables, dimensions, units, and metadata. Files with a time axis must include
+a CF `time(time)` coordinate. Scientific UTC datetimes are never inferred from
+filenames; WRF valid time is extracted by SpritzWRF from WRF/CF metadata such as
+`Times`, CF `time` units, or explicit global time attributes, then propagated to
+SpritzMet and dispersion outputs.
+
 When the optional `netCDF4` dependency is not installed, `.nc` writes fall back to a deterministic CF-shaped JSON payload so the core package remains usable in minimal CI environments. Install `.[netcdf]` for true NetCDF files.
 
 ## File-format selection
@@ -50,7 +57,7 @@ SpritzWRF can download and read WRF5 d03 history files from the meteo@uniparthen
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
 ```
 
-The downloader stores files locally and the SpritzWRF reader accepts common WRF near-surface wind variables (`U10`/`V10`, `WSPD10`/`WDIR10`) and CF-like wind names.  It also extracts precipitation from common rate variables (`RAINRATE`, `PRECIP_RATE`, `precipitation_rate`, `precip_rate`) or accumulated WRF rain variables (`RAINC`, `RAINNC`, `RAINSH`) when present.  SpritzMet converts those fields into the NetCDF-CF local product used by the rest of Spritz.
+The downloader stores files locally and the SpritzWRF reader accepts common WRF near-surface wind variables (`U10`/`V10`, `WSPD10`/`WDIR10`) and CF-like wind names. It reads valid time only from WRF/CF time metadata, not from the downloaded filename. It also extracts precipitation from common rate variables (`RAINRATE`, `PRECIP_RATE`, `precipitation_rate`, `precip_rate`) or accumulated WRF rain variables (`RAINC`, `RAINNC`, `RAINSH`) when present. SpritzMet converts those fields into the NetCDF-CF local product used by the rest of Spritz.
 
 
 ## Terrain Preprocessing

@@ -220,24 +220,112 @@ def test_plotter_derives_vectors_from_speed_and_direction(tmp_path: Path) -> Non
     assert field.vectors.v[0, 0] == pytest.approx(0.0)
 
 
+def test_plotter_uses_time_index_and_utc_label(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "time_series.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 2)
+        ds.createDimension("y", 1)
+        ds.createDimension("x", 2)
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0, 14.1]
+        time = ds.createVariable("time", "f8", ("time",))
+        time.units = "hours since 2026-06-01 00:00:00"
+        time[:] = [0.0, 6.0]
+        wind = ds.createVariable("wind_speed", "f8", ("time", "y", "x"))
+        wind[:, :, :] = [[[1.0, 2.0]], [[3.0, 4.0]]]
+
+    plotter = load_plotter_tool()
+    field = plotter.read_map_field(
+        path,
+        variable_name="wind_speed",
+        time_index=1,
+        level_index=0,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    assert field.values[0, 0] == pytest.approx(3.0)
+    assert field.time_label is not None
+    assert "2026-06-01T06:00:00" in field.time_label
+
+
+def test_plotter_does_not_infer_utc_label_from_wrf_source_filename(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "legacy_local_wind.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("y", 1)
+        ds.createDimension("x", 1)
+        ds.source = "data/wrf/wrf5_d03_20260527Z0000.nc"
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0]
+        wind = ds.createVariable("wind_speed", "f8", ("time", "y", "x"))
+        wind[:, :, :] = [[[1.0]]]
+
+    plotter = load_plotter_tool()
+    field = plotter.read_map_field(
+        path,
+        variable_name="wind_speed",
+        time_index=0,
+        level_index=0,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    assert field.time_label is None
+
+
+def test_plotter_rejects_out_of_range_time_index(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "one_time.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("y", 1)
+        ds.createDimension("x", 1)
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0]
+        ds.createVariable("time", "f8", ("time",))[:] = [0.0]
+        wind = ds.createVariable("wind_speed", "f8", ("time", "y", "x"))
+        wind[:, :, :] = [[[1.0]]]
+
+    plotter = load_plotter_tool()
+
+    with pytest.raises(IndexError, match="time index 2"):
+        plotter.read_map_field(
+            path,
+            variable_name="wind_speed",
+            time_index=2,
+            level_index=0,
+            center_lat=None,
+            center_lon=None,
+        )
+
+
 def test_plotter_reads_receptor_vector_as_single_row(tmp_path: Path) -> None:
     pytest.importorskip("netCDF4")
     from netCDF4 import Dataset  # type: ignore
 
     path = tmp_path / "concentration.nc"
     with Dataset(path, "w") as ds:
-        ds.createDimension("time", 1)
+        ds.createDimension("time", 2)
         ds.createDimension("receptor", 2)
         ds.createVariable("latitude", "f8", ("receptor",))[:] = [40.0, 40.1]
         ds.createVariable("longitude", "f8", ("receptor",))[:] = [14.0, 14.1]
         concentration = ds.createVariable("concentration", "f8", ("time", "receptor"))
-        concentration[:, :] = [[1.0, 2.0]]
+        concentration[:, :] = [[1.0, 2.0], [3.0, 4.0]]
 
     plotter = load_plotter_tool()
     field = plotter.read_map_field(
         path,
         variable_name="concentration",
-        time_index=0,
+        time_index=1,
         level_index=0,
         center_lat=None,
         center_lon=None,
@@ -245,6 +333,7 @@ def test_plotter_reads_receptor_vector_as_single_row(tmp_path: Path) -> None:
 
     assert field.geographic is True
     assert field.values.shape == (1, 2)
+    assert field.values[0, 0] == pytest.approx(3.0)
     assert field.x[0, 1] == pytest.approx(14.1)
 
 

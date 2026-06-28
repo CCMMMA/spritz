@@ -451,6 +451,13 @@ NetCDF-CF is preferred for module interoperability. Install `.[netcdf]` for
 true NetCDF files. Without `netCDF4`, `.nc` writes use deterministic JSON
 fallback payloads so minimal environments and tests remain usable.
 
+Sprtz-produced NetCDF files follow strict CF conventions. Files with a time
+axis include a CF `time(time)` coordinate; when a physical datetime is known,
+its units are absolute UTC units such as
+`seconds since 2026-05-27 00:00:00 UTC`. SpritzWRF extracts WRF valid time from
+WRF/CF metadata (`Times`, CF `time`, or explicit global time attributes) and
+never from filenames.
+
 CSV and legacy text outputs are useful for migration and tabular inspection.
 They preserve receptor rows, concentration, dry flux, wet flux, and coordinates,
 but they do not carry a structured 3D field array.

@@ -17,7 +17,7 @@ import shutil
 import numpy as np
 
 from sprtz.io.jsonio import write_json
-from sprtz.io.netcdf_cf import available as netcdf_available
+from sprtz.io.netcdf_cf import available as netcdf_available, iso_utc
 
 METEO_UNIPARTHENOPE_BASE = "https://data.meteo.uniparthenope.it/files/wrf5/d03/history"
 
@@ -143,6 +143,53 @@ def _select_precipitation_rate(ds: Any, time_index: int) -> np.ndarray | None:
     return np.maximum(current - previous, 0.0)
 
 
+def _decode_wrf_time(value: Any) -> str:
+    arr = np.asarray(value)
+    if arr.dtype.kind in {"S", "U"}:
+        return b"".join(np.asarray(arr, dtype="S1").ravel()).decode("utf-8", errors="replace").strip()
+    if arr.size == 1:
+        item = arr.item()
+        return item.decode("utf-8", errors="replace").strip() if isinstance(item, bytes) else str(item).strip()
+    return str(value).strip()
+
+
+def _selected_wrf_datetime(ds: Any, time_index: int) -> str | None:
+    if "Times" in ds.variables:
+        values = np.asarray(ds.variables["Times"][:])
+        if values.size:
+            index = min(max(time_index, 0), values.shape[0] - 1)
+            parsed = iso_utc(_decode_wrf_time(values[index]))
+            if parsed:
+                return parsed
+    if "time" in ds.variables:
+        time_var = ds.variables["time"]
+        units = str(getattr(time_var, "units", "")).strip()
+        if "since" in units.lower():
+            try:
+                from netCDF4 import num2date  # type: ignore
+
+                values = np.asarray(time_var[:], dtype=float)
+                if values.size:
+                    index = min(max(time_index, 0), values.shape[0] - 1)
+                    dt = num2date(
+                        float(values[index]),
+                        units=units,
+                        calendar=str(getattr(time_var, "calendar", "standard")),
+                        only_use_cftime_datetimes=False,
+                    )
+                    parsed = iso_utc(dt.isoformat())
+                    if parsed:
+                        return parsed
+            except Exception:
+                pass
+    for attr in ("SIMULATION_START_DATE", "START_DATE", "valid_time", "time_datetime"):
+        if attr in ds.ncattrs():
+            parsed = iso_utc(getattr(ds, attr))
+            if parsed:
+                return parsed
+    return None
+
+
 def load_near_surface_wind(path: str | Path, *, time_index: int = 0) -> WRFWindField:
     """Extract near-surface wind from WRF/WRF-like NetCDF into a SpritzWRF object.
 
@@ -180,6 +227,10 @@ def load_near_surface_wind(path: str | Path, *, time_index: int = 0) -> WRFWindF
             v = read2d(("northward_wind", "v", "V"))
         precipitation_rate = _select_precipitation_rate(ds, time_index)
         attrs = {name: str(getattr(ds, name)) for name in ds.ncattrs()}
+        selected_datetime = _selected_wrf_datetime(ds, time_index)
+        if selected_datetime:
+            attrs["time_datetime"] = selected_datetime
+            attrs["time_index"] = str(time_index)
     return WRFWindField(
         lat,
         lon,

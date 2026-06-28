@@ -25,20 +25,43 @@ MPLBACKEND=Agg python tools/plotter.py \
 When the NetCDF contains wind components (`eastward_wind`/`northward_wind`,
 `U10`/`V10`) or wind speed plus meteorological direction
 (`wind_speed`/`wind_from_direction`, `WSPD10`/`WDIR10`), the plotter overlays
-wind vectors automatically. Control arrow density or disable vectors with:
+wind vectors automatically. Control arrow density by target vector count,
+control exact stride, or disable vectors with:
 
 ```bash
 MPLBACKEND=Agg python tools/plotter.py \
   data/output/wrf_100m_wind.nc \
   --variable wind_speed \
-  --vector-stride 5 \
+  --vector-density 20 \
   --output data/output/wrf_100m_wind_vectors.png
+
+MPLBACKEND=Agg python tools/plotter.py \
+  data/output/wrf_100m_wind.nc \
+  --variable wind_speed \
+  --vector-stride 5 \
+  --output data/output/wrf_100m_wind_stride5.png
 
 MPLBACKEND=Agg python tools/plotter.py \
   data/output/wrf_100m_wind.nc \
   --variable wind_speed \
   --no-vectors \
   --output data/output/wrf_100m_wind_scalar.png
+```
+
+If a NetCDF contains multiple times, select one time step by zero-based index.
+Sprtz NetCDF products with a time axis must provide a CF `time(time)`
+coordinate with units such as `seconds since 2026-05-27 00:00:00 UTC`; products
+may also include `time_datetime(time)` as an ISO-8601 convenience coordinate.
+The plot title includes UTC time when the file provides `time_datetime`, WRF
+`Times`, or CF-style absolute time units. The plotter does not infer scientific
+datetimes from NetCDF filenames or `source` paths:
+
+```bash
+MPLBACKEND=Agg python tools/plotter.py \
+  output/wildfire_case/model/concentration.nc \
+  --variable concentration \
+  --time-index 3 \
+  --output output/wildfire_case/model/concentration_t003.png
 ```
 
 For local-grid products that do not contain latitude/longitude, pass the grid

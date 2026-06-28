@@ -2,6 +2,11 @@
 
 Uses NASA FIRMS/VIIRS detections as ignition points. Network access is explicit and requires `FIRMS_MAP_KEY`.
 
+NetCDF/time convention: ignition and fire NetCDF products follow strict CF
+coordinate metadata. Operational meteorology used with FIRMS detections must
+carry WRF/CF time metadata through SpritzWRF; filenames are not used as
+scientific datetime sources.
+
 ## Data Preparation
 
 Prepare meteorology and terrain around the FIRMS area of interest before running

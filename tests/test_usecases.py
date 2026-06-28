@@ -6,10 +6,11 @@ from datetime import date
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from sprtz.io.jsonio import read_json, write_json
 from sprtz.io.netcdf_cf import available as netcdf_available
-from sprtz.models import spritzwrf
+from sprtz.models import spritzmet, spritzwrf
 
 USECASES = Path(__file__).resolve().parents[1] / "usecases"
 sys.path.insert(0, str(USECASES))
@@ -66,6 +67,20 @@ def test_high_resolution_wind_json_synthetic(tmp_path: Path) -> None:
     assert out.exists()
     assert result.nx == 9
     assert result.format == "json"
+
+
+def test_high_resolution_wind_netcdf_synthetic_requires_valid_time(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="valid-time metadata"):
+        interpolate_wrf_to_100m(
+            None,
+            tmp_path / "wind.nc",
+            center_lat=40.85,
+            center_lon=14.27,
+            nx=9,
+            ny=7,
+            prefer_netcdf=True,
+            allow_synthetic=True,
+        )
 
 
 def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
@@ -354,6 +369,53 @@ def test_wrf_precipitation_rate_extraction(tmp_path: Path) -> None:
     wrf = spritzwrf.load_near_surface_wind(path, time_index=1)
     assert wrf.precipitation_rate is not None
     np.testing.assert_allclose(wrf.precipitation_rate, np.full((2, 2), 0.9))
+
+
+def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wrf5_d03_20260527Z0000.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("Time", 1)
+        ds.createDimension("DateStrLen", 19)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        times = ds.createVariable("Times", "S1", ("Time", "DateStrLen"))
+        times[0, :] = np.asarray(list("2026-05-27_00:00:00"), dtype="S1")
+        lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]]])
+        lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]]])
+        for name, values in [
+            ("XLAT", lat_values),
+            ("XLONG", lon_values),
+            ("U10", np.full((1, 2, 2), 3.0)),
+            ("V10", np.zeros((1, 2, 2))),
+        ]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+
+    wrf = spritzwrf.load_near_surface_wind(path, time_index=0)
+    assert wrf.metadata is not None
+    assert wrf.metadata["time_datetime"] == "2026-05-27T00:00:00Z"
+    met = spritzmet.downscale_wrf_to_local_grid(
+        wrf,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+    )
+    out = tmp_path / "local.nc"
+    spritzmet.write_local_meteorology(out, met)
+
+    with Dataset(out) as ds:
+        assert "time" in ds.variables
+        assert ds.variables["time"].standard_name == "time"
+        assert ds.variables["time"].units == "seconds since 2026-05-27 00:00:00 UTC"
+        assert ds.variables["time"][0] == pytest.approx(0.0)
+        assert str(ds.variables["time_datetime"][0]) == "2026-05-27T00:00:00Z"
 
 
 def test_resolve_wrf_input_prefers_local_path(tmp_path: Path) -> None:

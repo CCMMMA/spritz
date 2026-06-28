@@ -186,6 +186,18 @@ def _synthetic_wrf(center_lat: float, center_lon: float, nx: int = 7, ny: int = 
     return spritzwrf.WRFWindField(lat, lon, u, v, Path("synthetic-wrf5-d03"), metadata={"synthetic": True})
 
 
+def _require_cf_valid_time_for_netcdf(wrf: spritzwrf.WRFWindField, *, prefer_netcdf: bool) -> None:
+    if not prefer_netcdf:
+        return
+    if wrf.metadata and wrf.metadata.get("time_datetime"):
+        return
+    raise ValueError(
+        "NetCDF output requires WRF valid-time metadata from SpritzWRF. "
+        "Provide a WRF file with Times, CF time units, or explicit global time attributes; "
+        "Sprtz does not infer scientific datetimes from filenames."
+    )
+
+
 def _resolve_wrf_input(args: argparse.Namespace, download_date: str | None, download_cycle_hour: int) -> Path | None:
     """Step 1: choose the local WRF source or invoke SpritzWRF's downloader."""
     if args.wrf is not None:
@@ -259,6 +271,7 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
         center_lat=center_lat,
         center_lon=center_lon,
     )
+    _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=not args.json)
 
     LOGGER.info("step 3/4 SpritzMet: spritzmet.downscale_wrf_to_local_grid")
     _teach(
@@ -296,7 +309,7 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
         )
 
     LOGGER.info("step 4/4 output: spritzmet.write_local_meteorology")
-    _teach("NetCDF-CF is preferred for interchange; --json selects the lightweight JSON fallback")
+    _teach("strict NetCDF-CF is preferred for interchange; --json selects the lightweight JSON fallback")
     fmt = spritzmet.write_local_meteorology(args.output, met, prefer_netcdf=not args.json)
     _teach("wrote %s output to %s", fmt, args.output)
     plot_path = plot_netcdf_if_available(

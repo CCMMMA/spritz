@@ -10,6 +10,11 @@ This didactic workflow is deliberately explicit, and
 3. **SpritzMet interpolation step.** Call `spritzmet.downscale_wrf_to_local_grid` to build the local azimuthal-equidistant grid and interpolate SpritzWRF fields onto the 100 m grid.
 4. **Output step.** Call `spritzmet.write_local_meteorology` to write NetCDF-CF by default, or JSON for lightweight runs.
 
+SpritzWRF reads WRF valid time strictly from WRF/CF metadata (`Times`, CF
+`time`, or explicit global time attributes). It does not infer datetimes from
+the WRF filename. The NetCDF-CF output includes a CF `time(time)` coordinate
+with absolute UTC units when the WRF file provides valid-time metadata.
+
 The grid can be requested in either of two ways:
 
 - `--center-lat --center-lon --nx --ny` creates an exact node-count grid centered on one coordinate.
