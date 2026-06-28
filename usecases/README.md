@@ -13,6 +13,33 @@ sprtz doctor --require-netcdf
 
 For lightweight tests or classroom demonstrations without WRF data, each relevant script provides a synthetic-data option. For real runs, use the meteo@uniparthenope WRF5 d03 archive URL pattern documented in the use-case folders.
 
+## Data preparation
+
+Use the repository download helpers to prepare shared inputs under `data/`
+before running real-area use cases:
+
+```bash
+tools/meteouniparthenope-wrf-download.py 20260601Z0000 \
+  --hours 24 \
+  --domain d03 \
+  --data-root data
+
+python3 tools/copernicus-cop30-dem-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/dem/cop30_naples.tif
+
+python3 tools/copernicus-lc100-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/landcover/lc100_naples.tif
+```
+
+The WRF downloader prepares NetCDF files for SpritzWRF and SpritzMet. The COP30
+downloader prepares a GeoTIFF DEM for `sprtz-terrain fetch`; the LC100
+downloader prepares the matching categorical land-cover GeoTIFF. Install
+`sprtz[geo]` when using GeoTIFF inputs.
+
 ## Use-case sequence
 
 1. `01_high_resolution_wind_field` — download or read WRF 1 km data, extract near-surface wind with SpritzWRF, and downscale it to 100 m with SpritzMet.

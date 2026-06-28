@@ -16,6 +16,37 @@ The WRF archive pattern is:
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
 ```
 
+## Data preparation
+
+Prepare WRF input with the repository downloader:
+
+```bash
+tools/meteouniparthenope-wrf-download.py 20260527Z0000 \
+  --hours 1 \
+  --domain d03 \
+  --data-root data
+```
+
+Prepare terrain for workflows that also need surface elevation:
+
+```bash
+python3 tools/copernicus-cop30-dem-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/dem/cop30_naples.tif
+
+python3 tools/copernicus-lc100-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/landcover/lc100_naples.tif
+```
+
+The WRF file feeds SpritzWRF/SpritzMet directly. The COP30 GeoTIFF feeds
+`sprtz-terrain fetch` as a local DEM input, and LC100 feeds the matching local
+land-cover input when `sprtz[geo]` is installed; see
+`docs/copernicus-cop30-dem-download.md` and
+`docs/copernicus-lc100-download.md`.
+
 ## Run with automatic download
 
 ```bash

@@ -2,6 +2,35 @@
 
 The root-level `usecases/` directory contains six documented operational templates.  They are meant to be copied into project-specific case folders and version-controlled with event metadata.
 
+## Data Preparation
+
+Operational use cases should prepare meteorology and terrain explicitly under
+the repository `data/` tree:
+
+```bash
+tools/meteouniparthenope-wrf-download.py 20260601Z0000 \
+  --hours 24 \
+  --domain d03 \
+  --data-root data
+
+python3 tools/copernicus-cop30-dem-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/dem/cop30_naples.tif
+
+python3 tools/copernicus-lc100-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/landcover/lc100_naples.tif
+```
+
+The WRF files feed SpritzWRF/SpritzMet. The COP30 GeoTIFF feeds
+`sprtz-terrain fetch` as a local DEM input, and the LC100 GeoTIFF feeds the
+local land-cover input with `target_categories: "copernicus-lc100"`. See
+`docs/meteouniparthenope-wrf-download.md`,
+`docs/copernicus-cop30-dem-download.md`, and
+`docs/copernicus-lc100-download.md`.
+
 ## 01 - High-resolution wind and precipitation interpolation
 
 This use case implements the meteorological preprocessing chain:

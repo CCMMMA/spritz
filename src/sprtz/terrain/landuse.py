@@ -47,6 +47,60 @@ ESA_WORLDCOVER_TO_SPRTZ = {
     100: 11, # Moss and lichen
 }
 
+# Copernicus Global Land Cover 100 m discrete classification (PROBA-V LC100)
+# uses several forest sub-classes plus broad non-forest classes. Sprtz keeps the
+# crosswalk explicit because these source labels are land cover, not model-ready
+# land-use parameters.
+COPERNICUS_LC100_TO_SPRTZ = {
+    0: 0,    # Unknown / no data
+    20: 2,   # Shrubs
+    30: 3,   # Herbaceous vegetation
+    40: 4,   # Cultivated and managed vegetation / agriculture
+    50: 5,   # Urban / built up
+    60: 6,   # Bare / sparse vegetation
+    70: 7,   # Snow and ice
+    80: 8,   # Permanent water bodies
+    90: 9,   # Herbaceous wetland
+    100: 11, # Moss and lichen
+    111: 1,  # Closed forest, evergreen needle leaf
+    112: 1,  # Closed forest, evergreen broad leaf
+    113: 1,  # Closed forest, deciduous needle leaf
+    114: 1,  # Closed forest, deciduous broad leaf
+    115: 1,  # Closed forest, mixed
+    116: 1,  # Closed forest, unknown
+    121: 1,  # Open forest, evergreen needle leaf
+    122: 1,  # Open forest, evergreen broad leaf
+    123: 1,  # Open forest, deciduous needle leaf
+    124: 1,  # Open forest, deciduous broad leaf
+    125: 1,  # Open forest, mixed
+    126: 1,  # Open forest, unknown
+    200: 8,  # Open sea / ocean
+}
+
+
+LAND_COVER_MAPPINGS = {
+    "esa-worldcover": ESA_WORLDCOVER_TO_SPRTZ,
+    "worldcover": ESA_WORLDCOVER_TO_SPRTZ,
+    "sprtz": ESA_WORLDCOVER_TO_SPRTZ,
+    "copernicus-lc100": COPERNICUS_LC100_TO_SPRTZ,
+    "lc100": COPERNICUS_LC100_TO_SPRTZ,
+    "copernicus-global-land-cover-100m": COPERNICUS_LC100_TO_SPRTZ,
+}
+
+
+def land_cover_mapping(name: str | None) -> dict[int, int]:
+    """Return a visible source land-cover to Sprtz land-use crosswalk."""
+    if not name:
+        return ESA_WORLDCOVER_TO_SPRTZ
+    key = str(name).strip().lower()
+    try:
+        return LAND_COVER_MAPPINGS[key]
+    except KeyError as exc:
+        choices = ", ".join(sorted(LAND_COVER_MAPPINGS))
+        raise ValueError(
+            f"unsupported land-cover mapping {name!r}; choose one of: {choices}"
+        ) from exc
+
 
 def remap_land_cover(
     land_cover: np.ndarray,

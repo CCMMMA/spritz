@@ -7,6 +7,30 @@ scenario.
 The source is centered at `40.978473 N, 14.384058 E`. The chimney release height
 is 110 m above local ground level.
 
+## Data preparation
+
+Prepare WRF and COP30 terrain files for production-style reruns:
+
+```bash
+tools/meteouniparthenope-wrf-download.py 20260601Z0000 \
+  --hours 12 \
+  --domain d03 \
+  --data-root data
+python3 tools/copernicus-cop30-dem-download.py \
+  --south 40.90 --north 41.03 \
+  --west 14.30 --east 14.45 \
+  --output data/dem/cop30_acerra_wte.tif
+python3 tools/copernicus-lc100-download.py \
+  --south 40.90 --north 41.03 \
+  --west 14.30 --east 14.45 \
+  --output data/landcover/lc100_acerra_wte.tif
+```
+
+The default use case remains self-contained. Replace the placeholder
+meteorology with WRF-derived SpritzMet products and use the DEM through
+`sprtz-terrain fetch` with the LC100 land-cover raster when operational terrain
+is required.
+
 ## Run
 
 ```bash

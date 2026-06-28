@@ -304,6 +304,13 @@ def _provider_spec(value: str, *, kind: str) -> dict[str, object]:
     raise SpritzError(f"unsupported {kind} provider or missing local path: {value}")
 
 
+def _landuse_provider_spec(value: str, mapping: str | None = None) -> dict[str, object]:
+    spec = _provider_spec(value, kind="landuse")
+    if mapping:
+        spec["target_categories"] = mapping
+    return spec
+
+
 def sprtz_terrain_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
         parser = argparse.ArgumentParser(description="Spritz terrain acquisition and GEO generation")
@@ -320,6 +327,11 @@ def sprtz_terrain_main(argv: Sequence[str] | None = None) -> int:
         fetch.add_argument("--buffer-m", type=float, default=0.0)
         fetch.add_argument("--dem", default="copernicus-30")
         fetch.add_argument("--landuse", default="esa-worldcover-2021")
+        fetch.add_argument(
+            "--landuse-mapping",
+            default=None,
+            help="source land-cover mapping for local rasters, e.g. copernicus-lc100",
+        )
         fetch.add_argument("--output", default=None)
         fetch.add_argument("--cache-dir", default=None)
         fetch.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
@@ -353,7 +365,10 @@ def sprtz_terrain_main(argv: Sequence[str] | None = None) -> int:
                     "terrain": {
                         "enabled": True,
                         "dem": _provider_spec(args.dem, kind="dem"),
-                        "landuse": _provider_spec(args.landuse, kind="landuse"),
+                        "landuse": _landuse_provider_spec(
+                            args.landuse,
+                            mapping=args.landuse_mapping,
+                        ),
                         "output": args.output,
                     },
                 }

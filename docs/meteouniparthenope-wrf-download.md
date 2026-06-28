@@ -29,7 +29,7 @@ The timestamp argument must use `YYYYMMDDZhhmm`, for example `20260628Z0000`.
 Run the script from the repository root:
 
 ```bash
-tools/meteouniparthenope-wrf-download 20260628Z0000 --hours 24 --domain d03
+tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03
 ```
 
 This requests 24 hourly files starting at `2026-06-28 00:00`, using domain
@@ -51,7 +51,7 @@ data/wrf/d03/wrf5_d03_20260628Z2300.nc
 Use `--dry-run` to inspect URLs and target paths without downloading:
 
 ```bash
-tools/meteouniparthenope-wrf-download 20260628Z0000 --hours 24 --domain d03 --dry-run
+tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03 --dry-run
 ```
 
 The script logs entries in this form:
@@ -115,37 +115,37 @@ with status `1`.
 Download one day of `d03` history files:
 
 ```bash
-tools/meteouniparthenope-wrf-download 20260628Z0000 --hours 24 --domain d03
+tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03
 ```
 
 Preview the same download:
 
 ```bash
-tools/meteouniparthenope-wrf-download 20260628Z0000 --hours 24 --domain d03 --dry-run
+tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03 --dry-run
 ```
 
 Download six hours of `d02` history files into the default data root:
 
 ```bash
-tools/meteouniparthenope-wrf-download 20260628Z0600 --hours 6 --domain d02
+tools/meteouniparthenope-wrf-download.py 20260628Z0600 --hours 6 --domain d02
 ```
 
 Refresh files that already exist:
 
 ```bash
-tools/meteouniparthenope-wrf-download 20260628Z0000 --hours 24 --domain d03 --force
+tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03 --force
 ```
 
 Download one day using four parallel workers:
 
 ```bash
-tools/meteouniparthenope-wrf-download 20260628Z0000 --hours 24 --domain d03 --workers 4
+tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03 --workers 4
 ```
 
 Download into a custom root:
 
 ```bash
-tools/meteouniparthenope-wrf-download 20260628Z0000 --hours 24 --domain d03 --data-root /tmp/sprtz-wrf
+tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03 --data-root /tmp/sprtz-wrf
 ```
 
 ## Relationship to SpritzWRF

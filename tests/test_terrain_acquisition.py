@@ -8,14 +8,20 @@ from sprtz.cli import sprtz_terrain_main
 from sprtz.io.jsonio import read_json
 from sprtz.terrain.acquisition import build_product, run_acquisition
 from sprtz.terrain.cache import cache_key
-from sprtz.terrain.landuse import derive_surface_parameters, remap_land_cover
+from sprtz.terrain.landuse import derive_surface_parameters, land_cover_mapping, remap_land_cover
 from sprtz.terrain.providers import (
     CopernicusDEMProvider,
     LocalRasterProvider,
+    RasterData,
     RasterRequest,
     TerrainNetworkDisabledError,
 )
-from sprtz.terrain.regrid import DomainDefinition, build_target_grid, resample_land_cover
+from sprtz.terrain.regrid import (
+    DomainDefinition,
+    build_target_grid,
+    resample_dem,
+    resample_land_cover,
+)
 from sprtz.workflow import run_workflow
 
 
@@ -144,6 +150,87 @@ def test_categorical_resampling_and_landuse_mapping() -> None:
     assert int(remap_land_cover(np.asarray([[50]]))[0, 0]) == 5
 
 
+def test_copernicus_lc100_land_cover_mapping() -> None:
+    source = np.asarray([[111, 40, 50], [60, 80, 200], [90, 100, 0]])
+    landuse = remap_land_cover(source, mapping=land_cover_mapping("copernicus-lc100"))
+
+    assert landuse.tolist() == [[1, 4, 5], [6, 8, 8], [9, 11, 0]]
+
+
+def test_acquisition_accepts_copernicus_lc100_local_landcover(tmp_path: Path) -> None:
+    dem_path = tmp_path / "dem.json"
+    lc_path = tmp_path / "lc100.json"
+    from sprtz.io.jsonio import write_json
+
+    write_json(dem_path, {"values": np.ones((7, 7), dtype=float).tolist()})
+    write_json(
+        lc_path,
+        {
+            "values": np.full((7, 7), 111, dtype=int).tolist(),
+            "crs": "LOCAL",
+            "x_spacing_m": 100.0,
+            "y_spacing_m": 100.0,
+        },
+    )
+    config = _local_config(tmp_path)
+    terrain = config["terrain"]
+    assert isinstance(terrain, dict)
+    terrain["dem"] = {"source": "local", "path": str(dem_path), "source_dx_m": 100.0}
+    terrain["landuse"] = {
+        "source": "local",
+        "path": str(lc_path),
+        "source_dx_m": 100.0,
+        "target_categories": "copernicus-lc100",
+        "year": 2019,
+    }
+
+    product = build_product(config)
+
+    assert set(np.unique(product.landuse_class)) == {1}
+
+
+def test_resample_dem_uses_geotiff_source_crs_coordinates() -> None:
+    domain = DomainDefinition.from_mapping(
+        {
+            "center_lat": 40.85,
+            "center_lon": 14.27,
+            "nx": 3,
+            "ny": 3,
+            "dx_m": 100.0,
+            "dy_m": 100.0,
+            "projection": "auto-utm",
+        }
+    )
+    grid = build_target_grid(domain)
+    lon_axis = np.linspace(
+        float(grid.longitude.min()) - 0.01,
+        float(grid.longitude.max()) + 0.01,
+        7,
+    )
+    lat_axis = np.linspace(
+        float(grid.latitude.min()) - 0.01,
+        float(grid.latitude.max()) + 0.01,
+        7,
+    )
+    lon_values, lat_values = np.meshgrid(lon_axis, lat_axis)
+    values = 100.0 * lat_values + 10.0 * lon_values
+    raster = RasterData(
+        values=values,
+        kind="dem",
+        source="cop30-test.tif",
+        provider="local",
+        dataset="Copernicus DEM GLO-30 / COP30 test",
+        resolution="30m",
+        crs="EPSG:4326",
+        metadata={"x_coords": lon_axis.tolist(), "y_coords": lat_axis.tolist()},
+    )
+
+    elevation = resample_dem(raster, grid)
+
+    expected = 100.0 * grid.latitude + 10.0 * grid.longitude
+    assert np.allclose(elevation, expected, atol=1.0e-6)
+
+
 def test_acquisition_writes_json_with_provenance(tmp_path: Path) -> None:
     config = _local_config(tmp_path)
     result = run_acquisition(config, prefer_netcdf=False)
@@ -169,6 +256,51 @@ def test_sprtz_terrain_fetch_cli(tmp_path: Path) -> None:
     write_json(config_path, config)
     assert sprtz_terrain_main(["fetch", "--config", str(config_path), "--json"]) == 0
     assert (tmp_path / "geo.json").exists()
+
+
+def test_sprtz_terrain_fetch_cli_accepts_lc100_mapping(tmp_path: Path) -> None:
+    from sprtz.io.jsonio import write_json
+
+    dem_path = tmp_path / "dem.json"
+    lc_path = tmp_path / "lc100.json"
+    output = tmp_path / "geo.json"
+    write_json(dem_path, {"values": np.ones((7, 7), dtype=float).tolist()})
+    write_json(lc_path, {"values": np.full((7, 7), 111, dtype=int).tolist()})
+
+    assert (
+        sprtz_terrain_main(
+            [
+                "fetch",
+                "--center-lat",
+                "40.85",
+                "--center-lon",
+                "14.27",
+                "--nx",
+                "7",
+                "--ny",
+                "7",
+                "--dx",
+                "100",
+                "--dy",
+                "100",
+                "--dem",
+                str(dem_path),
+                "--landuse",
+                str(lc_path),
+                "--landuse-mapping",
+                "copernicus-lc100",
+                "--output",
+                str(output),
+                "--cache-dir",
+                str(tmp_path / "cache"),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    data = read_json(output)
+    assert set(np.unique(np.asarray(data["landuse_class"], dtype=int))) == {1}
 
 
 def test_workflow_runs_configured_auto_terrain(tmp_path: Path) -> None:

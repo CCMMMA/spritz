@@ -11,6 +11,27 @@ The workflow is didactic and auditable:
 5. **Apply lightweight AI calibration.** A deterministic logistic calibration reports how much a simple learned transform improves alignment.
 6. **Write a report.** The output JSON records inputs, thresholds, metrics, and calibration parameters.
 
+## Data preparation
+
+This use case evaluates outputs produced by use case 02. Prepare that upstream
+run with the WRF and COP30 helper scripts:
+
+```bash
+tools/meteouniparthenope-wrf-download.py 20260527Z0000 --hours 1 --domain d03 --data-root data
+python3 tools/copernicus-cop30-dem-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/dem/cop30_naples.tif
+python3 tools/copernicus-lc100-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/landcover/lc100_naples.tif
+```
+
+The WRF file supports SpritzWRF/SpritzMet forcing. The DEM is used by
+`sprtz-terrain fetch` with the LC100 land-cover raster when the evaluated
+scenario includes terrain.
+
 ## Create a tiny demo mask
 
 ```bash

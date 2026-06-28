@@ -11,9 +11,11 @@ from sprtz.io.netcdf_cf import available as netcdf_available
 from sprtz.terrain.cache import terrain_cache_dir, write_cache_metadata
 from sprtz.terrain.landuse import (
     derive_surface_parameters,
+    land_cover_mapping,
     landuse_table_payload,
     remap_land_cover,
 )
+from sprtz.terrain.provenance import build_provenance
 from sprtz.terrain.providers import (
     CopernicusDEMProvider,
     ESAWorldCoverProvider,
@@ -23,7 +25,6 @@ from sprtz.terrain.providers import (
     RasterRequest,
     TerrainConfigurationError,
 )
-from sprtz.terrain.provenance import build_provenance
 from sprtz.terrain.regrid import (
     DomainDefinition,
     TargetGrid,
@@ -76,13 +77,15 @@ def _local_provider(kind: str, spec: dict[str, Any]) -> LocalRasterProvider:
     path = spec.get("path") or spec.get("file") or spec.get("source_path")
     if not path:
         raise TerrainConfigurationError(f"local {kind} provider requires a path")
+    source_dx = spec.get("source_dx_m", spec.get("dx_m", spec.get("resolution_m", 100.0)))
+    source_dy = spec.get("source_dy_m", spec.get("dy_m", spec.get("resolution_m", 100.0)))
     return LocalRasterProvider(
         path=path,
         kind="dem" if kind == "dem" else "landcover",
         dataset=str(spec.get("dataset", "local-raster")),
         crs=str(spec.get("crs", "LOCAL")),
-        x_spacing_m=float(spec.get("source_dx_m", spec.get("dx_m", spec.get("resolution_m", 100.0)))),
-        y_spacing_m=float(spec.get("source_dy_m", spec.get("dy_m", spec.get("resolution_m", 100.0)))),
+        x_spacing_m=float(source_dx),
+        y_spacing_m=float(source_dy),
         nodata=None if spec.get("nodata") is None else float(spec["nodata"]),
         variable=None if spec.get("variable") is None else str(spec["variable"]),
     )
@@ -133,11 +136,18 @@ def build_product(
     cache = terrain_cache_dir(cache_dir or terrain.get("cache_dir"))
     grid = build_target_grid(domain)
     request_options = {"aoi_bounds": aoi_bounds(domain)}
+    landuse_spec = dict(terrain.get("landuse", {}))
 
     dem_provider = provider_from_spec("dem", dict(terrain.get("dem", {})))
-    land_provider = provider_from_spec("landuse", dict(terrain.get("landuse", {})))
+    land_provider = provider_from_spec("landuse", landuse_spec)
     dem = dem_provider.fetch(
-        RasterRequest("dem", domain, str(cache), allow_network=allow_network, options=request_options)
+        RasterRequest(
+            "dem",
+            domain,
+            str(cache),
+            allow_network=allow_network,
+            options=request_options,
+        )
     )
     landcover = land_provider.fetch(
         RasterRequest(
@@ -150,7 +160,12 @@ def build_product(
     )
     elevation = resample_dem(dem, grid)
     land_cover = resample_land_cover(landcover, grid)
-    landuse = remap_land_cover(land_cover)
+    mapping_name = (
+        landuse_spec.get("mapping")
+        or landuse_spec.get("source_scheme")
+        or landuse_spec.get("target_categories")
+    )
+    landuse = remap_land_cover(land_cover, mapping=land_cover_mapping(mapping_name))
     surface_parameters = derive_surface_parameters(landuse)
     provenance = build_provenance(
         domain=domain,
@@ -173,7 +188,15 @@ def build_product(
         target_crs=grid.target_crs,
     )
     write_cache_metadata(cache, provenance["cache_key"], provenance)
-    return TerrainGeoProduct(domain, grid, elevation, land_cover, landuse, surface_parameters, provenance)
+    return TerrainGeoProduct(
+        domain,
+        grid,
+        elevation,
+        land_cover,
+        landuse,
+        surface_parameters,
+        provenance,
+    )
 
 
 def write_geo_product(

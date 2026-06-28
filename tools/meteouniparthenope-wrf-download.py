@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.request import urlopen
 
-LOGGER = logging.getLogger("meteouniparthenope-wrf-download")
+LOGGER = logging.getLogger("meteouniparthenope-wrf-download.py")
 
 BASE_URL = "https://data.meteo.uniparthenope.it/files/wrf5"
 DATE_FORMAT = "%Y%m%dZ%H%M"

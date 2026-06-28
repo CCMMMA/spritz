@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "tools" / "meteouniparthenope-wrf-download"
+SCRIPT = ROOT / "tools" / "meteouniparthenope-wrf-download.py"
 
 
 def load_wrf_download_tool():

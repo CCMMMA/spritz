@@ -29,6 +29,30 @@ Default race-area polygon:
 }
 ```
 
+## Data preparation
+
+The bundled run is deterministic and offline, but operational forecast studies
+should prepare the same data roots used by the other use cases:
+
+```bash
+tools/meteouniparthenope-wrf-download.py 20260601Z0000 \
+  --hours 24 \
+  --domain d03 \
+  --data-root data
+python3 tools/copernicus-cop30-dem-download.py \
+  --south 40.76 --north 40.87 \
+  --west 14.16 --east 14.35 \
+  --output data/dem/cop30_bay_of_naples.tif
+python3 tools/copernicus-lc100-download.py \
+  --south 40.76 --north 40.87 \
+  --west 14.16 --east 14.35 \
+  --output data/landcover/lc100_bay_of_naples.tif
+```
+
+The WRF files are the source for replacing the synthetic wind field. The COP30
+DEM and LC100 land cover can be used by `sprtz-terrain fetch` for shoreline or
+terrain-aware preprocessing.
+
 ```bash
 python usecases/05_sailing_wind_forecast/run.py \
   --output output/sailing/bay_of_naples_forecast.json

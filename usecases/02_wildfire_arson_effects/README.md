@@ -12,6 +12,35 @@ The workflow is intentionally step-by-step:
 6. **Run dispersion.** Execute Spritz with the configured Gaussian or particle backend.
 7. **Review outputs.** Inspect the generated configuration, concentration product, and postprocessing summary.
 
+## Data preparation
+
+Prepare WRF forcing before the run:
+
+```bash
+tools/meteouniparthenope-wrf-download.py 20260527Z0000 \
+  --hours 1 \
+  --domain d03 \
+  --data-root data
+```
+
+Prepare the optional COP30 terrain source for ground elevation and terrain/GEO
+products:
+
+```bash
+python3 tools/copernicus-cop30-dem-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/dem/cop30_naples.tif
+
+python3 tools/copernicus-lc100-download.py \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --output data/landcover/lc100_naples.tif
+```
+
+Use the downloaded DEM and LC100 land-cover rasters through `sprtz-terrain
+fetch` with the same domain settings used by the wildfire run.
+
 ## Run with WRF download
 
 ```bash

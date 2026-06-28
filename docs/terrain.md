@@ -57,6 +57,14 @@ adapters:
 python -m pip install -e .[geo,netcdf]
 ```
 
+Local GeoTIFF/COG DEM and land-cover inputs, including COP30 products downloaded
+with `tools/copernicus-cop30-dem-download.py` and LC100 products downloaded with
+`tools/copernicus-lc100-download.py`, are read through `rasterio`. Sprtz uses the
+raster CRS and pixel-center coordinates to sample each raster on the target
+Terrain/SpritzMet grid. Keep both bounding boxes larger than the configured
+domain and set `terrain.landuse.target_categories` to `copernicus-lc100` for
+LC100 inputs.
+
 ## JSON Configuration
 
 Terrain configuration can be embedded in a normal Spritz run file:

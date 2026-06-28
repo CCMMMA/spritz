@@ -9,6 +9,31 @@ events:
 | 2020 | 2021_44 | Acerra | 40,926506 | 14,380875 | 30/07/2021 | 14 | 3 ore |
 | 2023 | 2023_14 | San Marcellino | 40,98472 | 14,18250 | 14/07/2023 | 15 | 3 ore |
 
+## Data preparation
+
+For incident dossiers, archive the exact meteorology and terrain inputs used by
+the run:
+
+```bash
+tools/meteouniparthenope-wrf-download.py 20210730Z1400 \
+  --hours 3 \
+  --domain d03 \
+  --data-root data
+python3 tools/copernicus-cop30-dem-download.py \
+  --south 40.85 --north 41.05 \
+  --west 14.25 --east 14.45 \
+  --output data/dem/cop30_acerra.tif
+python3 tools/copernicus-lc100-download.py \
+  --south 40.85 --north 41.05 \
+  --west 14.25 --east 14.45 \
+  --output data/landcover/lc100_acerra.tif
+```
+
+Use `tools/meteouniparthenope-wrf-download.py` with the event start hour and
+duration. Use the COP30 GeoTIFF as the local DEM and the LC100 GeoTIFF as the
+local land-cover source for `sprtz-terrain fetch` when terrain/GEO products are
+part of the incident package.
+
 ## Run the configured incident
 
 ```bash

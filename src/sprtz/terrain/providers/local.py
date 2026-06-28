@@ -79,7 +79,8 @@ class LocalRasterProvider:
         if suffix in {".nc", ".nc4", ".cdf", ".netcdf"}:
             return self._read_netcdf(path)
         raise TerrainConfigurationError(
-            f"unsupported local raster format {suffix!r}; use ASCII, JSON, NumPy, GeoTIFF/COG, or NetCDF"
+            f"unsupported local raster format {suffix!r}; "
+            "use ASCII, JSON, NumPy, GeoTIFF/COG, or NetCDF"
         )
 
     def _read_rasterio(self, path: Path) -> tuple[np.ndarray, dict[str, Any]]:
@@ -87,17 +88,26 @@ class LocalRasterProvider:
             import rasterio  # type: ignore
         except Exception as exc:
             raise TerrainDependencyError(
-                f"rasterio is required to read GeoTIFF/COG terrain inputs: {path}; install sprtz[geo]"
+                f"rasterio is required to read GeoTIFF/COG terrain inputs: {path}; "
+                "install sprtz[geo]"
             ) from exc
         with rasterio.open(path) as src:
             values = src.read(1).astype(float)
             x_spacing = abs(float(src.transform.a)) if src.transform else self.x_spacing_m
             y_spacing = abs(float(src.transform.e)) if src.transform else self.y_spacing_m
+            cols = np.arange(src.width, dtype=float) + 0.5
+            rows = np.arange(src.height, dtype=float) + 0.5
+            x_coords = np.asarray([src.transform * (col, 0.5) for col in cols], dtype=float)[:, 0]
+            y_coords = np.asarray([src.transform * (0.5, row) for row in rows], dtype=float)[:, 1]
             return values, {
                 "crs": str(src.crs or self.crs),
                 "x_spacing_m": x_spacing,
                 "y_spacing_m": y_spacing,
                 "nodata": src.nodata,
+                "transform": tuple(src.transform),
+                "bounds": tuple(src.bounds),
+                "x_coords": x_coords.tolist(),
+                "y_coords": y_coords.tolist(),
             }
 
     def _read_netcdf(self, path: Path) -> tuple[np.ndarray, dict[str, Any]]:

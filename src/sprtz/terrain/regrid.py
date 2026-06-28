@@ -24,7 +24,7 @@ class DomainDefinition:
     buffer_m: float = 0.0
 
     @classmethod
-    def from_mapping(cls, data: dict[str, object]) -> "DomainDefinition":
+    def from_mapping(cls, data: dict[str, object]) -> DomainDefinition:
         try:
             center_lat = float(data["center_lat"])
             center_lon = float(data["center_lon"])
@@ -111,7 +111,13 @@ def build_target_grid(domain: DomainDefinition) -> TargetGrid:
         to_wgs84 = Transformer.from_crs(crs, CRS.from_epsg(4326), always_xy=True)
         center_x, center_y = to_target.transform(domain.center_lon, domain.center_lat)
         lon, lat = to_wgs84.transform(center_x + xx, center_y + yy)
-        return TargetGrid(xx, yy, np.asarray(lat, dtype=float), np.asarray(lon, dtype=float), crs.to_string())
+        return TargetGrid(
+            xx,
+            yy,
+            np.asarray(lat, dtype=float),
+            np.asarray(lon, dtype=float),
+            crs.to_string(),
+        )
     xx, yy, lat, lon = local_grid_latlon(
         domain.center_lat,
         domain.center_lon,
@@ -135,10 +141,62 @@ def aoi_bounds(domain: DomainDefinition) -> tuple[float, float, float, float]:
 
 
 def _source_axes(raster: RasterData) -> tuple[np.ndarray, np.ndarray]:
+    if "x_coords" in raster.metadata and "y_coords" in raster.metadata:
+        return (
+            np.asarray(raster.metadata["x_coords"], dtype=float),
+            np.asarray(raster.metadata["y_coords"], dtype=float),
+        )
     return (
         _axis_for_source(raster.values.shape[1], raster.x_spacing_m),
         _axis_for_source(raster.values.shape[0], raster.y_spacing_m),
     )
+
+
+def _ascending_source(
+    values: np.ndarray,
+    src_x: np.ndarray,
+    src_y: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return source values with monotonically increasing x/y axes."""
+    out = np.asarray(values, dtype=float)
+    x = np.asarray(src_x, dtype=float)
+    y = np.asarray(src_y, dtype=float)
+    if x.size != out.shape[1] or y.size != out.shape[0]:
+        raise TerrainConfigurationError("source coordinate axes do not match raster shape")
+    if x.size < 2 or y.size < 2:
+        raise TerrainConfigurationError("source coordinate axes must contain at least two cells")
+    if np.any(np.diff(x) == 0.0) or np.any(np.diff(y) == 0.0):
+        raise TerrainConfigurationError("source coordinate axes must be strictly monotonic")
+    if x[0] > x[-1]:
+        x = x[::-1]
+        out = out[:, ::-1]
+    if y[0] > y[-1]:
+        y = y[::-1]
+        out = out[::-1, :]
+    return out, x, y
+
+
+def _target_points_for_source(
+    raster: RasterData,
+    grid: TargetGrid,
+) -> tuple[np.ndarray, np.ndarray]:
+    crs = str(raster.crs or "").strip()
+    if "x_coords" not in raster.metadata or "y_coords" not in raster.metadata:
+        return grid.x, grid.y
+    if not crs or crs.upper() == "LOCAL":
+        return grid.x, grid.y
+    try:
+        transformer = Transformer.from_crs(
+            CRS.from_epsg(4326),
+            CRS.from_user_input(crs),
+            always_xy=True,
+        )
+    except Exception as exc:
+        raise TerrainConfigurationError(
+            f"cannot transform Sprtz grid from {grid.target_crs!r} to source raster CRS {crs!r}"
+        ) from exc
+    source_x, source_y = transformer.transform(grid.longitude, grid.latitude)
+    return np.asarray(source_x, dtype=float), np.asarray(source_y, dtype=float)
 
 
 def sanitize_dem(raster: RasterData) -> np.ndarray:
@@ -147,7 +205,9 @@ def sanitize_dem(raster: RasterData) -> np.ndarray:
     if raster.nodata is not None:
         values = np.where(values == float(raster.nodata), np.nan, values)
     if not np.isfinite(values).any():
-        raise TerrainConfigurationError(f"DEM raster contains no finite elevation values: {raster.source}")
+        raise TerrainConfigurationError(
+            f"DEM raster contains no finite elevation values: {raster.source}"
+        )
     return values
 
 
@@ -161,7 +221,9 @@ def resample_dem(raster: RasterData, grid: TargetGrid) -> np.ndarray:
     source = raster.validated()
     src_x, src_y = _source_axes(source)
     values = sanitize_dem(source)
-    return _bilinear_regular_grid(values, src_x, src_y, grid.x, grid.y)
+    values, src_x, src_y = _ascending_source(values, src_x, src_y)
+    dst_x, dst_y = _target_points_for_source(source, grid)
+    return _bilinear_regular_grid(values, src_x, src_y, dst_x, dst_y)
 
 
 def resample_land_cover(raster: RasterData, grid: TargetGrid) -> np.ndarray:
@@ -174,11 +236,13 @@ def resample_land_cover(raster: RasterData, grid: TargetGrid) -> np.ndarray:
     """
     source = raster.validated()
     src_x, src_y = _source_axes(source)
-    x = np.clip(grid.x.ravel(), src_x[0], src_x[-1])
-    y = np.clip(grid.y.ravel(), src_y[0], src_y[-1])
+    values = np.asarray(source.values, dtype=float)
+    values, src_x, src_y = _ascending_source(values, src_x, src_y)
+    dst_x, dst_y = _target_points_for_source(source, grid)
+    x = np.clip(np.asarray(dst_x, dtype=float).ravel(), src_x[0], src_x[-1])
+    y = np.clip(np.asarray(dst_y, dtype=float).ravel(), src_y[0], src_y[-1])
     ix = np.abs(src_x[:, None] - x[None, :]).argmin(axis=0)
     iy = np.abs(src_y[:, None] - y[None, :]).argmin(axis=0)
-    values = np.asarray(source.values, dtype=float)
     if source.nodata is not None:
         values = np.where(values == float(source.nodata), np.nan, values)
     out = values[iy, ix]
