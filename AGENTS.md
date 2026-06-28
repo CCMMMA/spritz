@@ -167,6 +167,11 @@ root for file I/O. Read inputs from paths under `data/` and write generated
 use-case products under `data/` unless the user explicitly supplies another
 path.
 
+Any date-time used as a script argument or script parameter must use the compact
+UTC format `YYYYMMDDZhhmm`, for example `20260601Z0000`. Keep this format in
+CLI help, examples, use-case docs, tests, and downloader instructions whenever
+users pass date-time values to scripts.
+
 Use-case documentation should include:
 
 - Purpose and scientific scope.

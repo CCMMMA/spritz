@@ -156,10 +156,11 @@ def test_build_wildfire_config_supports_multi_fire_materials_and_windows(tmp_pat
 
 
 def test_wildfire_cli_fire_events_json_accepts_inline_and_file(tmp_path: Path) -> None:
-    inline = '[{"id":"F1","latitude":40.85,"longitude":14.27,"material":"paper"}]'
+    inline = '[{"id":"F1","latitude":40.85,"longitude":14.27,"material":"paper","start_datetime":"20260601Z0000"}]'
     from_inline = _load_fire_events(inline)
     assert from_inline is not None
     assert from_inline[0]["material"] == "paper"
+    assert from_inline[0]["start_datetime"] == "2026-06-01T00:00:00+00:00"
     path = tmp_path / "events.json"
     path.write_text(inline, encoding="utf-8")
     from_file = _load_fire_events(str(path))
@@ -191,6 +192,10 @@ def test_wildfire_run_entrypoint_synthetic(tmp_path: Path) -> None:
     assert (
         module.main(
             [
+                "--start",
+                "20260601Z0000",
+                "--end",
+                "20260601Z0010",
                 "--output",
                 str(config),
                 "--center-lat",
@@ -390,8 +395,8 @@ def test_sailing_forecast_run_entrypoint(tmp_path: Path) -> None:
     assert (
         module.main(
             [
-                "--initialization-date",
-                "2026-06-01",
+                "--initialization-time",
+                "20260601Z0000",
                 "--outlook-hours",
                 "0.25",
                 "--bbox",

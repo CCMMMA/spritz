@@ -16,6 +16,7 @@ from sprtz.io.jsonio import write_json
 from high_resolution_wind import interpolate_wrf_to_100m
 from sprtz.workflow import run_workflow
 from sprtz.logging import configure_logging
+from datetime_args import script_datetime_to_iso
 
 
 LOGGER = logging.getLogger(__name__)
@@ -98,7 +99,16 @@ def _load_fire_events(value: str | None) -> list[dict[str, Any]] | None:
         payload = json.loads(Path(text).read_text(encoding="utf-8"))
     if not isinstance(payload, list):
         raise ValueError("--fire-events-json must contain a JSON list")
-    return payload
+    normalized: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("--fire-events-json entries must be JSON objects")
+        event = dict(item)
+        for key in ("start_datetime", "end_datetime"):
+            if key in event and event[key] is not None:
+                event[key] = script_datetime_to_iso(str(event[key]))
+        normalized.append(event)
+    return normalized
 
 
 def estimate_heat_release_w(
@@ -354,6 +364,7 @@ def run_wildfire_event(
     backend: str = "particles",
     interchange: str = "netcdf",
     allow_synthetic_wrf: bool = False,
+    download_time: str | None = None,
     download_date: str | None = None,
     download_cycle_hour: int = 0,
     download_dir: str | Path = "data/wrf",
@@ -369,6 +380,7 @@ def run_wildfire_event(
         center_lon=center_lon,
         allow_synthetic=allow_synthetic_wrf,
         prefer_netcdf=interchange == "netcdf",
+        download_time=download_time,
         download_date=download_date,
         download_cycle_hour=download_cycle_hour,
         download_dir=download_dir,
@@ -440,9 +452,8 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Run a Spritz arson/wildfire screening use case")
-    parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --download-date")
-    parser.add_argument("--download-date", default=None, help="Download WRF5 d03 data from meteo@uniparthenope for YYYY-MM-DD")
-    parser.add_argument("--download-cycle-hour", type=int, default=0)
+    parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --download-time")
+    parser.add_argument("--download-time", default=None, help="Download WRF5 d03 data from meteo@uniparthenope for UTC YYYYMMDDZhhmm")
     parser.add_argument("--download-dir", default="data/wrf")
     parser.add_argument("--force-download", action="store_true")
     parser.add_argument("--output-dir", required=True)
@@ -450,16 +461,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--center-lon", type=float, required=True)
     parser.add_argument("--temperature-k", type=float, default=None)
     parser.add_argument("--material", choices=sorted(BURNING_MATERIALS), default="generic")
-    parser.add_argument("--start", default=None)
-    parser.add_argument("--end", default=None)
+    parser.add_argument("--start", default=None, help="UTC fire/arson start datetime as YYYYMMDDZhhmm")
+    parser.add_argument("--end", default=None, help="UTC fire/arson end datetime as YYYYMMDDZhhmm")
     parser.add_argument("--duration-s", type=float, default=3600.0)
     parser.add_argument("--area-m2", type=float, default=2500.0)
     parser.add_argument("--height-agl-m", type=float, default=0.0)
     parser.add_argument("--fire-events-json", default=None, help="JSON list of multi-fire event objects")
-    parser.add_argument("--weather-start", default=None)
-    parser.add_argument("--weather-end", default=None)
-    parser.add_argument("--firefighters-start", default=None)
-    parser.add_argument("--firefighters-end", default=None)
+    parser.add_argument("--weather-start", default=None, help="UTC weather start datetime as YYYYMMDDZhhmm")
+    parser.add_argument("--weather-end", default=None, help="UTC weather end datetime as YYYYMMDDZhhmm")
+    parser.add_argument("--firefighters-start", default=None, help="UTC firefighter-action start datetime as YYYYMMDDZhhmm")
+    parser.add_argument("--firefighters-end", default=None, help="UTC firefighter-action end datetime as YYYYMMDDZhhmm")
     parser.add_argument("--firefighters-emission-factor", type=float, default=1.0)
     parser.add_argument("--precipitation-washout", action="store_true")
     parser.add_argument("--backend", choices=["gaussian", "particles"], default="particles")
@@ -474,23 +485,22 @@ def main(argv: list[str] | None = None) -> int:
         center_lon=args.center_lon,
         burning_temperature_k=args.temperature_k,
         burning_material=args.material,
-        burning_start=args.start,
-        burning_end=args.end,
+        burning_start=script_datetime_to_iso(args.start),
+        burning_end=script_datetime_to_iso(args.end),
         burning_duration_s=args.duration_s,
         burning_area_m2=args.area_m2,
         source_height_agl_m=args.height_agl_m,
         fire_events=fire_events,
-        weather_start=args.weather_start,
-        weather_end=args.weather_end,
-        firefighters_start=args.firefighters_start,
-        firefighters_end=args.firefighters_end,
+        weather_start=script_datetime_to_iso(args.weather_start),
+        weather_end=script_datetime_to_iso(args.weather_end),
+        firefighters_start=script_datetime_to_iso(args.firefighters_start),
+        firefighters_end=script_datetime_to_iso(args.firefighters_end),
         firefighters_emission_factor=args.firefighters_emission_factor,
         precipitation_washout=args.precipitation_washout,
         backend=args.backend,
         interchange=args.interchange,
         allow_synthetic_wrf=args.allow_synthetic_wrf,
-        download_date=args.download_date,
-        download_cycle_hour=args.download_cycle_hour,
+        download_time=args.download_time,
         download_dir=args.download_dir,
         force_download=args.force_download,
     )

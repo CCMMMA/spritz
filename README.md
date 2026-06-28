@@ -263,8 +263,8 @@ Spritz includes a root-level `usecases/` folder with reproducible templates for:
 Install the package, then run the explicit root-level didactic steps. The use cases are intentionally not importable suite modules:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py --download-date 2026-05-27 --download-cycle-hour 0 --output data/wrf_100m_wind.nc --center-lat 40.85 --center-lon 14.27
-python usecases/02_wildfire_arson_effects/step_02_build_config.py --output data/wildfire_case/wildfire_event.json --center-lat 40.85 --center-lon 14.27 --material plastic --start 2026-05-27T00:00:00+00:00 --end 2026-05-27T01:00:00+00:00 --precipitation-washout
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py --download-time 20260527Z0000 --output data/wrf_100m_wind.nc --center-lat 40.85 --center-lon 14.27
+python usecases/02_wildfire_arson_effects/step_02_build_config.py --output data/wildfire_case/wildfire_event.json --center-lat 40.85 --center-lon 14.27 --material plastic --start 20260527Z0000 --end 20260527Z0100 --precipitation-washout
 python usecases/02_wildfire_arson_effects/step_03_run_model.py --config data/wildfire_case/wildfire_event.json --output-dir data/wildfire_case/model --backend gaussian --interchange netcdf
 python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --concentration data/wildfire_case/model/concentration.nc --satellite-mask data/satellite_mask.json --output data/wildfire_case/evaluation.json
 python usecases/04_production_incidents/step_01_build_config.py --code 2021_44 --output data/production_2021_44/2021_44_config.json

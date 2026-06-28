@@ -13,6 +13,10 @@ sprtz doctor --require-netcdf
 
 For lightweight tests or classroom demonstrations without WRF data, each relevant script provides a synthetic-data option. For real runs, use the meteo@uniparthenope WRF5 d03 archive URL pattern documented in the use-case folders.
 
+Script-facing date-time values use compact UTC `YYYYMMDDZhhmm` format, for
+example `20260601Z0000`. Internal JSON configuration files may still contain
+ISO-8601 fields where the Sprtz schema requires them.
+
 ## Data preparation
 
 Use the repository download helpers to prepare shared inputs under `data/`

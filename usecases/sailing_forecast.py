@@ -12,6 +12,7 @@ from pyproj import Geod
 
 from sprtz.io.jsonio import write_json
 from sprtz.logging import configure_logging
+from datetime_args import parse_script_datetime
 
 LOGGER = logging.getLogger(__name__)
 BAY_OF_NAPLES_RACE_BOX = (14.18, 40.78, 14.33, 40.85)
@@ -159,7 +160,7 @@ def default_initialization_date() -> date:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a high-resolution sailing wind forecast product")
-    parser.add_argument("--initialization-date", default=None, help="UTC initialization date YYYY-MM-DD; defaults to current UTC day at Z00")
+    parser.add_argument("--initialization-time", default=None, help="UTC initialization datetime as YYYYMMDDZhhmm; defaults to current UTC day at Z00")
     parser.add_argument("--outlook-hours", type=float, default=DEFAULT_OUTLOOK_H)
     parser.add_argument("--bbox", default=",".join(str(v) for v in BAY_OF_NAPLES_RACE_BOX), help="west,south,east,north")
     parser.add_argument("--horizontal-resolution-m", type=float, default=DEFAULT_HORIZONTAL_RESOLUTION_M)
@@ -171,8 +172,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     init_date = (
         default_initialization_date()
-        if args.initialization_date is None
-        else datetime.strptime(args.initialization_date, "%Y-%m-%d").date()
+        if args.initialization_time is None
+        else parse_script_datetime(args.initialization_time).date()
     )
     request = SailingForecastRequest(
         initialization_date=init_date,

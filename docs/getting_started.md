@@ -74,8 +74,7 @@ To ask Spritz to print the exact URL without downloading:
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
-  --download-date 2026-05-27 \
-  --download-cycle-hour 0 \
+  --download-time 20260527Z0000 \
   --output ignored.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \
@@ -90,8 +89,7 @@ This command downloads the WRF file when it is not already present in `data/wrf/
 mkdir -p data/wrf output
 
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
-  --download-date 2026-05-27 \
-  --download-cycle-hour 0 \
+  --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -160,8 +158,7 @@ Prepare the local wind product:
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
-  --download-date 2026-05-27 \
-  --download-cycle-hour 0 \
+  --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wildfire_case/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -180,8 +177,8 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --material plastic \
   --duration-s 3600 \
   --area-m2 2500 \
-  --start 2026-05-27T00:00:00+00:00 \
-  --end 2026-05-27T01:00:00+00:00 \
+  --start 20260527Z0000 \
+  --end 20260527Z0100 \
   --precipitation-washout
 ```
 
@@ -204,16 +201,17 @@ actions should reduce emissions during part of the run.
 For multiple simultaneous or staggered fires, pass `--fire-events-json` with a
 JSON list. Each entry can define `latitude`, `longitude`, `height_agl_m`,
 `start_datetime`, `end_datetime`, `material`, `area_m2`, and optional
-temperature or emission overrides:
+temperature or emission overrides. Date-time values passed through scripts use
+compact UTC `YYYYMMDDZhhmm`:
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --output output/multi_fire/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
-  --fire-events-json '[{"id":"F1","latitude":40.85,"longitude":14.27,"material":"paper","start_datetime":"2026-06-01T00:00:00+00:00","end_datetime":"2026-06-01T03:00:00+00:00"},{"id":"F2","latitude":40.855,"longitude":14.275,"height_agl_m":2.0,"material":"plastic","start_datetime":"2026-06-01T01:00:00+00:00","end_datetime":"2026-06-01T04:00:00+00:00"}]' \
-  --weather-start 2026-06-01T00:00:00+00:00 \
-  --weather-end 2026-06-01T04:00:00+00:00
+  --fire-events-json '[{"id":"F1","latitude":40.85,"longitude":14.27,"material":"paper","start_datetime":"20260601Z0000","end_datetime":"20260601Z0300"},{"id":"F2","latitude":40.855,"longitude":14.275,"height_agl_m":2.0,"material":"plastic","start_datetime":"20260601Z0100","end_datetime":"20260601Z0400"}]' \
+  --weather-start 20260601Z0000 \
+  --weather-end 20260601Z0400
 ```
 
 Expected products:
@@ -424,8 +422,7 @@ Check the URL first:
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
-  --download-date 2026-05-27 \
-  --download-cycle-hour 0 \
+  --download-time 20260527Z0000 \
   --output ignored.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \

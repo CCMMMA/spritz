@@ -45,8 +45,7 @@ fetch` with the same domain settings used by the wildfire run.
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
-  --download-date 2026-05-27 \
-  --download-cycle-hour 0 \
+  --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wildfire_case/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -72,8 +71,8 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --material plastic \
-  --start 2026-05-27T00:00:00+00:00 \
-  --end 2026-05-27T01:00:00+00:00 \
+  --start 20260527Z0000 \
+  --end 20260527Z0100 \
   --duration-s 3600 \
   --area-m2 2500 \
   --precipitation-washout
@@ -93,8 +92,8 @@ python usecases/02_wildfire_arson_effects/step_03_run_model.py \
 
 Use these options to express the run timing requested in the generated JSON:
 
-- `--weather-start` and `--weather-end`: weather simulation start/end datetimes.
-- `--start` and `--end`: fire/arson event start/end datetimes.
+- `--weather-start` and `--weather-end`: weather simulation start/end datetimes as `YYYYMMDDZhhmm`.
+- `--start` and `--end`: fire/arson event start/end datetimes as `YYYYMMDDZhhmm`.
 - `--firefighters-start`, `--firefighters-end`, and
   `--firefighters-emission-factor`: suppression period and emission multiplier.
 - `--height-agl-m`: release height above local ground level, useful for small
@@ -116,19 +115,20 @@ requiring a separate meteorology file.
 For multiple fires, pass a JSON list to `--fire-events-json`. Each event can
 set `id`, `latitude`, `longitude`, `height_agl_m`, `start_datetime`,
 `end_datetime`, `material`, `area_m2`, `temperature_k`, and
-`emission_factor_g_m2`.
+`emission_factor_g_m2`. Date-time values in this script parameter use
+`YYYYMMDDZhhmm`.
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --output output/multi_fire/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
-  --weather-start 2026-06-01T00:00:00+00:00 \
-  --weather-end 2026-06-01T04:00:00+00:00 \
-  --firefighters-start 2026-06-01T02:00:00+00:00 \
-  --firefighters-end 2026-06-01T03:00:00+00:00 \
+  --weather-start 20260601Z0000 \
+  --weather-end 20260601Z0400 \
+  --firefighters-start 20260601Z0200 \
+  --firefighters-end 20260601Z0300 \
   --firefighters-emission-factor 0.4 \
-  --fire-events-json '[{"id":"F1","latitude":40.8500,"longitude":14.2700,"material":"paper","start_datetime":"2026-06-01T00:00:00+00:00","end_datetime":"2026-06-01T03:00:00+00:00"},{"id":"F2","latitude":40.8550,"longitude":14.2750,"height_agl_m":2.0,"material":"plastic","start_datetime":"2026-06-01T01:00:00+00:00","end_datetime":"2026-06-01T04:00:00+00:00"}]'
+  --fire-events-json '[{"id":"F1","latitude":40.8500,"longitude":14.2700,"material":"paper","start_datetime":"20260601Z0000","end_datetime":"20260601Z0300"},{"id":"F2","latitude":40.8550,"longitude":14.2750,"height_agl_m":2.0,"material":"plastic","start_datetime":"20260601Z0100","end_datetime":"20260601Z0400"}]'
 ```
 
 ## Expected products

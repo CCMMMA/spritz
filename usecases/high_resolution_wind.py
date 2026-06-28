@@ -10,6 +10,7 @@ import numpy as np
 
 from sprtz.models import spritzmet, spritzwrf
 from sprtz.logging import configure_logging
+from datetime_args import script_datetime_to_date_and_hour
 
 
 LOGGER = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ def interpolate_wrf_to_100m(
     time_index: int = 0,
     prefer_netcdf: bool = True,
     allow_synthetic: bool = False,
+    download_time: str | None = None,
     download_date: str | None = None,
     download_cycle_hour: int = 0,
     download_dir: str | Path = "data/wrf",
@@ -105,6 +107,8 @@ def interpolate_wrf_to_100m(
        latitude/longitude and interpolates the SpritzWRF wind vectors to that grid.
     3. The output is written as NetCDF-CF by default, with JSON fallback.
     """
+    if download_time is not None:
+        download_date, download_cycle_hour = script_datetime_to_date_and_hour(download_time)
     resolved = resolve_wrf_input(
         wrf_path,
         download_date=download_date,
@@ -119,8 +123,8 @@ def interpolate_wrf_to_100m(
         wrf = _synthetic_wrf(center_lat, center_lon)
     else:
         raise FileNotFoundError(
-            "WRF input file is required. Pass --wrf, or use --download-date YYYY-MM-DD "
-            "with --download-cycle-hour, or enable --allow-synthetic for tests."
+            "WRF input file is required. Pass --wrf, or use --download-time YYYYMMDDZhhmm, "
+            "or enable --allow-synthetic for tests."
         )
     met = spritzmet.downscale_wrf_to_local_grid(
         wrf,
@@ -139,9 +143,8 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="SpritzWRF -> SpritzMet: interpolate WRF 1 km winds to a 100 m local grid")
-    parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --download-date or --allow-synthetic")
-    parser.add_argument("--download-date", default=None, help="Download meteo@uniparthenope WRF5 d03 file for YYYY-MM-DD")
-    parser.add_argument("--download-cycle-hour", type=int, default=0, help="WRF cycle hour, e.g. 0, 6, 12, 18")
+    parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --download-time or --allow-synthetic")
+    parser.add_argument("--download-time", default=None, help="Download meteo@uniparthenope WRF5 d03 file for UTC YYYYMMDDZhhmm")
     parser.add_argument("--download-dir", default="data/wrf", help="Directory for downloaded WRF files")
     parser.add_argument("--download-timeout-s", type=float, default=120.0)
     parser.add_argument("--force-download", action="store_true")
@@ -157,11 +160,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--allow-synthetic", action="store_true")
     args = parser.parse_args(argv)
+    download_date = None
+    download_cycle_hour = 0
+    if args.download_time is not None:
+        download_date, download_cycle_hour = script_datetime_to_date_and_hour(args.download_time)
     if args.print_download_url:
-        if args.download_date is None:
-            parser.error("--print-download-url requires --download-date")
+        if download_date is None:
+            parser.error("--print-download-url requires --download-time")
         configure_logging(False)
-        LOGGER.info("%s", spritzwrf.meteo_uniparthenope_wrf_url(args.download_date, args.download_cycle_hour))
+        LOGGER.info("%s", spritzwrf.meteo_uniparthenope_wrf_url(download_date, download_cycle_hour))
         return 0
     result = interpolate_wrf_to_100m(
         args.wrf,
@@ -175,8 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         time_index=args.time_index,
         prefer_netcdf=not args.json,
         allow_synthetic=args.allow_synthetic,
-        download_date=args.download_date,
-        download_cycle_hour=args.download_cycle_hour,
+        download_date=download_date,
+        download_cycle_hour=download_cycle_hour,
         download_dir=args.download_dir,
         force_download=args.force_download,
         download_timeout_s=args.download_timeout_s,

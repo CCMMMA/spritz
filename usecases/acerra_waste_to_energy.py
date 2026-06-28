@@ -14,6 +14,7 @@ from sprtz.config import from_mapping
 from sprtz.io.jsonio import write_json
 from sprtz.logging import configure_logging
 from sprtz.workflow import run_workflow
+from datetime_args import script_datetime_to_iso
 
 LOGGER = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
     parser.add_argument("--config-only", action="store_true")
-    parser.add_argument("--start", default=DEFAULT_START)
+    parser.add_argument("--start", default=None, help="UTC scenario start datetime as YYYYMMDDZhhmm")
     parser.add_argument("--duration-h", type=float, default=DEFAULT_DURATION_H)
     args = parser.parse_args(argv)
     configure_logging(False)
@@ -196,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
         args.output_dir,
         interchange=args.interchange,
         run_model=not args.config_only,
-        start_datetime=args.start,
+        start_datetime=script_datetime_to_iso(args.start) or DEFAULT_START,
         duration_h=args.duration_h,
     )
     LOGGER.info("%s", result.as_dict())

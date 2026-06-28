@@ -1,4 +1,6 @@
 # Core runtime dependencies for Sprtz.
+# Script-facing date-time arguments use the standard-library UTC format
+# YYYYMMDDZhhmm; no extra date parser dependency is required.
 # Install with:
 #   python -m pip install -r requirements.txt
 # Optional feature groups remain available through pyproject extras, for example:

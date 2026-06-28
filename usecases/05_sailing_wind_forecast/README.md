@@ -62,7 +62,7 @@ Pin an initialization date explicitly:
 
 ```bash
 python usecases/05_sailing_wind_forecast/step_01_build_forecast.py \
-  --initialization-date 2026-06-01 \
+  --initialization-time 20260601Z0000 \
   --outlook-hours 24 \
   --bbox 14.18,40.78,14.33,40.85 \
   --horizontal-resolution-m 100 \

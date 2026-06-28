@@ -51,8 +51,7 @@ land-cover input when `sprtz[geo]` is installed; see
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
-  --download-date 2026-05-27 \
-  --download-cycle-hour 0 \
+  --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -65,8 +64,7 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
-  --download-date 2026-05-27 \
-  --download-cycle-hour 0 \
+  --download-time 20260527Z0000 \
   --output ignored.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \

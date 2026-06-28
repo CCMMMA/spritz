@@ -31,6 +31,9 @@ local land-cover input with `target_categories: "copernicus-lc100"`. See
 `docs/copernicus-cop30-dem-download.md`, and
 `docs/copernicus-lc100-download.md`.
 
+All date-time values passed as script arguments or script parameters use compact
+UTC `YYYYMMDDZhhmm` format, such as `20260601Z0000`.
+
 ## 01 - High-resolution wind and precipitation interpolation
 
 This use case implements the meteorological preprocessing chain:
