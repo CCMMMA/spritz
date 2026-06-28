@@ -11,10 +11,22 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "meteouniparthenope-wrf-download.py"
+PLOTTER_SCRIPT = ROOT / "tools" / "plotter.py"
 
 
 def load_wrf_download_tool():
     loader = SourceFileLoader("meteouniparthenope_wrf_download", str(SCRIPT))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_plotter_tool():
+    loader = SourceFileLoader("sprtz_plotter_tool", str(PLOTTER_SCRIPT))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
@@ -136,3 +148,120 @@ def test_main_handles_keyboard_interrupt_softly(
 
     assert result == 130
     assert "interrupted; stopping downloads" in caplog.text
+
+
+def test_plotter_reads_geographic_grid(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "meteo.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("y", 2)
+        ds.createDimension("x", 3)
+        lat = ds.createVariable("latitude", "f8", ("y",))
+        lon = ds.createVariable("longitude", "f8", ("x",))
+        wind = ds.createVariable("eastward_wind", "f8", ("time", "y", "x"))
+        north = ds.createVariable("northward_wind", "f8", ("time", "y", "x"))
+        wind.units = "m s-1"
+        lat[:] = [40.0, 40.1]
+        lon[:] = [14.0, 14.1, 14.2]
+        wind[0, :, :] = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        north[0, :, :] = [[0.0, 0.0, 0.0], [1.0, 1.0, 0.0]]
+
+    plotter = load_plotter_tool()
+    field = plotter.read_map_field(
+        path,
+        variable_name=None,
+        time_index=0,
+        level_index=0,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    assert field.name == "eastward_wind"
+    assert field.geographic is True
+    assert field.values.shape == (2, 3)
+    assert field.x[0, 2] == pytest.approx(14.2)
+    assert field.y[1, 0] == pytest.approx(40.1)
+    assert field.vectors is not None
+    assert field.vectors.u[0, 0] == pytest.approx(1.0)
+    assert field.vectors.v[1, 2] == pytest.approx(0.0)
+
+
+def test_plotter_derives_vectors_from_speed_and_direction(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wind_direction.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("y", 2)
+        ds.createDimension("x", 2)
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0, 40.1]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0, 14.1]
+        speed = ds.createVariable("wind_speed", "f8", ("time", "y", "x"))
+        direction = ds.createVariable("wind_from_direction", "f8", ("time", "y", "x"))
+        speed[:, :, :] = [[[2.0, 2.0], [2.0, 2.0]]]
+        direction[:, :, :] = [[[270.0, 270.0], [270.0, 270.0]]]
+
+    plotter = load_plotter_tool()
+    field = plotter.read_map_field(
+        path,
+        variable_name="wind_speed",
+        time_index=0,
+        level_index=0,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    assert field.vectors is not None
+    assert field.vectors.u[0, 0] == pytest.approx(2.0)
+    assert field.vectors.v[0, 0] == pytest.approx(0.0)
+
+
+def test_plotter_reads_receptor_vector_as_single_row(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "concentration.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("receptor", 2)
+        ds.createVariable("latitude", "f8", ("receptor",))[:] = [40.0, 40.1]
+        ds.createVariable("longitude", "f8", ("receptor",))[:] = [14.0, 14.1]
+        concentration = ds.createVariable("concentration", "f8", ("time", "receptor"))
+        concentration[:, :] = [[1.0, 2.0]]
+
+    plotter = load_plotter_tool()
+    field = plotter.read_map_field(
+        path,
+        variable_name="concentration",
+        time_index=0,
+        level_index=0,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    assert field.geographic is True
+    assert field.values.shape == (1, 2)
+    assert field.x[0, 1] == pytest.approx(14.1)
+
+
+def test_plotter_main_reports_missing_variable(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "terrain.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("y", 1)
+        ds.createDimension("x", 1)
+        ds.createVariable("surface_altitude", "f8", ("y", "x"))[:] = [[10.0]]
+
+    plotter = load_plotter_tool()
+    caplog.set_level(logging.ERROR)
+
+    result = plotter.main([str(path), "--variable", "missing", "--output", str(tmp_path / "map.png")])
+
+    assert result == 1
+    assert "variable 'missing' is not present" in caplog.text

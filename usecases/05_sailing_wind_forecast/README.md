@@ -76,6 +76,18 @@ sea-breeze-like field so downstream sailing analytics can test the full
 space-height-time schema. Replace the synthetic field with an authoritative
 forecast provider before operational race decisions.
 
+## Plot the forecast NetCDF map
+
+When `netCDF4` and plotting dependencies are available, the script also writes
+`bay_of_naples_forecast.nc` and calls `tools/plotter.py`. To regenerate the
+surface wind-speed map explicitly, run:
+
+```bash
+python tools/plotter.py output/sailing/bay_of_naples_forecast.nc \
+  --variable wind_speed \
+  --output output/sailing/bay_of_naples_forecast_wind_speed_map.png
+```
+
 Expected fields include:
 
 - longitude and latitude axes;

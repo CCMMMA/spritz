@@ -3,8 +3,14 @@
 # YYYYMMDDZhhmm; no extra date parser dependency is required.
 # Install with:
 #   python -m pip install -r requirements.txt
+# This file includes the dependencies needed by repository tools, including
+# tools/plotter.py for NetCDF publication maps with high-resolution coastlines.
 # Optional feature groups remain available through pyproject extras, for example:
-#   python -m pip install -e '.[netcdf,viz,mpi]'
+#   python -m pip install -e '.[netcdf,viz,maps,mpi]'
 
+cartopy>=0.22
+matplotlib>=3.7
+netCDF4>=1.6
 numpy>=1.23
 pyproj>=3.4
+requests>=2.31

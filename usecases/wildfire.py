@@ -17,6 +17,7 @@ from high_resolution_wind import interpolate_wrf_to_100m
 from sprtz.workflow import run_workflow
 from sprtz.logging import configure_logging
 from datetime_args import script_datetime_to_iso
+from plotting import plot_netcdf_if_available, plot_workflow_netcdfs
 
 
 LOGGER = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class WildfireRunResult:
     workflow: dict[str, Any]
     heat_release_w: float
     emission_rate_g_s: float
+    plots: dict[str, str]
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +57,7 @@ class WildfireRunResult:
             "workflow": self.workflow,
             "heat_release_w": self.heat_release_w,
             "emission_rate_g_s": self.emission_rate_g_s,
+            "plots": self.plots,
         }
 
 
@@ -386,6 +389,17 @@ def run_wildfire_event(
         download_dir=download_dir,
         force_download=force_download,
     )
+    plots: dict[str, str] = {}
+    wind_plot = plot_netcdf_if_available(
+        wind_out,
+        out / "wrf_100m_wind_map.png",
+        variable="wind_speed",
+        title="Intermediate SpritzMet Wind Speed",
+        center_lat=center_lat,
+        center_lon=center_lon,
+    )
+    if wind_plot is not None:
+        plots["wind"] = str(wind_plot)
     # Use center-cell wind as representative source wind for the screening config.
     if wind_result.format == "json":
         data = json.loads(wind_out.read_text(encoding="utf-8"))
@@ -437,6 +451,15 @@ def run_wildfire_event(
         wind_from_direction_deg=wind_dir,
     )
     workflow = run_workflow(config_path, out / "model", backend=backend, interchange=interchange, parallel="serial")
+    plots.update(
+        plot_workflow_netcdfs(
+            workflow,
+            out,
+            center_lat=center_lat,
+            center_lon=center_lon,
+            prefix="model_",
+        )
+    )
     heat_release = sum(float(source["heat_release"]) for source in config["sources"])
     emission_rate = sum(float(source["emission_rate"]) for source in config["sources"])
     return WildfireRunResult(
@@ -445,6 +468,7 @@ def run_wildfire_event(
         workflow,
         heat_release,
         emission_rate,
+        plots,
     )
 
 

@@ -47,6 +47,21 @@ python usecases/06_acerra_waste_to_energy/step_02_run_model.py \
   --interchange netcdf
 ```
 
+## Step 3: Plot intermediate and final NetCDF maps
+
+The model step calls `tools/plotter.py` automatically for NetCDF products. To
+regenerate maps explicitly, run:
+
+```bash
+python tools/plotter.py output/acerra_wte/model/meteo.nc \
+  --variable wind_speed \
+  --output output/acerra_wte/model/meteo_map.png
+
+python tools/plotter.py output/acerra_wte/model/concentration.nc \
+  --variable concentration \
+  --output output/acerra_wte/model/concentration_map.png
+```
+
 ## Scenario
 
 - Weather simulation start: `2026-06-01T00:00:00+00:00`.
@@ -65,6 +80,8 @@ python usecases/06_acerra_waste_to_energy/step_02_run_model.py \
 - `model/meteo.*` - SpritzMet meteorology exchange file.
 - `model/concentration.*` - concentration/deposition output.
 - `model/post.json` - SpritzPost statistics.
+- `meteo_map.png` and `concentration_map.png` - plotter maps for NetCDF
+  intermediate and final products when plotting dependencies are available.
 
 ## Scientific Caution
 

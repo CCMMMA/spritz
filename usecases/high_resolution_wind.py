@@ -11,6 +11,7 @@ import numpy as np
 from sprtz.models import spritzmet, spritzwrf
 from sprtz.logging import configure_logging
 from datetime_args import script_datetime_to_date_and_hour
+from plotting import plot_netcdf_if_available
 
 
 LOGGER = logging.getLogger(__name__)
@@ -27,9 +28,10 @@ class WindInterpolationResult:
     source: str
     format: str
     pipeline: str = "SpritzWRF -> SpritzMet"
+    plot_path: Path | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "component": "usecase.high_resolution_wind",
             "output_path": str(self.output_path),
             "nx": self.nx,
@@ -42,6 +44,9 @@ class WindInterpolationResult:
             "format": self.format,
             "pipeline": self.pipeline,
         }
+        if self.plot_path is not None:
+            result["plot_path"] = str(self.plot_path)
+        return result
 
 
 def _synthetic_wrf(center_lat: float, center_lon: float, nx: int = 7, ny: int = 7) -> spritzwrf.WRFWindField:
@@ -136,7 +141,15 @@ def interpolate_wrf_to_100m(
         dy_m=dy_m,
     )
     fmt = spritzmet.write_local_meteorology(output_path, met, prefer_netcdf=prefer_netcdf)
-    return WindInterpolationResult(Path(output_path), nx, ny, dx_m, dy_m, center_lat, center_lon, met.source, fmt)
+    plot_path = plot_netcdf_if_available(
+        output_path,
+        Path(output_path).with_suffix(".png"),
+        variable="wind_speed",
+        title="SpritzMet Wind Speed",
+        center_lat=center_lat,
+        center_lon=center_lon,
+    )
+    return WindInterpolationResult(Path(output_path), nx, ny, dx_m, dy_m, center_lat, center_lon, met.source, fmt, plot_path=plot_path)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -48,6 +48,17 @@ python usecases/03_satellite_ai_evaluation/step_02_evaluate.py \
   --threshold 0.5
 ```
 
+## Plot the evaluated NetCDF map
+
+The evaluation step calls `tools/plotter.py` for NetCDF concentration inputs.
+To regenerate the evaluated concentration map explicitly, run:
+
+```bash
+python tools/plotter.py output/wildfire_case/model/concentration.nc \
+  --variable concentration \
+  --output output/wildfire_case/model/concentration_map.png
+```
+
 ## Metrics reported
 
 - confusion matrix: true positive, false positive, true negative, false negative;

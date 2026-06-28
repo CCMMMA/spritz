@@ -2,13 +2,18 @@
 
 Goal: obtain a local 100 m wind and precipitation-rate field centered on a user-supplied latitude and longitude, starting from a 1 km WRF5 d03 file.
 
-This didactic workflow is deliberately explicit:
+This didactic workflow is deliberately explicit, and
+`step_01_interpolate_wind.py` invokes the production modules in this order:
 
-1. **Acquire WRF 1 km data.** Use a local WRF NetCDF file or download from the meteo@uniparthenope archive.
-2. **SpritzWRF step.** Extract latitude, longitude, near-surface wind components, and precipitation when available from the WRF file.
-3. **SpritzMet step.** Build a local azimuthal-equidistant grid centered on the requested coordinate.
-4. **Interpolation step.** Interpolate SpritzWRF wind vectors and precipitation onto the SpritzMet 100 m grid.
-5. **Output step.** Write NetCDF-CF by default, or JSON for lightweight runs.
+1. **Input step.** Use a local WRF NetCDF file or call `spritzwrf.download_meteo_uniparthenope_wrf` for the meteo@uniparthenope archive.
+2. **SpritzWRF extraction step.** Call `spritzwrf.load_near_surface_wind` to extract latitude, longitude, near-surface wind components, and precipitation when available.
+3. **SpritzMet interpolation step.** Call `spritzmet.downscale_wrf_to_local_grid` to build the local azimuthal-equidistant grid and interpolate SpritzWRF fields onto the 100 m grid.
+4. **Output step.** Call `spritzmet.write_local_meteorology` to write NetCDF-CF by default, or JSON for lightweight runs.
+
+The grid can be requested in either of two ways:
+
+- `--center-lat --center-lon --nx --ny` creates an exact node-count grid centered on one coordinate.
+- `--south --north --west --east` creates a conservative grid covering the requested bounding box. The script keeps `--dx` and `--dy` as hard constraints and expands the actual covered area outward to the nearest exact spacing multiple.
 
 The WRF archive pattern is:
 
@@ -53,12 +58,29 @@ land-cover input when `sprtz[geo]` is installed; see
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --download-time 20260527Z0000 \
   --download-dir data/wrf \
-  --output output/wrf_100m_wind.nc \
+  --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --nx 101 --ny 101 \
   --dx 100 --dy 100
 ```
+
+## Run with a bounding box
+
+```bash
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+  --download-time 20260527Z0000 \
+  --download-dir data/wrf \
+  --output data/output/wrf_100m_wind_bbox.nc \
+  --south 40.40 --north 41.10 \
+  --west 13.80 --east 14.80 \
+  --dx 100 --dy 100
+```
+
+In bounding-box mode, `--dx` and `--dy` are never changed. The workflow derives
+the local grid center from the box midpoint, projects the four requested corners
+to the local SpritzMet grid, and increases `nx` and `ny` just enough to cover
+the box with exact grid spacing.
 
 ## Print the URL without downloading
 
@@ -76,9 +98,29 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
-  --output output/wrf_100m_wind.nc \
+  --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
   --center-lon 14.27
+```
+
+## Plot the intermediate/final NetCDF map
+
+When the workflow writes NetCDF, `step_01_interpolate_wind.py` also calls
+`tools/plotter.py` and writes a wind-speed map beside the NetCDF product. To
+regenerate the publication map explicitly, run:
+
+```bash
+python tools/plotter.py data/output/wrf_100m_wind.nc \
+  --variable wind_speed \
+  --output data/output/wrf_100m_wind.png
+```
+
+For a bounding-box product, use the matching NetCDF path:
+
+```bash
+python tools/plotter.py data/output/wrf_100m_wind_bbox.nc \
+  --variable wind_speed \
+  --output data/output/wrf_100m_wind_bbox.png
 ```
 
 ## Classroom/demo run without WRF data
@@ -87,7 +129,7 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --allow-synthetic \
   --json \
-  --output output/demo_wind.json \
+  --output data/output/demo_wind.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --nx 21 --ny 21
@@ -96,6 +138,7 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 ## Expected products
 
 - `wrf_100m_wind.nc` or `.json`
+- `wrf_100m_wind.png` when NetCDF output is selected and plotting dependencies are available
 - variables/fields: `latitude`, `longitude`, `eastward_wind`, `northward_wind`, `wind_speed`, `wind_from_direction`, `precipitation_rate`
 
 ## Teaching notes

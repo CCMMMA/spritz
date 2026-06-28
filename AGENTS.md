@@ -129,6 +129,8 @@ When adding new fields:
 - Update `src/sprtz/config.py`.
 - Update JSON examples and, where relevant, legacy `.inp` examples.
 - Update NetCDF-CF metadata and JSON fallback behavior.
+- Update `tools/plotter.py` and `docs/plotter.md` whenever produced NetCDF
+  formats, variables, dimensions, coordinates, or metadata conventions change.
 - Update tests and documentation.
 - Preserve unknown legacy-control-file keys where the tolerant parser already supports them.
 

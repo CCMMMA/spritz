@@ -2,8 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
 from sprtz.workflow import run_workflow
+
+USECASES_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(USECASES_ROOT))
+
+from plotting import plot_workflow_netcdfs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -12,7 +19,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
     args = parser.parse_args(argv)
-    run_workflow(args.config, args.output_dir, backend="gaussian", interchange=args.interchange)
+    workflow = run_workflow(args.config, args.output_dir, backend="gaussian", interchange=args.interchange)
+    plot_workflow_netcdfs(workflow, args.output_dir)
     return 0
 
 

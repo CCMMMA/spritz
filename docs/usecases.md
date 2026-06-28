@@ -34,6 +34,11 @@ local land-cover input with `target_categories: "copernicus-lc100"`. See
 All date-time values passed as script arguments or script parameters use compact
 UTC `YYYYMMDDZhhmm` format, such as `20260601Z0000`.
 
+Use-case scripts call `tools/plotter.py` for NetCDF intermediate and final
+products when a map can be derived locally. The generated PNG maps are written
+beside the use-case outputs; see `docs/plotter.md` for direct commands and
+Cartopy coastline options.
+
 ## 01 - High-resolution wind and precipitation interpolation
 
 This use case implements the meteorological preprocessing chain:

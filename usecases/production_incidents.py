@@ -16,6 +16,7 @@ from sprtz.io.jsonio import write_json
 from sprtz.logging import configure_logging
 from sprtz.models import visualization
 from sprtz.workflow import run_workflow
+from plotting import plot_workflow_netcdfs
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_CATALOG = Path(__file__).resolve().parent / "04_production_incidents" / "events.csv"
@@ -59,6 +60,7 @@ class IncidentRunResult:
     output_dir: Path
     workflow: dict[str, Any] | None
     map_path: Path | None
+    plots: dict[str, str]
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -67,6 +69,7 @@ class IncidentRunResult:
             "output_dir": str(self.output_dir),
             "workflow": self.workflow,
             "map_path": None if self.map_path is None else str(self.map_path),
+            "plots": self.plots,
         }
 
 
@@ -256,6 +259,7 @@ def run_incident_case(
     )
     workflow = None
     map_path = None
+    plots: dict[str, str] = {}
     if run_model:
         workflow = run_workflow(
             config_path,
@@ -264,20 +268,17 @@ def run_incident_case(
             backend="gaussian",
         )
         if make_map:
-            concentration = Path(workflow["concentration"])
-            map_path = out / f"{event.code}_concentration_map.png"
-            visualization.concentration_scatter(
-                concentration,
-                map_path,
-                title=f"{event.place} {event.code} concentration",
-                coordinate_system="geographic",
+            plots = plot_workflow_netcdfs(
+                workflow,
+                out,
                 center_lat=event.latitude,
                 center_lon=event.longitude,
-                basemap_path=basemap,
-                basemap_extent=basemap_extent,
-                dpi=450,
+                prefix=f"{event.code}_",
             )
-    return IncidentRunResult(event, config_path, out, workflow, map_path)
+            concentration_plot = plots.get("concentration")
+            if concentration_plot is not None:
+                map_path = Path(concentration_plot)
+    return IncidentRunResult(event, config_path, out, workflow, map_path, plots)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -23,5 +23,17 @@ The WRF files feed SpritzWRF/SpritzMet. The DEM and LC100 land cover feed
 `sprtz-terrain fetch` and must cover the coupled fire and smoke grid.
 
 ```bash
-sprtz run examples/wildfire_minimal.json --backend fire+puff --output-dir output_fire_smoke --interchange json
+sprtz run examples/wildfire_minimal.json --backend fire+puff --output-dir output_fire_smoke --interchange netcdf
+```
+
+## Plot intermediate and final NetCDF maps
+
+```bash
+python tools/plotter.py output_fire_smoke/firefront.nc \
+  --variable fire_probability \
+  --output output_fire_smoke/firefront_map.png
+
+python tools/plotter.py output_fire_smoke/concentration.nc \
+  --variable concentration \
+  --output output_fire_smoke/concentration_map.png
 ```

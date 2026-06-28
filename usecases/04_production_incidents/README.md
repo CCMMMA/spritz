@@ -53,30 +53,36 @@ python usecases/04_production_incidents/step_02_run_model.py \
 
 To run the San Marcellino event, pass `--code 2023_14`.
 
+## Step 3: Plot intermediate and final NetCDF maps
+
+The model step calls `tools/plotter.py` automatically for NetCDF products. To
+regenerate maps explicitly for a dossier, run:
+
+```bash
+python tools/plotter.py output/production_2021_44/model/meteo.nc \
+  --variable wind_speed \
+  --output output/production_2021_44/model/meteo_map.png
+
+python tools/plotter.py output/production_2021_44/model/concentration.nc \
+  --variable concentration \
+  --output output/production_2021_44/model/concentration_map.png
+```
+
 Expected products:
 
 - `2021_44_config.json` - validated Spritz configuration with event metadata;
 - `model/meteo.nc` - SpritzMet meteorology exchange file;
 - `model/concentration.nc` - Spritz concentration output with receptor lat/lon;
 - `model/post.json` - SpritzPost statistics;
-- optional map products should be generated explicitly from the concentration
-  output with the visualization tools used by the project dossier.
+- `model/meteo_map.png` and `model/concentration_map.png` - plotter maps for
+  NetCDF intermediate and final products when plotting dependencies are
+  available.
 
-## Optional local basemap
+## Plotter notes
 
-For offline production dossiers, keep prepared high-resolution raster basemaps
-under `data/` and use them when creating explicit map products from model
-outputs:
-
-```bash
-sprtz-plot \
-  --input output/production_2021_44/model/concentration.nc \
-  --output output/production_2021_44/2021_44_concentration_map.png \
-  --title "Acerra 2021_44 concentration"
-```
-
-The repository does not download map tiles implicitly; prepare maps explicitly
-from model outputs when a dossier needs them.
+The repository does not download map tiles implicitly. Cartopy coastlines are
+drawn only when local Natural Earth data are available, unless the user
+explicitly enables Cartopy downloads in `tools/plotter.py`.
 
 ## Scientific caution
 

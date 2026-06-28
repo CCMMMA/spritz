@@ -23,7 +23,18 @@ domain settings when terrain or land cover affects ignition plausibility or
 spread interpretation.
 
 ```bash
-sprtz-backward --config examples/backward_firefront.json --model firefront --output output_backward_fire/ignition_likelihood.json
+python usecases/11_backward_fire_origin/step_01_estimate_ignition.py
+```
+
+## Plot the final NetCDF map
+
+The step script writes a NetCDF sidecar and calls `tools/plotter.py`. To
+regenerate the final ignition-likelihood map explicitly, run:
+
+```bash
+python tools/plotter.py output_backward_fire/ignition_likelihood.nc \
+  --variable ignition_likelihood \
+  --output output_backward_fire/ignition_likelihood_map.png
 ```
 
 SLURM sketch:
@@ -35,5 +46,5 @@ SLURM sketch:
 #SBATCH --time=00:05:00
 module load python/3.11
 source .venv/bin/activate
-sprtz-backward --config examples/backward_firefront.json --model firefront --output output_backward_fire/ignition_likelihood.json
+python usecases/11_backward_fire_origin/step_01_estimate_ignition.py
 ```

@@ -88,6 +88,25 @@ python usecases/02_wildfire_arson_effects/step_03_run_model.py \
   --interchange netcdf
 ```
 
+## Step 4: Plot intermediate and final NetCDF maps
+
+The step scripts call `tools/plotter.py` automatically for NetCDF products. To
+regenerate the maps explicitly for a report, run:
+
+```bash
+python tools/plotter.py output/wildfire_case/wrf_100m_wind.nc \
+  --variable wind_speed \
+  --output output/wildfire_case/wrf_100m_wind_map.png
+
+python tools/plotter.py output/wildfire_case/model/meteo.nc \
+  --variable wind_speed \
+  --output output/wildfire_case/model/meteo_map.png
+
+python tools/plotter.py output/wildfire_case/model/concentration.nc \
+  --variable concentration \
+  --output output/wildfire_case/model/concentration_map.png
+```
+
 ## Event timing, materials, and source height
 
 Use these options to express the run timing requested in the generated JSON:
@@ -138,6 +157,8 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 - `model/meteo.*` — suite meteorology exchange file.
 - `model/concentration.*` — dispersion output.
 - `model/post.json` — postprocessed statistics.
+- `wrf_100m_wind_map.png` and `model_*_map.png` — plotter maps for NetCDF
+  intermediate and final products when plotting dependencies are available.
 
 The `--backend` choice is stored in `wildfire_event.json` under `run.backend`.
 Change that JSON key, or pass `--backend` when rerunning `sprtz run`, to compare

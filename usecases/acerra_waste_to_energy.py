@@ -15,6 +15,7 @@ from sprtz.io.jsonio import write_json
 from sprtz.logging import configure_logging
 from sprtz.workflow import run_workflow
 from datetime_args import script_datetime_to_iso
+from plotting import plot_workflow_netcdfs
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class AcerraRunResult:
     config_path: Path
     output_dir: Path
     workflow: dict[str, Any] | None
+    plots: dict[str, str]
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -37,6 +39,7 @@ class AcerraRunResult:
             "config_path": str(self.config_path),
             "output_dir": str(self.output_dir),
             "workflow": self.workflow,
+            "plots": self.plots,
         }
 
 
@@ -179,9 +182,16 @@ def run_acerra_case(
     config_path = out / "acerra_waste_to_energy.json"
     build_acerra_config(config_path, start_datetime=start_datetime, duration_h=duration_h)
     workflow = None
+    plots: dict[str, str] = {}
     if run_model:
         workflow = run_workflow(config_path, out / "model", interchange=interchange)
-    return AcerraRunResult(config_path, out, workflow)
+        plots = plot_workflow_netcdfs(
+            workflow,
+            out,
+            center_lat=ACERRA_STACK_LAT,
+            center_lon=ACERRA_STACK_LON,
+        )
+    return AcerraRunResult(config_path, out, workflow, plots)
 
 
 def main(argv: list[str] | None = None) -> int:

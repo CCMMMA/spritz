@@ -24,5 +24,13 @@ detection remains lazy and falls back to CPU if optional libraries are
 unavailable.
 
 ```bash
-sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire_gpu --interchange json
+sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire_gpu --interchange netcdf
+```
+
+## Plot the final NetCDF map
+
+```bash
+python tools/plotter.py output_fire_gpu/firefront.nc \
+  --variable fire_probability \
+  --output output_fire_gpu/firefront_map.png
 ```

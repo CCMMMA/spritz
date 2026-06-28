@@ -253,7 +253,7 @@ Terrain, and SpritzPost name the clean-room components in this project.
 
 Spritz includes a root-level `usecases/` folder with reproducible templates for:
 
-- high-resolution wind and precipitation-rate interpolation from 1 km WRF to a 100 m local grid centered on a supplied latitude/longitude;
+- high-resolution wind and precipitation-rate interpolation from 1 km WRF to a 100 m local grid centered on a supplied latitude/longitude or conservatively covering a supplied bounding box;
 - arson/wildfire screening simulations using the same Spritz configuration and output conventions as the main suite;
 - model evaluation against satellite-derived masks with a lightweight deterministic AI calibration layer.
 - catalog-driven production incident screening with receptor latitude/longitude and geographic maps.
@@ -263,7 +263,7 @@ Spritz includes a root-level `usecases/` folder with reproducible templates for:
 Install the package, then run the explicit root-level didactic steps. The use cases are intentionally not importable suite modules:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py --download-time 20260527Z0000 --output data/wrf_100m_wind.nc --center-lat 40.85 --center-lon 14.27
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py --download-time 20260527Z0000 --output data/wrf_100m_wind.nc --south 40.40 --north 41.10 --west 13.80 --east 14.80 --dx 100 --dy 100
 python usecases/02_wildfire_arson_effects/step_02_build_config.py --output data/wildfire_case/wildfire_event.json --center-lat 40.85 --center-lon 14.27 --material plastic --start 20260527Z0000 --end 20260527Z0100 --precipitation-washout
 python usecases/02_wildfire_arson_effects/step_03_run_model.py --config data/wildfire_case/wildfire_event.json --output-dir data/wildfire_case/model --backend gaussian --interchange netcdf
 python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --concentration data/wildfire_case/model/concentration.nc --satellite-mask data/satellite_mask.json --output data/wildfire_case/evaluation.json

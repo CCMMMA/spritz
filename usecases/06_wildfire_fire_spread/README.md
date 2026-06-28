@@ -23,5 +23,13 @@ Use the DEM and LC100 land cover as local `sprtz-terrain fetch` inputs before
 coupling terrain-aware fire spread or smoke workflows.
 
 ```bash
-sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire --interchange json
+sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire --interchange netcdf
+```
+
+## Plot the final NetCDF map
+
+```bash
+python tools/plotter.py output_fire/firefront.nc \
+  --variable fire_probability \
+  --output output_fire/firefront_map.png
 ```

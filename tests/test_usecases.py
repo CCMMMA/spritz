@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sprtz.io.jsonio import write_json
+from sprtz.io.jsonio import read_json, write_json
 from sprtz.io.netcdf_cf import available as netcdf_available
 from sprtz.models import spritzwrf
 
@@ -92,6 +92,41 @@ def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
         == 0
     )
     assert out.exists()
+
+
+def test_high_resolution_wind_run_entrypoint_bbox_synthetic(tmp_path: Path) -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_interpolate_wind.py")
+    out = tmp_path / "wind_bbox.json"
+
+    assert (
+        module.main(
+            [
+                "--allow-synthetic",
+                "--json",
+                "--output",
+                str(out),
+                "--south",
+                "40.84",
+                "--north",
+                "40.86",
+                "--west",
+                "14.26",
+                "--east",
+                "14.28",
+                "--dx",
+                "100",
+                "--dy",
+                "100",
+            ]
+        )
+        == 0
+    )
+    assert out.exists()
+    payload = read_json(out)
+    assert payload["dx_m"] == 100.0
+    assert payload["dy_m"] == 100.0
+    assert len(payload["latitude"]) > 2
+    assert len(payload["latitude"][0]) > 2
 
 
 def test_build_wildfire_config(tmp_path: Path) -> None:
@@ -464,7 +499,7 @@ def test_fire_workflow_run_entrypoints_route_backends(monkeypatch, tmp_path: Pat
         "firefront",
     ]
     assert all(call["config"] == "wildfire_minimal.json" for call in calls)
-    assert all(call["interchange"] == "json" for call in calls)
+    assert all(call["interchange"] == "netcdf" for call in calls)
 
 
 def test_backward_run_entrypoints_route_models(monkeypatch, tmp_path: Path) -> None:
@@ -499,8 +534,8 @@ def test_backward_run_entrypoints_route_models(monkeypatch, tmp_path: Path) -> N
     assert plume_back.main() is None
     assert fire.main() is None
 
-    assert ("spritzmet", "meteo.json", "json") in calls
-    assert ("backward", "meteo.json", "source_likelihood.json", "gaussian") in calls
+    assert ("spritzmet", "meteo.nc", "netcdf") in calls
+    assert ("backward", "meteo.nc", "source_likelihood.json", "gaussian") in calls
     assert ("backward", None, "ignition_likelihood.json", "firefront") in calls
 
 

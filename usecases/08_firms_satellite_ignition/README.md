@@ -24,5 +24,13 @@ downloader. LC100 uses GDAL `/vsicurl/` against a public source URL. Never
 hard-code credentials in configuration files.
 
 ```bash
-FIRMS_MAP_KEY=... sprtzfire --firms --config examples/wildfire_minimal.json --output-dir output_firms --interchange json
+FIRMS_MAP_KEY=... sprtzfire --firms --config examples/wildfire_minimal.json --output-dir output_firms --interchange netcdf
+```
+
+## Plot the final NetCDF map
+
+```bash
+python tools/plotter.py output_firms/firefront.nc \
+  --variable fire_probability \
+  --output output_firms/firefront_map.png
 ```

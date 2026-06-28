@@ -12,6 +12,7 @@ from sprtz.exceptions import DataFormatError
 from sprtz.io.jsonio import read_json, write_json
 from sprtz.io.netcdf_cf import read_cf_concentration
 from sprtz.logging import configure_logging
+from plotting import plot_netcdf_if_available
 
 
 def _read_concentration(path: str | Path) -> list[dict[str, Any]]:
@@ -165,6 +166,15 @@ def evaluate_wildfire_event(
     if use_ai_calibration:
         result["ai_calibration"] = _ai_calibrate(predicted, observed)
     write_json(output_path, result)
+    concentration_map = plot_netcdf_if_available(
+        concentration_path,
+        Path(output_path).with_name(Path(output_path).stem + "_concentration_map.png"),
+        variable="concentration",
+        title="Evaluated Concentration",
+    )
+    if concentration_map is not None:
+        result["concentration_map"] = str(concentration_map)
+        write_json(output_path, result)
     return result
 
 

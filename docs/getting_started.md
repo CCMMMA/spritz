@@ -100,6 +100,23 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --dy 100
 ```
 
+You can also request a geographic bounding box instead of a center plus node
+count. In this mode, `--dx` and `--dy` remain hard constraints; Spritz expands
+the actual covered area outward to the nearest exact 100 m grid multiple:
+
+```bash
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+  --download-time 20260527Z0000 \
+  --download-dir data/wrf \
+  --output output/wrf_100m_wind_bbox.nc \
+  --south 40.40 \
+  --north 41.10 \
+  --west 13.80 \
+  --east 14.80 \
+  --dx 100 \
+  --dy 100
+```
+
 Main output:
 
 ```text
@@ -391,7 +408,7 @@ Before sharing results, confirm:
 
 1. `sprtz doctor --require-netcdf --require-viz` passes in the execution environment.
 2. The WRF file name, cycle time, and download URL are recorded.
-3. The center latitude/longitude, grid spacing, and grid size are documented.
+3. The center latitude/longitude or requested/actual bounding box, grid spacing, and grid size are documented.
 4. The generated Spritz configuration is archived with the outputs.
 5. The backend is stated clearly: `gaussian` or `particles`.
 6. The figure was generated from the archived concentration file.

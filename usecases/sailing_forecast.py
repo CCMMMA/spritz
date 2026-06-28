@@ -13,6 +13,7 @@ from pyproj import Geod
 from sprtz.io.jsonio import write_json
 from sprtz.logging import configure_logging
 from datetime_args import parse_script_datetime
+from plotting import plot_netcdf_if_available
 
 LOGGER = logging.getLogger(__name__)
 BAY_OF_NAPLES_RACE_BOX = (14.18, 40.78, 14.33, 40.85)
@@ -151,7 +152,60 @@ def build_sailing_forecast(
         },
     }
     write_json(output_path, payload)
+    sidecar = write_sailing_netcdf_if_available(payload, Path(output_path).with_suffix(".nc"))
+    if sidecar is not None:
+        plot_path = plot_netcdf_if_available(
+            sidecar,
+            Path(output_path).with_name(Path(output_path).stem + "_wind_speed_map.png"),
+            variable="wind_speed",
+            title="Sailing Forecast Surface Wind Speed",
+        )
+        payload["netcdf_path"] = str(sidecar)
+        if plot_path is not None:
+            payload["plot_path"] = str(plot_path)
+        write_json(output_path, payload)
     return payload
+
+
+def write_sailing_netcdf_if_available(payload: dict[str, Any], output_path: str | Path) -> Path | None:
+    try:
+        from netCDF4 import Dataset  # type: ignore
+    except Exception:
+        LOGGER.warning("netCDF4 is unavailable; skipping sailing forecast NetCDF sidecar")
+        return None
+    lon = np.asarray(payload["longitude"], dtype=float)
+    lat = np.asarray(payload["latitude"], dtype=float)
+    height = np.asarray(payload["height_m"], dtype=float)
+    valid_time = np.asarray(payload["valid_time_s"], dtype=float)
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with Dataset(out, "w") as ds:
+        ds.createDimension("time", valid_time.size)
+        ds.createDimension("height", height.size)
+        ds.createDimension("y", lat.size)
+        ds.createDimension("x", lon.size)
+        ds.Conventions = "CF-1.8"
+        ds.title = "Sprtz sailing wind forecast"
+        for name, values, dims, units in [
+            ("time", valid_time, ("time",), "seconds since initialization"),
+            ("height", height, ("height",), "m"),
+            ("latitude", lat, ("y",), "degrees_north"),
+            ("longitude", lon, ("x",), "degrees_east"),
+        ]:
+            var = ds.createVariable(name, "f8", dims)
+            var.units = units
+            var[:] = values
+        for name, units in [
+            ("eastward_wind", "m s-1"),
+            ("northward_wind", "m s-1"),
+            ("wind_speed", "m s-1"),
+            ("wind_from_direction", "degree"),
+            ("gust_speed", "m s-1"),
+        ]:
+            var = ds.createVariable(name, "f8", ("time", "height", "y", "x"), zlib=True)
+            var.units = units
+            var[:, :, :, :] = np.asarray(payload[name], dtype=float)
+    return out
 
 
 def default_initialization_date() -> date:
