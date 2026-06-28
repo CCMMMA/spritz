@@ -319,6 +319,7 @@ def _combine_local_meteorology(items: list[spritzmet.LocalMeteorology]) -> sprit
         ";".join(item.source for item in items),
         valid_datetime_utc=datetimes[0] if datetimes else first.valid_datetime_utc,
         valid_datetimes_utc=datetimes or None,
+        downscaling_metadata=first.downscaling_metadata,
     )
 
 
@@ -384,6 +385,23 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
         for wrf in wrf_fields:
             _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=not args.json)
 
+    dem_elevation_m, land_cover, terrain_metadata = spritzmet.terrain_downscaling_inputs_from_rasters(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        nx=nx,
+        ny=ny,
+        dx_m=args.dx,
+        dy_m=args.dy,
+        dem_path=args.dem,
+        land_cover_path=args.land_cover,
+    )
+    if dem_elevation_m is not None or land_cover is not None:
+        _teach(
+            "terrain-aware SpritzMet downscaling is enabled: DEM=%s, land-cover=%s",
+            args.dem or "not supplied",
+            args.land_cover or "not supplied",
+        )
+
     LOGGER.info("step 3/4 SpritzMet: spritzmet.downscale_wrf_to_local_grid")
     _teach(
         "SpritzMet will build an azimuthal-equidistant local grid: center=(%.6f, %.6f), nx=%s, ny=%s, dx=%.3f m, dy=%.3f m",
@@ -403,6 +421,9 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
             ny=ny,
             dx_m=args.dx,
             dy_m=args.dy,
+            dem_elevation_m=dem_elevation_m,
+            land_cover=land_cover,
+            terrain_input_metadata=terrain_metadata,
         )
         for wrf in wrf_fields
     ]
@@ -478,6 +499,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dy", type=float, default=100.0)
     parser.add_argument("--time-index", type=int, default=None, help="time index for WRF variables; omit to downscale all times")
     parser.add_argument("--level-index", type=int, default=None, help="vertical level index for 4D WRF wind variables; omit to downscale all levels")
+    parser.add_argument("--dem", default=None, help="Optional DEM raster for terrain-aware SpritzMet downscaling, e.g. data/dem/cop30_naples.tif")
+    parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster, e.g. data/landcover/lc100_naples.tif")
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--allow-synthetic", action="store_true")
     return parser

@@ -507,9 +507,15 @@ def _diagnostic_precipitation_adjustment(
 ) -> tuple[np.ndarray, dict[str, float]]:
     """Apply clean-room orographic and land-cover precipitation adjustments."""
     grad_y, grad_x = np.gradient(elevation, dy_m, dx_m)
-    wind_speed = np.hypot(wind_u, wind_v)
+    precip_arr = np.asarray(precipitation_rate, dtype=float)
+    precip_wind_u = np.asarray(wind_u, dtype=float)
+    precip_wind_v = np.asarray(wind_v, dtype=float)
+    while precip_wind_u.ndim > precip_arr.ndim:
+        precip_wind_u = np.take(precip_wind_u, 0, axis=1)
+        precip_wind_v = np.take(precip_wind_v, 0, axis=1)
+    wind_speed = np.hypot(precip_wind_u, precip_wind_v)
     upslope = np.divide(
-        wind_u * grad_x + wind_v * grad_y,
+        precip_wind_u * grad_x + precip_wind_v * grad_y,
         np.maximum(wind_speed, 1.0e-9),
         out=np.zeros_like(wind_speed),
         where=wind_speed > 0.0,
@@ -525,8 +531,8 @@ def _diagnostic_precipitation_adjustment(
         0.95,
         1.15,
     )
-    precip_factor = _expand_to_field(relief_factor * upslope_factor * land_factor, np.asarray(precipitation_rate).ndim)
-    corrected = np.clip(np.asarray(precipitation_rate, dtype=float) * precip_factor, 0.0, None)
+    precip_factor = _expand_to_field(relief_factor * upslope_factor * land_factor, precip_arr.ndim)
+    corrected = np.clip(precip_arr * precip_factor, 0.0, None)
     return (
         corrected,
         {
@@ -602,6 +608,72 @@ def _netcdf_attribute_value(value: Any) -> str | int | float:
     return str(value)
 
 
+def terrain_downscaling_inputs_from_rasters(
+    *,
+    center_lat: float,
+    center_lon: float,
+    nx: int,
+    ny: int,
+    dx_m: float,
+    dy_m: float,
+    dem_path: str | Path | None = None,
+    land_cover_path: str | Path | None = None,
+) -> tuple[np.ndarray | None, np.ndarray | None, dict[str, Any]]:
+    """Read optional DEM and land-cover rasters on the exact SpritzMet grid.
+
+    DEM values are continuous and are bilinearly resampled. Land-cover values
+    are categorical labels and are sampled with nearest-neighbor logic.
+    GeoTIFF/COG input is supported through the optional `rasterio` dependency
+    used by the terrain package.
+    """
+    metadata: dict[str, Any] = {}
+    if dem_path is None and land_cover_path is None:
+        return None, None, metadata
+
+    from sprtz.terrain.providers.base import RasterRequest
+    from sprtz.terrain.providers.local import LocalRasterProvider
+    from sprtz.terrain.regrid import DomainDefinition, build_target_grid, resample_dem, resample_land_cover
+
+    domain = DomainDefinition(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        nx=nx,
+        ny=ny,
+        dx_m=dx_m,
+        dy_m=dy_m,
+    )
+    grid = build_target_grid(domain)
+    dem = None
+    land_cover = None
+    if dem_path is not None:
+        raster = LocalRasterProvider(dem_path, "dem", dataset="spritzmet-dem").fetch(
+            RasterRequest("dem", domain, ".")
+        )
+        dem = resample_dem(raster, grid)
+        metadata.update(
+            {
+                "dem_source": raster.source,
+                "dem_dataset": raster.dataset,
+                "dem_crs": raster.crs,
+                "dem_resampling": "bilinear",
+            }
+        )
+    if land_cover_path is not None:
+        raster = LocalRasterProvider(land_cover_path, "landcover", dataset="spritzmet-land-cover").fetch(
+            RasterRequest("landcover", domain, ".")
+        )
+        land_cover = resample_land_cover(raster, grid)
+        metadata.update(
+            {
+                "land_cover_source": raster.source,
+                "land_cover_dataset": raster.dataset,
+                "land_cover_crs": raster.crs,
+                "land_cover_resampling": "nearest",
+            }
+        )
+    return dem, land_cover, metadata
+
+
 def downscale_wrf_to_local_grid(
     wrf: WRFWindField,
     *,
@@ -615,6 +687,7 @@ def downscale_wrf_to_local_grid(
     neighbours: int = 8,
     dem_elevation_m: np.ndarray | None = None,
     land_cover: np.ndarray | None = None,
+    terrain_input_metadata: dict[str, Any] | None = None,
 ) -> LocalMeteorology:
     """Interpolate SpritzWRF near-surface fields to a local SpritzMet grid.
 
@@ -659,7 +732,7 @@ def downscale_wrf_to_local_grid(
             power=power,
             neighbours=neighbours,
         )
-    u, v, precipitation_rate, terrain_metadata = _apply_surface_downscaling(
+    u, v, precipitation_rate, downscaling_metadata = _apply_surface_downscaling(
         u,
         v,
         precipitation_rate,
@@ -668,6 +741,8 @@ def downscale_wrf_to_local_grid(
         dx_m=dx_m,
         dy_m=dy_m,
     )
+    if terrain_input_metadata:
+        downscaling_metadata = {**downscaling_metadata, **terrain_input_metadata}
     valid_datetime = None
     valid_datetimes = None
     if wrf.metadata:
@@ -690,7 +765,7 @@ def downscale_wrf_to_local_grid(
         str(wrf.source_path),
         valid_datetime_utc=valid_datetime,
         valid_datetimes_utc=valid_datetimes,
-        downscaling_metadata=terrain_metadata,
+        downscaling_metadata=downscaling_metadata,
     )
 
 

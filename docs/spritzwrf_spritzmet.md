@@ -67,6 +67,20 @@ in `sprtz.models.spritzmet` and bounded for deterministic screening workflows.
 Without these optional arrays, the pipeline preserves the original
 WRF-to-local-grid interpolation behavior.
 
+Use case 01 exposes the same path from the command line:
+
+```bash
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+  --wrf data/wrf/d03/wrf5_d03_20260621Z0000.nc \
+  --output data/output/wrf_100m_wind.nc \
+  --center-lat 40.85 \
+  --center-lon 14.27 \
+  --nx 101 \
+  --ny 101 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
+```
+
 SpritzWRF handles WRF/CF dimensions explicitly. Four-dimensional wind variables
 are interpreted as `time, level, y, x` when dimension names such as `Time`,
 `bottom_top`, `south_north`, and `west_east` are present; `time_index` and

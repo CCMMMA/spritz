@@ -121,6 +121,8 @@ def downscale_wrf_to_100m(
     download_dir: str | Path = "data/wrf",
     force_download: bool = False,
     download_timeout_s: float = 120.0,
+    dem_path: str | Path | None = None,
+    land_cover_path: str | Path | None = None,
 ) -> WindDownscalingResult:
     """Downscale 1 km WRF wind to a 100 m local grid using SpritzWRF then SpritzMet.
 
@@ -154,6 +156,16 @@ def downscale_wrf_to_100m(
             "or enable --allow-synthetic for tests."
         )
     _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=prefer_netcdf)
+    dem_elevation_m, land_cover, terrain_metadata = spritzmet.terrain_downscaling_inputs_from_rasters(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        nx=nx,
+        ny=ny,
+        dx_m=dx_m,
+        dy_m=dy_m,
+        dem_path=dem_path,
+        land_cover_path=land_cover_path,
+    )
     met = spritzmet.downscale_wrf_to_local_grid(
         wrf,
         center_lat=center_lat,
@@ -162,6 +174,9 @@ def downscale_wrf_to_100m(
         ny=ny,
         dx_m=dx_m,
         dy_m=dy_m,
+        dem_elevation_m=dem_elevation_m,
+        land_cover=land_cover,
+        terrain_input_metadata=terrain_metadata,
     )
     fmt = spritzmet.write_local_meteorology(output_path, met, prefer_netcdf=prefer_netcdf)
     plot_path = plot_netcdf_if_available(
@@ -198,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dy", type=float, default=100.0)
     parser.add_argument("--time-index", type=int, default=None, help="time index to extract; omit to downscale all WRF times")
     parser.add_argument("--level-index", type=int, default=None, help="vertical level index to extract; omit to downscale all WRF levels")
+    parser.add_argument("--dem", default=None, help="Optional DEM raster, e.g. data/dem/cop30_naples.tif")
+    parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster, e.g. data/landcover/lc100_naples.tif")
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--allow-synthetic", action="store_true")
     args = parser.parse_args(argv)
@@ -229,6 +246,8 @@ def main(argv: list[str] | None = None) -> int:
         download_dir=args.download_dir,
         force_download=args.force_download,
         download_timeout_s=args.download_timeout_s,
+        dem_path=args.dem,
+        land_cover_path=args.land_cover,
     )
     configure_logging(False)
     LOGGER.info("%s", result.as_dict())

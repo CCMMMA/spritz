@@ -109,6 +109,42 @@ def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
     assert out.exists()
 
 
+def test_high_resolution_wind_entrypoint_uses_dem_and_land_cover_rasters(tmp_path: Path) -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind.py")
+    out = tmp_path / "wind_terrain.json"
+
+    assert (
+        module.main(
+            [
+                "--allow-synthetic",
+                "--json",
+                "--output",
+                str(out),
+                "--center-lat",
+                "40.85",
+                "--center-lon",
+                "14.27",
+                "--nx",
+                "7",
+                "--ny",
+                "7",
+                "--dem",
+                "examples/data/highres_dem.asc",
+                "--land-cover",
+                "examples/data/highres_landcover.asc",
+            ]
+        )
+        == 0
+    )
+    payload = read_json(out)
+    metadata = payload["metadata"]
+    assert metadata["downscaling_algorithm"] == "clean_room_calmet_style_diagnostic"
+    assert metadata["uses_dem_elevation_m"] is True
+    assert metadata["uses_land_cover"] is True
+    assert metadata["dem_resampling"] == "bilinear"
+    assert metadata["land_cover_resampling"] == "nearest"
+
+
 def test_high_resolution_wind_run_entrypoint_bbox_synthetic(tmp_path: Path) -> None:
     module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind.py")
     out = tmp_path / "wind_bbox.json"
@@ -132,6 +168,10 @@ def test_high_resolution_wind_run_entrypoint_bbox_synthetic(tmp_path: Path) -> N
                 "100",
                 "--dy",
                 "100",
+                "--dem",
+                "examples/data/highres_dem.asc",
+                "--land-cover",
+                "examples/data/highres_landcover.asc",
             ]
         )
         == 0
@@ -459,6 +499,10 @@ def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_an
                 "100",
                 "--dy",
                 "100",
+                "--dem",
+                "examples/data/highres_dem.asc",
+                "--land-cover",
+                "examples/data/highres_landcover.asc",
             ]
         )
         == 0
@@ -470,6 +514,9 @@ def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_an
         assert ds.variables["precipitation_rate"].shape == (2, 3, 3)
         assert ds.variables["time"].shape == (2,)
         assert str(ds.variables["time_datetime"][1]) == "2026-05-27T01:00:00Z"
+        assert ds.spritzmet_downscaling_algorithm == "clean_room_calmet_style_diagnostic"
+        assert ds.spritzmet_uses_dem_elevation_m == "true"
+        assert ds.spritzmet_uses_land_cover == "true"
 
 
 def test_high_resolution_wind_entrypoint_date_hours_writes_one_multitime_file(tmp_path: Path) -> None:
