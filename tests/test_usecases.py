@@ -19,7 +19,7 @@ from acerra_waste_to_energy import (  # noqa: E402
     ACERRA_STACK_HEIGHT_M,
     build_acerra_config,
 )
-from high_resolution_wind import interpolate_wrf_to_100m, resolve_wrf_input  # noqa: E402
+from high_resolution_wind import downscale_wrf_to_100m, resolve_wrf_input  # noqa: E402
 from model_evaluation import evaluate_wildfire_event  # noqa: E402
 from production_incidents import (  # noqa: E402
     build_incident_config,
@@ -54,7 +54,7 @@ def _load_usecase_step(folder: str, script: str):
 
 def test_high_resolution_wind_json_synthetic(tmp_path: Path) -> None:
     out = tmp_path / "wind.json"
-    result = interpolate_wrf_to_100m(
+    result = downscale_wrf_to_100m(
         None,
         out,
         center_lat=40.85,
@@ -71,7 +71,7 @@ def test_high_resolution_wind_json_synthetic(tmp_path: Path) -> None:
 
 def test_high_resolution_wind_netcdf_synthetic_requires_valid_time(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="valid-time metadata"):
-        interpolate_wrf_to_100m(
+        downscale_wrf_to_100m(
             None,
             tmp_path / "wind.nc",
             center_lat=40.85,
@@ -404,6 +404,146 @@ def test_wrf_four_dimensional_wind_selects_time_and_level_independently(tmp_path
     assert wrf.metadata is not None
     assert wrf.metadata["time_index"] == "1"
     assert wrf.metadata["level_index"] == "2"
+
+
+def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_and_levels(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_interpolate_wind.py")
+    wrf_path = tmp_path / "wrf_all_times_levels.nc"
+    with Dataset(wrf_path, "w") as ds:
+        ds.createDimension("Time", 2)
+        ds.createDimension("DateStrLen", 19)
+        ds.createDimension("bottom_top", 3)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        times = ds.createVariable("Times", "S1", ("Time", "DateStrLen"))
+        times[0, :] = np.asarray(list("2026-05-27_00:00:00"), dtype="S1")
+        times[1, :] = np.asarray(list("2026-05-27_01:00:00"), dtype="S1")
+        lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]], [[40.0, 40.0], [40.01, 40.01]]])
+        lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]], [[14.0, 14.01], [14.0, 14.01]]])
+        for name, values in [("XLAT", lat_values), ("XLONG", lon_values)]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+        u_values = np.zeros((2, 3, 2, 2), dtype=float)
+        v_values = np.zeros((2, 3, 2, 2), dtype=float)
+        for time in range(2):
+            for level in range(3):
+                u_values[time, level, :, :] = 100.0 * time + 10.0 * level + 3.0
+                v_values[time, level, :, :] = 100.0 * time + 10.0 * level + 4.0
+        for name, values in [("U", u_values), ("V", v_values)]:
+            var = ds.createVariable(name, "f8", ("Time", "bottom_top", "south_north", "west_east"))
+            var[:, :, :, :] = values
+        rain = ds.createVariable("RAINRATE", "f8", ("Time", "south_north", "west_east"))
+        rain[:, :, :] = np.asarray([np.full((2, 2), 0.5), np.full((2, 2), 1.5)])
+
+    out = tmp_path / "local_all.nc"
+    assert (
+        module.main(
+            [
+                "--wrf",
+                str(wrf_path),
+                "--output",
+                str(out),
+                "--center-lat",
+                "40.005",
+                "--center-lon",
+                "14.005",
+                "--nx",
+                "3",
+                "--ny",
+                "3",
+                "--dx",
+                "100",
+                "--dy",
+                "100",
+            ]
+        )
+        == 0
+    )
+    with Dataset(out) as ds:
+        assert ds.variables["eastward_wind"].shape == (2, 3, 3, 3)
+        assert ds.variables["northward_wind"].shape == (2, 3, 3, 3)
+        assert ds.variables["wind_speed"].shape == (2, 3, 3, 3)
+        assert ds.variables["precipitation_rate"].shape == (2, 3, 3)
+        assert ds.variables["time"].shape == (2,)
+        assert str(ds.variables["time_datetime"][1]) == "2026-05-27T01:00:00Z"
+
+
+def test_high_resolution_wind_entrypoint_date_hours_writes_one_multitime_file(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_interpolate_wind.py")
+    wrf_dir = tmp_path / "wrf"
+    wrf_dir.mkdir()
+    for hour in range(2):
+        path = wrf_dir / f"wrf5_d03_20260527Z{hour:02d}00.nc"
+        with Dataset(path, "w") as ds:
+            ds.createDimension("Time", 1)
+            ds.createDimension("DateStrLen", 19)
+            ds.createDimension("bottom_top", 2)
+            ds.createDimension("south_north", 2)
+            ds.createDimension("west_east", 2)
+            times = ds.createVariable("Times", "S1", ("Time", "DateStrLen"))
+            times[0, :] = np.asarray(list(f"2026-05-27_{hour:02d}:00:00"), dtype="S1")
+            lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]]])
+            lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]]])
+            for name, values in [("XLAT", lat_values), ("XLONG", lon_values)]:
+                var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+                var[:, :, :] = values
+            u_values = np.zeros((1, 2, 2, 2), dtype=float)
+            v_values = np.zeros((1, 2, 2, 2), dtype=float)
+            for level in range(2):
+                u_values[0, level, :, :] = 100.0 * hour + 10.0 * level + 3.0
+                v_values[0, level, :, :] = 100.0 * hour + 10.0 * level + 4.0
+            for name, values in [("U", u_values), ("V", v_values)]:
+                var = ds.createVariable(name, "f8", ("Time", "bottom_top", "south_north", "west_east"))
+                var[:, :, :, :] = values
+            rain = ds.createVariable("RAINRATE", "f8", ("Time", "south_north", "west_east"))
+            rain[:, :, :] = np.full((1, 2, 2), float(hour + 1))
+
+    out = tmp_path / "wrf_100m_wind_bbox.nc"
+    assert (
+        module.main(
+            [
+                "--date",
+                "20260527Z0000",
+                "--hours",
+                "2",
+                "--download-dir",
+                str(wrf_dir),
+                "--output",
+                str(out),
+                "--center-lat",
+                "40.85",
+                "--center-lon",
+                "14.27",
+                "--nx",
+                "3",
+                "--ny",
+                "3",
+                "--dx",
+                "100",
+                "--dy",
+                "100",
+            ]
+        )
+        == 0
+    )
+    with Dataset(out) as ds:
+        assert ds.variables["eastward_wind"].dimensions == ("time", "z", "y", "x")
+        assert ds.variables["eastward_wind"].shape == (2, 2, 3, 3)
+        assert ds.variables["northward_wind"].dimensions == ("time", "z", "y", "x")
+        assert ds.variables["northward_wind"].shape == (2, 2, 3, 3)
+        assert ds.variables["precipitation_rate"].dimensions == ("time", "y", "x")
+        assert ds.variables["precipitation_rate"].shape == (2, 3, 3)
+        assert ds.variables["time"].shape == (2,)
+        assert str(ds.variables["time_datetime"][0]) == "2026-05-27T00:00:00Z"
+        assert str(ds.variables["time_datetime"][1]) == "2026-05-27T01:00:00Z"
 
 
 def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> None:

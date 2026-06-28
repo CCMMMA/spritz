@@ -1,4 +1,4 @@
-# Use case 01 — High-resolution wind-field interpolation
+# Use case 01 - High-resolution wind-field downscaling
 
 Goal: obtain a local 100 m wind and precipitation-rate field centered on a user-supplied latitude and longitude, starting from a 1 km WRF5 d03 file.
 
@@ -7,15 +7,17 @@ This didactic workflow is deliberately explicit, and
 
 1. **Input step.** Use a local WRF NetCDF file or call `spritzwrf.download_meteo_uniparthenope_wrf` for the meteo@uniparthenope archive.
 2. **SpritzWRF extraction step.** Call `spritzwrf.load_near_surface_wind` to extract latitude, longitude, near-surface wind components, and precipitation when available.
-3. **SpritzMet interpolation step.** Call `spritzmet.downscale_wrf_to_local_grid` to build the local azimuthal-equidistant grid and interpolate SpritzWRF fields onto the 100 m grid.
+3. **SpritzMet downscaling step.** Call `spritzmet.downscale_wrf_to_local_grid` to build the local azimuthal-equidistant grid and downscale SpritzWRF fields onto the 100 m grid.
 4. **Output step.** Call `spritzmet.write_local_meteorology` to write NetCDF-CF by default, or JSON for lightweight runs.
 
 SpritzWRF reads WRF valid time strictly from WRF/CF metadata (`Times`, CF
 `time`, or explicit global time attributes). It does not infer datetimes from
-the WRF filename. Four-dimensional WRF wind variables are sliced as
-`time, level, y, x`, using `--time-index` and `--level-index` independently.
-The NetCDF-CF output includes a CF `time(time)` coordinate with absolute UTC
-units when the WRF file provides valid-time metadata.
+the WRF filename. Four-dimensional WRF wind variables are managed as
+`time, level, y, x`. By default, when `--time-index` and `--level-index` are
+omitted, the workflow downscales all WRF times and all wind levels. Pass
+either option only when you need a single slice. The NetCDF-CF output includes a
+CF `time(time)` coordinate with absolute UTC units when the WRF file provides
+valid-time metadata.
 
 The grid can be requested in either of two ways:
 
@@ -63,7 +65,8 @@ land-cover input when `sprtz[geo]` is installed; see
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
-  --download-time 20260527Z0000 \
+  --date 20260527Z0000 \
+  --hours 24 \
   --download-dir data/wrf \
   --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -71,6 +74,13 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --nx 101 --ny 101 \
   --dx 100 --dy 100
 ```
+
+This mode uses hourly WRF files from `data/wrf` for the interval
+`20260527Z0000` through `20260527Z2300`. Existing files named
+`wrf5_d03_YYYYMMDDZhh00.nc` may be directly under `data/wrf` or under
+`data/wrf/d03`; missing files are downloaded to `data/wrf`. The result is one
+NetCDF file with 24 time slices on the requested 101 by 101 grid at 100 m by
+100 m spacing.
 
 ## Run with a bounding box
 
@@ -107,6 +117,19 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
+  --center-lon 14.27
+```
+
+This downscales all WRF times and all wind levels into
+`eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, and
+`precipitation_rate(time,y,x)`. To extract only one WRF slice, pass explicit
+indices:
+
+```bash
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
+  --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
+  --output data/output/wrf_100m_wind_t000_z000.nc \
+  --center-lat 40.85 \
   --center-lon 14.27 \
   --time-index 0 \
   --level-index 0
@@ -121,7 +144,7 @@ regenerate the publication map explicitly, run:
 ```bash
 python tools/plotter.py data/output/wrf_100m_wind.nc \
   --variable wind_speed \
-  --time-index 0 \
+  --time-index 12 \
   --level-index 0 \
   --output data/output/wrf_100m_wind.png
 ```

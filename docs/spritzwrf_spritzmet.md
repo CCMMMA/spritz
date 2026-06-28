@@ -41,8 +41,8 @@ from sprtz.models import spritzwrf, spritzmet
 
 wrf = spritzwrf.load_near_surface_wind(
     "data/wrf/wrf5_d03_20260527Z0000.nc",
-    time_index=0,
-    level_index=0,
+    time_index=None,
+    level_index=None,
 )
 met = spritzmet.downscale_wrf_to_local_grid(
     wrf,
@@ -59,12 +59,15 @@ spritzmet.write_local_meteorology("output/wrf_100m_wind.nc", met)
 SpritzWRF handles WRF/CF dimensions explicitly. Four-dimensional wind variables
 are interpreted as `time, level, y, x` when dimension names such as `Time`,
 `bottom_top`, `south_north`, and `west_east` are present; `time_index` and
-`level_index` are selected independently. SpritzWRF reads precipitation rate
-variables named `RAINRATE`, `PRECIP_RATE`, `precipitation_rate`, or
+`level_index` are selected independently. Pass `None` for either index to
+preserve the full axis; use case 01 does this by default so the ordinary command
+downscales all available WRF times and all wind levels. SpritzWRF reads
+precipitation rate variables named `RAINRATE`, `PRECIP_RATE`, `precipitation_rate`, or
 `precip_rate`. If the WRF file contains accumulated rain variables (`RAINC`,
 `RAINNC`, `RAINSH`), SpritzWRF uses the increment at the requested `time_index`
-as a millimeters-per-hour screening rate. SpritzMet interpolates the
-precipitation field using the same local-grid transform as the wind field.
+as a millimeters-per-hour screening rate, or all increments when all times are
+preserved. SpritzMet downscales the precipitation field using the same
+local-grid transform as the wind field.
 
 SpritzWRF also owns WRF valid-time extraction. It reads datetimes only from
 WRF/CF time metadata such as `Times`, CF `time` units, or explicit global time
@@ -73,8 +76,8 @@ that selected UTC datetime to the local NetCDF-CF `time(time)` coordinate.
 
 ## Output conventions
 
-SpritzMet writes a strict NetCDF-CF product containing local x/y, optional
-height `z`, latitude/longitude, eastward/northward wind, wind speed,
+SpritzMet writes a strict NetCDF-CF product containing local x/y, vertical
+level `z`, latitude/longitude, eastward/northward wind, wind speed,
 meteorological wind direction, and `precipitation_rate` in `mm h-1`. Wind
 variables are stored as `eastward_wind(time,z,y,x)` and
 `northward_wind(time,z,y,x)`. Surface precipitation is stored as
@@ -83,7 +86,7 @@ CF `time(time)` coordinate with absolute UTC units. JSON fallback uses the same
 logical dimensionality for WRF-derived local products.
 
 Set `run.precipitation_washout: true` in the Spritz JSON configuration to use
-the interpolated precipitation rate as an additional wet-removal term in the
+the downscaled precipitation rate as an additional wet-removal term in the
 Gaussian and particle concentration backends.
 
 For station-driven configurations, station records may include

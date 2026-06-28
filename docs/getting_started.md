@@ -83,13 +83,17 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
 
 ## 3. Download WRF and create a 100 m SpritzMet wind product
 
-This command downloads the WRF file when it is not already present in `data/wrf/`, extracts near-surface wind with SpritzWRF, and interpolates it onto a 100 m local SpritzMet grid centered on the requested coordinate:
+This command uses 24 hourly WRF files from `data/wrf/` starting at
+`20260527Z0000`, downloading any missing hours, extracts wind with SpritzWRF,
+and downscales it onto a 100 m local SpritzMet grid centered on the requested
+coordinate:
 
 ```bash
 mkdir -p data/wrf output
 
 python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
-  --download-time 20260527Z0000 \
+  --date 20260527Z0000 \
+  --hours 24 \
   --download-dir data/wrf \
   --output output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -99,6 +103,10 @@ python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --dx 100 \
   --dy 100
 ```
+
+The resulting NetCDF contains one product with 24 time slices
+(`20260527Z0000` through `20260527Z2300`), wind fields as `time,z,y,x`, and
+surface precipitation as `time,y,x`.
 
 You can also request a geographic bounding box instead of a center plus node
 count. In this mode, `--dx` and `--dy` remain hard constraints; Spritz expands
@@ -126,7 +134,7 @@ output/wrf_100m_wind.nc
 Expected NetCDF-CF fields include:
 
 - `time` with strict CF absolute UTC units when the WRF file provides valid-time metadata
-- `z` height coordinate for wind levels
+- `z` vertical level coordinate for wind fields
 - `latitude`, `longitude`
 - `eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`
 - `wind_speed(time,z,y,x)`, `wind_from_direction(time,z,y,x)`

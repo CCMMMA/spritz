@@ -184,6 +184,7 @@ class LocalMeteorology:
     dy_m: float
     source: str
     valid_datetime_utc: str | None = None
+    valid_datetimes_utc: list[str] | None = None
 
     @property
     def wind_4d(self) -> tuple[np.ndarray, np.ndarray]:
@@ -228,6 +229,10 @@ class LocalMeteorology:
 
     def to_payload(self) -> dict[str, Any]:
         time_datetime = iso_utc(self.valid_datetime_utc)
+        time_datetimes = [iso_utc(value) for value in (self.valid_datetimes_utc or [])]
+        time_datetimes = [value for value in time_datetimes if value]
+        if not time_datetimes and time_datetime:
+            time_datetimes = [time_datetime]
         u4, v4 = self.wind_4d
         precipitation3 = self.precipitation_3d
         return {
@@ -238,7 +243,7 @@ class LocalMeteorology:
             "y": self.y.tolist(),
             "latitude": self.latitude.tolist(),
             "longitude": self.longitude.tolist(),
-            "z": [10.0],
+            "z": list(range(u4.shape[1])),
             "u": u4.tolist(),
             "v": v4.tolist(),
             "wind_speed": self.wind_speed.tolist(),
@@ -247,12 +252,21 @@ class LocalMeteorology:
             "dx_m": self.dx_m,
             "dy_m": self.dy_m,
             "source": self.source,
-            **({"time": [0.0], "time_units": cf_time_units(time_datetime), "time_datetime": [time_datetime]} if time_datetime else {}),
+            **(
+                {
+                    "time": list(range(len(time_datetimes))),
+                    "time_units": cf_time_units(time_datetimes[0]),
+                    "time_datetime": time_datetimes,
+                }
+                if time_datetimes
+                else {}
+            ),
             "metadata": {
                 "spritzwrf_to_spritzmet": True,
                 "interpolation": "inverse-distance weighting on WRF latitude/longitude nodes",
                 "schema_version": "1.2",
                 **({"valid_datetime_utc": time_datetime} if time_datetime else {}),
+                **({"valid_datetimes_utc": time_datetimes} if time_datetimes else {}),
             },
         }
 
@@ -311,6 +325,37 @@ def _idw_interpolate(
     return out.reshape(dst_lat.shape)
 
 
+def _interpolate_spatial_stack(
+    src_lat: np.ndarray,
+    src_lon: np.ndarray,
+    src_value: np.ndarray,
+    dst_lat: np.ndarray,
+    dst_lon: np.ndarray,
+    *,
+    power: float,
+    neighbours: int,
+) -> np.ndarray:
+    values = np.asarray(src_value, dtype=float)
+    if values.ndim == 2:
+        return _idw_interpolate(src_lat, src_lon, values, dst_lat, dst_lon, power=power, k=neighbours)
+    if values.ndim not in {3, 4}:
+        raise ValueError("WRF field must be shaped as y,x; time,y,x; or time,z,y,x")
+    leading_shape = values.shape[:-2]
+    interpolated = np.empty((*leading_shape, *dst_lat.shape), dtype=float)
+    for index in np.ndindex(leading_shape):
+        interpolated[index] = _idw_interpolate(src_lat, src_lon, values[index], dst_lat, dst_lon, power=power, k=neighbours)
+    return interpolated
+
+
+def _wind_time_count(values: np.ndarray) -> int:
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 4:
+        return arr.shape[0]
+    if arr.ndim == 3:
+        return arr.shape[0]
+    return 1
+
+
 def downscale_wrf_to_local_grid(
     wrf: WRFWindField,
     *,
@@ -329,23 +374,43 @@ def downscale_wrf_to_local_grid(
     if dx_m <= 0 or dy_m <= 0:
         raise ValueError("dx_m and dy_m must be positive")
     xx, yy, dst_lat, dst_lon = local_grid_latlon(center_lat, center_lon, nx, ny, dx_m, dy_m)
-    u = _idw_interpolate(wrf.latitude, wrf.longitude, wrf.u, dst_lat, dst_lon, power=power, k=neighbours)
-    v = _idw_interpolate(wrf.latitude, wrf.longitude, wrf.v, dst_lat, dst_lon, power=power, k=neighbours)
+    u = _interpolate_spatial_stack(
+        wrf.latitude,
+        wrf.longitude,
+        wrf.u,
+        dst_lat,
+        dst_lon,
+        power=power,
+        neighbours=neighbours,
+    )
+    v = _interpolate_spatial_stack(
+        wrf.latitude,
+        wrf.longitude,
+        wrf.v,
+        dst_lat,
+        dst_lon,
+        power=power,
+        neighbours=neighbours,
+    )
     if wrf.precipitation_rate is None:
-        precipitation_rate = np.zeros_like(u)
+        precipitation_rate = np.zeros((_wind_time_count(u), *dst_lat.shape), dtype=float)
     else:
-        precipitation_rate = _idw_interpolate(
+        precipitation_rate = _interpolate_spatial_stack(
             wrf.latitude,
             wrf.longitude,
             wrf.precipitation_rate,
             dst_lat,
             dst_lon,
             power=power,
-            k=neighbours,
+            neighbours=neighbours,
         )
     valid_datetime = None
+    valid_datetimes = None
     if wrf.metadata:
         valid_datetime = str(wrf.metadata.get("time_datetime", "") or "") or None
+        raw_datetimes = wrf.metadata.get("time_datetimes")
+        if isinstance(raw_datetimes, list):
+            valid_datetimes = [str(value) for value in raw_datetimes]
     return LocalMeteorology(
         xx,
         yy,
@@ -360,6 +425,7 @@ def downscale_wrf_to_local_grid(
         dy_m,
         str(wrf.source_path),
         valid_datetime_utc=valid_datetime,
+        valid_datetimes_utc=valid_datetimes,
     )
 
 
@@ -391,15 +457,18 @@ def write_local_meteorology(
             ds.source = met.source
             ds.center_latitude = float(met.center_lat)
             ds.center_longitude = float(met.center_lon)
-            if met.valid_datetime_utc:
-                ds.valid_datetime_utc = iso_utc(met.valid_datetime_utc) or str(met.valid_datetime_utc)
-            write_cf_time_coordinate(ds, [met.valid_datetime_utc] if met.valid_datetime_utc else None)
+            time_datetimes = [iso_utc(value) for value in (met.valid_datetimes_utc or [])]
+            time_datetimes = [value for value in time_datetimes if value]
+            if not time_datetimes and met.valid_datetime_utc:
+                parsed = iso_utc(met.valid_datetime_utc) or str(met.valid_datetime_utc)
+                ds.valid_datetime_utc = parsed
+                time_datetimes = [parsed]
+            write_cf_time_coordinate(ds, time_datetimes or None)
             z = ds.createVariable("z", "f8", ("z",))
-            z.standard_name = "height"
-            z.long_name = "height above ground"
-            z.units = "m"
+            z.long_name = "vertical level index"
+            z.units = "1"
             z.positive = "up"
-            z[:] = np.asarray([10.0] * nz, dtype=float)
+            z[:] = np.arange(nz, dtype=float)
             variables = [
                 ("x", met.x[0], ("x",), "m", "local projection x coordinate"),
                 ("y", met.y[:, 0], ("y",), "m", "local projection y coordinate"),

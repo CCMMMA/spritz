@@ -6,7 +6,7 @@ The workflow is intentionally step-by-step:
 
 1. **Choose the event location.** Provide the burning latitude and longitude through `--center-lat` and `--center-lon`.
 2. **Acquire meteorology.** Use a local WRF file or download WRF5 d03 from meteo@uniparthenope.
-3. **Downscale wind.** Reuse use case 01 logic: SpritzWRF extracts WRF wind and SpritzMet interpolates it to 100 m.
+3. **Downscale wind.** Reuse use case 01 logic: SpritzWRF extracts WRF wind and SpritzMet downscales it to 100 m.
 4. **Build source terms.** Convert burning material, optional burning temperature, duration, source height, and area into a documented screening heat-release and PM emission estimate.
 5. **Generate receptors.** Create a circular receptor set around the fire location.
 6. **Run dispersion.** Execute Spritz with the configured Gaussian or particle backend.

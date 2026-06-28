@@ -14,7 +14,7 @@ from pyproj import CRS, Transformer
 
 from sprtz.config import from_mapping
 from sprtz.io.jsonio import write_json
-from high_resolution_wind import interpolate_wrf_to_100m
+from high_resolution_wind import downscale_wrf_to_100m
 from sprtz.workflow import run_workflow
 from sprtz.logging import configure_logging
 from datetime_args import script_datetime_to_iso
@@ -390,7 +390,7 @@ def run_wildfire_event(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     wind_out = out / ("wrf_100m_wind.nc" if interchange == "netcdf" else "wrf_100m_wind.json")
-    wind_result = interpolate_wrf_to_100m(
+    wind_result = downscale_wrf_to_100m(
         wrf_path,
         wind_out,
         center_lat=center_lat,

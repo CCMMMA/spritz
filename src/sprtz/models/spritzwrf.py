@@ -126,6 +126,19 @@ def _bounded_index(requested: int, size: int) -> int:
     return min(max(requested, 0), size - 1)
 
 
+def _dimension_kind(dim: str) -> str | None:
+    lower = dim.lower()
+    if lower in TIME_DIMENSIONS or lower.startswith("time"):
+        return "time"
+    if lower in VERTICAL_DIMENSIONS:
+        return "level"
+    if lower in Y_DIMENSIONS:
+        return "y"
+    if lower in X_DIMENSIONS:
+        return "x"
+    return None
+
+
 def _select_2d(arr: np.ndarray, time_index: int) -> np.ndarray:
     arr = np.asarray(arr, dtype=float)
     while arr.ndim > 2:
@@ -138,8 +151,8 @@ def _select_wrf_spatial_2d_from_array(
     dims: tuple[str, ...],
     name: str,
     *,
-    time_index: int,
-    level_index: int,
+    time_index: int | None,
+    level_index: int | None,
     path: Path,
 ) -> np.ndarray:
     """Select one horizontal slice using WRF/CF dimension names.
@@ -152,45 +165,62 @@ def _select_wrf_spatial_2d_from_array(
     if dims and len(dims) != arr.ndim:
         raise ValueError(f"variable {name} in {path} has inconsistent dimensions")
     if not dims:
+        if time_index is None and level_index is None and arr.ndim in {2, 3, 4}:
+            return arr
+        if arr.ndim == 4 and time_index is not None and level_index is None:
+            return arr[_bounded_index(time_index, arr.shape[0]), :, :, :]
+        if arr.ndim == 4 and time_index is None and level_index is not None:
+            return arr[:, _bounded_index(level_index, arr.shape[1]), :, :]
+        if arr.ndim == 4:
+            return arr[_bounded_index(time_index or 0, arr.shape[0]), _bounded_index(level_index or 0, arr.shape[1]), :, :]
+        if arr.ndim == 3 and time_index is None:
+            return arr
         return _select_2d(arr, time_index)
 
     selected = arr
     remaining_dims = list(dims)
     for axis in range(len(dims) - 1, -1, -1):
-        dim = dims[axis]
-        lower = dim.lower()
-        if lower in TIME_DIMENSIONS or lower.startswith("time"):
+        kind = _dimension_kind(dims[axis])
+        if kind == "time" and time_index is not None:
             selected = np.take(selected, _bounded_index(time_index, selected.shape[axis]), axis=axis)
             remaining_dims.pop(axis)
-        elif lower in VERTICAL_DIMENSIONS:
+        elif kind == "level" and level_index is not None:
             selected = np.take(selected, _bounded_index(level_index, selected.shape[axis]), axis=axis)
             remaining_dims.pop(axis)
 
-    squeeze_axes = [
-        axis
-        for axis, dim in enumerate(remaining_dims)
-        if selected.shape[axis] == 1 and dim.lower() not in Y_DIMENSIONS and dim.lower() not in X_DIMENSIONS
-    ]
-    for axis in reversed(squeeze_axes):
-        selected = np.squeeze(selected, axis=axis)
-        remaining_dims.pop(axis)
-
-    if selected.ndim != 2:
+    kinds = [_dimension_kind(dim) for dim in remaining_dims]
+    if "y" not in kinds or "x" not in kinds:
         raise ValueError(
-            f"variable {name} in {path} must resolve to a 2D y/x slice; "
+            f"variable {name} in {path} must include y/x dimensions after selection; "
             f"got dimensions {remaining_dims} with shape {selected.shape}"
         )
-    return np.asarray(selected, dtype=float)
+    ordered_axes: list[int] = []
+    for wanted in ("time", "level", "y", "x"):
+        for axis, kind in enumerate(kinds):
+            if kind == wanted:
+                ordered_axes.append(axis)
+                break
+    extra_axes = [axis for axis in range(selected.ndim) if axis not in ordered_axes]
+    for axis in extra_axes:
+        if selected.shape[axis] != 1:
+            raise ValueError(
+                f"variable {name} in {path} has unsupported dimension {remaining_dims[axis]!r} "
+                f"with size {selected.shape[axis]}"
+            )
+    ordered = np.transpose(selected, ordered_axes + extra_axes)
+    if extra_axes:
+        ordered = np.squeeze(ordered, axis=tuple(range(len(ordered_axes), ordered.ndim)))
+    return np.asarray(ordered, dtype=float)
 
 
-def _select_wrf_spatial_2d(variable: Any, *, time_index: int, level_index: int, path: Path) -> np.ndarray:
+def _select_wrf_spatial_2d(variable: Any, *, time_index: int | None, level_index: int | None, path: Path) -> np.ndarray:
     arr = np.asarray(variable[:], dtype=float)
     dims = tuple(str(dim) for dim in getattr(variable, "dimensions", ()))
     name = str(getattr(variable, "name", "unknown"))
     return _select_wrf_spatial_2d_from_array(arr, dims, name, time_index=time_index, level_index=level_index, path=path)
 
 
-def _select_precipitation_rate(ds: Any, time_index: int, level_index: int, path: Path) -> np.ndarray | None:
+def _select_precipitation_rate(ds: Any, time_index: int | None, level_index: int | None, path: Path) -> np.ndarray | None:
     """Return a WRF precipitation-rate proxy in mm h-1 when variables exist."""
 
     def read_raw(name: str) -> tuple[np.ndarray, tuple[str, ...]] | None:
@@ -241,9 +271,35 @@ def _select_precipitation_rate(ds: Any, time_index: int, level_index: int, path:
             ),
             0.0,
         )
+    current_dims = tuple(dim for axis, dim in enumerate(accum_dims) if axis != time_axis)
+    if time_index is None:
+        values = []
+        for index in range(arr.shape[time_axis]):
+            current_arr = np.take(arr, index, axis=time_axis)
+            current = _select_wrf_spatial_2d_from_array(
+                current_arr,
+                current_dims,
+                "accumulated_precipitation",
+                time_index=0,
+                level_index=level_index,
+                path=path,
+            )
+            if index == 0:
+                values.append(np.maximum(current, 0.0))
+            else:
+                previous_arr = np.take(arr, index - 1, axis=time_axis)
+                previous = _select_wrf_spatial_2d_from_array(
+                    previous_arr,
+                    current_dims,
+                    "accumulated_precipitation",
+                    time_index=0,
+                    level_index=level_index,
+                    path=path,
+                )
+                values.append(np.maximum(current - previous, 0.0))
+        return np.asarray(values, dtype=float)
     index = _bounded_index(time_index, arr.shape[time_axis])
     current_arr = np.take(arr, index, axis=time_axis)
-    current_dims = tuple(dim for axis, dim in enumerate(accum_dims) if axis != time_axis)
     current = _select_wrf_spatial_2d_from_array(
         current_arr,
         current_dims,
@@ -313,7 +369,44 @@ def _selected_wrf_datetime(ds: Any, time_index: int) -> str | None:
     return None
 
 
-def load_near_surface_wind(path: str | Path, *, time_index: int = 0, level_index: int = 0) -> WRFWindField:
+def _selected_wrf_datetimes(ds: Any) -> list[str] | None:
+    if "Times" in ds.variables:
+        values = np.asarray(ds.variables["Times"][:])
+        parsed = [iso_utc(_decode_wrf_time(value)) for value in values]
+        result = [value for value in parsed if value]
+        return result or None
+    if "time" in ds.variables:
+        time_var = ds.variables["time"]
+        units = str(getattr(time_var, "units", "")).strip()
+        if "since" in units.lower():
+            try:
+                from netCDF4 import num2date  # type: ignore
+
+                values = np.asarray(time_var[:], dtype=float)
+                parsed = [
+                    iso_utc(
+                        num2date(
+                            float(value),
+                            units=units,
+                            calendar=str(getattr(time_var, "calendar", "standard")),
+                            only_use_cftime_datetimes=False,
+                        ).isoformat()
+                    )
+                    for value in values
+                ]
+                result = [value for value in parsed if value]
+                return result or None
+            except Exception:
+                pass
+    return None
+
+
+def load_near_surface_wind(
+    path: str | Path,
+    *,
+    time_index: int | None = 0,
+    level_index: int | None = 0,
+) -> WRFWindField:
     """Extract near-surface wind from WRF/WRF-like NetCDF into a SpritzWRF object.
 
     Accepted variable combinations include:
@@ -323,8 +416,8 @@ def load_near_surface_wind(path: str | Path, *, time_index: int = 0, level_index
     - CF-like ``latitude``/``longitude`` with ``eastward_wind``/``northward_wind``
 
     Four-dimensional wind variables are interpreted as time, vertical level,
-    y, and x dimensions when WRF/CF dimension names are present.  ``level_index``
-    selects the vertical level independently from ``time_index``.
+    y, and x dimensions when WRF/CF dimension names are present.  ``None`` for
+    ``time_index`` or ``level_index`` preserves the full corresponding axis.
     """
     if not netcdf_available():
         raise RuntimeError("netCDF4 is required to read WRF NetCDF files; install sprtz[netcdf]")
@@ -343,8 +436,19 @@ def load_near_surface_wind(path: str | Path, *, time_index: int = 0, level_index
                     )
             raise KeyError(f"none of variables {names} found in WRF file {p}")
 
-        lat = read2d(("XLAT", "XLAT_M", "lat", "latitude"))
-        lon = read2d(("XLONG", "XLONG_M", "lon", "longitude"))
+        def read_coordinate(names: tuple[str, ...]) -> np.ndarray:
+            for name in names:
+                if name in ds.variables:
+                    return _select_wrf_spatial_2d(
+                        ds.variables[name],
+                        time_index=0 if time_index is None else time_index,
+                        level_index=0,
+                        path=p,
+                    )
+            raise KeyError(f"none of variables {names} found in WRF file {p}")
+
+        lat = read_coordinate(("XLAT", "XLAT_M", "lat", "latitude"))
+        lon = read_coordinate(("XLONG", "XLONG_M", "lon", "longitude"))
         if "U10" in ds.variables and "V10" in ds.variables:
             u = read2d(("U10",))
             v = read2d(("V10",))
@@ -359,18 +463,24 @@ def load_near_surface_wind(path: str | Path, *, time_index: int = 0, level_index
             v = read2d(("northward_wind", "v", "V"))
         precipitation_rate = _select_precipitation_rate(ds, time_index, level_index, p)
         attrs = {name: str(getattr(ds, name)) for name in ds.ncattrs()}
-        selected_datetime = _selected_wrf_datetime(ds, time_index)
-        if selected_datetime:
-            attrs["time_datetime"] = selected_datetime
-        attrs["time_index"] = str(time_index)
-        attrs["level_index"] = str(level_index)
+        if time_index is None:
+            selected_datetimes = _selected_wrf_datetimes(ds)
+            if selected_datetimes:
+                attrs["time_datetime"] = selected_datetimes[0]
+                attrs["time_datetimes"] = selected_datetimes
+        else:
+            selected_datetime = _selected_wrf_datetime(ds, time_index)
+            if selected_datetime:
+                attrs["time_datetime"] = selected_datetime
+        attrs["time_index"] = "all" if time_index is None else str(time_index)
+        attrs["level_index"] = "all" if level_index is None else str(level_index)
     return WRFWindField(
         lat,
         lon,
         u,
         v,
         p,
-        time_index=time_index,
+        time_index=0 if time_index is None else time_index,
         metadata=attrs,
         precipitation_rate=precipitation_rate,
     )

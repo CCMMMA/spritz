@@ -17,7 +17,7 @@ from plotting import plot_netcdf_if_available
 LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
-class WindInterpolationResult:
+class WindDownscalingResult:
     output_path: Path
     nx: int
     ny: int
@@ -101,7 +101,7 @@ def resolve_wrf_input(
     )
 
 
-def interpolate_wrf_to_100m(
+def downscale_wrf_to_100m(
     wrf_path: str | Path | None,
     output_path: str | Path,
     *,
@@ -111,8 +111,8 @@ def interpolate_wrf_to_100m(
     ny: int = 101,
     dx_m: float = 100.0,
     dy_m: float = 100.0,
-    time_index: int = 0,
-    level_index: int = 0,
+    time_index: int | None = None,
+    level_index: int | None = None,
     prefer_netcdf: bool = True,
     allow_synthetic: bool = False,
     download_time: str | None = None,
@@ -121,7 +121,7 @@ def interpolate_wrf_to_100m(
     download_dir: str | Path = "data/wrf",
     force_download: bool = False,
     download_timeout_s: float = 120.0,
-) -> WindInterpolationResult:
+) -> WindDownscalingResult:
     """Downscale 1 km WRF wind to a 100 m local grid using SpritzWRF then SpritzMet.
 
     Workflow
@@ -129,7 +129,7 @@ def interpolate_wrf_to_100m(
     1. SpritzWRF loads a local WRF NetCDF file or downloads WRF5 d03 history data
        from the meteo@uniparthenope archive.
     2. SpritzMet creates an azimuthal-equidistant grid centered at the requested
-       latitude/longitude and interpolates the SpritzWRF wind vectors to that grid.
+       latitude/longitude and downscales the SpritzWRF wind vectors to that grid.
     3. The output is written as strict NetCDF-CF by default, with JSON fallback.
        NetCDF output requires SpritzWRF to provide WRF/CF valid-time metadata;
        datetimes are not inferred from filenames.
@@ -172,13 +172,17 @@ def interpolate_wrf_to_100m(
         center_lat=center_lat,
         center_lon=center_lon,
     )
-    return WindInterpolationResult(Path(output_path), nx, ny, dx_m, dy_m, center_lat, center_lon, met.source, fmt, plot_path=plot_path)
+    return WindDownscalingResult(Path(output_path), nx, ny, dx_m, dy_m, center_lat, center_lon, met.source, fmt, plot_path=plot_path)
+
+
+WindInterpolationResult = WindDownscalingResult
+interpolate_wrf_to_100m = downscale_wrf_to_100m
 
 
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="SpritzWRF -> SpritzMet: interpolate WRF 1 km winds to a 100 m local grid")
+    parser = argparse.ArgumentParser(description="SpritzWRF -> SpritzMet: downscale WRF 1 km winds to a 100 m local grid")
     parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --download-time or --allow-synthetic")
     parser.add_argument("--download-time", default=None, help="Download meteo@uniparthenope WRF5 d03 file for UTC YYYYMMDDZhhmm")
     parser.add_argument("--download-dir", default="data/wrf", help="Directory for downloaded WRF files")
@@ -192,8 +196,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ny", type=int, default=101)
     parser.add_argument("--dx", type=float, default=100.0)
     parser.add_argument("--dy", type=float, default=100.0)
-    parser.add_argument("--time-index", type=int, default=0)
-    parser.add_argument("--level-index", type=int, default=0)
+    parser.add_argument("--time-index", type=int, default=None, help="time index to extract; omit to downscale all WRF times")
+    parser.add_argument("--level-index", type=int, default=None, help="vertical level index to extract; omit to downscale all WRF levels")
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--allow-synthetic", action="store_true")
     args = parser.parse_args(argv)
@@ -207,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         configure_logging(False)
         LOGGER.info("%s", spritzwrf.meteo_uniparthenope_wrf_url(download_date, download_cycle_hour))
         return 0
-    result = interpolate_wrf_to_100m(
+    result = downscale_wrf_to_100m(
         args.wrf,
         args.output,
         center_lat=args.center_lat,

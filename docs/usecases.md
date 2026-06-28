@@ -39,7 +39,7 @@ products when a map can be derived locally. The generated PNG maps are written
 beside the use-case outputs; see `docs/plotter.md` for direct commands and
 Cartopy coastline options.
 
-## 01 - High-resolution wind and precipitation interpolation
+## 01 - High-resolution wind and precipitation downscaling
 
 This use case implements the meteorological preprocessing chain:
 
