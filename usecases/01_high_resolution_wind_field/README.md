@@ -50,7 +50,7 @@ land-cover input when `sprtz[geo]` is installed; see
 ## Run with automatic download
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --download-date 2026-05-27 \
   --download-cycle-hour 0 \
   --download-dir data/wrf \
@@ -64,7 +64,7 @@ python usecases/01_high_resolution_wind_field/run.py \
 ## Print the URL without downloading
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --download-date 2026-05-27 \
   --download-cycle-hour 0 \
   --output ignored.nc \
@@ -76,7 +76,7 @@ python usecases/01_high_resolution_wind_field/run.py \
 ## Run with an existing WRF file
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -86,7 +86,7 @@ python usecases/01_high_resolution_wind_field/run.py \
 ## Classroom/demo run without WRF data
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --allow-synthetic \
   --json \
   --output output/demo_wind.json \

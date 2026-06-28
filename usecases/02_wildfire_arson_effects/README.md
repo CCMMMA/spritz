@@ -41,14 +41,34 @@ python3 tools/copernicus-lc100-download.py \
 Use the downloaded DEM and LC100 land-cover rasters through `sprtz-terrain
 fetch` with the same domain settings used by the wildfire run.
 
-## Run with WRF download
+## Step 1: Prepare wind with WRF download
 
 ```bash
-python usecases/02_wildfire_arson_effects/run.py \
+python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
   --download-date 2026-05-27 \
   --download-cycle-hour 0 \
   --download-dir data/wrf \
-  --output-dir output/wildfire_case \
+  --output output/wildfire_case/wrf_100m_wind.nc \
+  --center-lat 40.85 \
+  --center-lon 14.27 \
+  --nx 101 --ny 101
+```
+
+## Step 1 alternative: Prepare wind with an existing WRF file
+
+```bash
+python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
+  --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
+  --output output/wildfire_case/wrf_100m_wind.nc \
+  --center-lat 40.85 \
+  --center-lon 14.27
+```
+
+## Step 2: Build the fire configuration
+
+```bash
+python usecases/02_wildfire_arson_effects/step_02_build_config.py \
+  --output output/wildfire_case/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --material plastic \
@@ -56,36 +76,17 @@ python usecases/02_wildfire_arson_effects/run.py \
   --end 2026-05-27T01:00:00+00:00 \
   --duration-s 3600 \
   --area-m2 2500 \
-  --precipitation-washout \
+  --precipitation-washout
+```
+
+## Step 3: Run the model
+
+```bash
+python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+  --config output/wildfire_case/wildfire_event.json \
+  --output-dir output/wildfire_case/model \
   --backend particles \
   --interchange netcdf
-```
-
-## Run with an existing WRF file
-
-```bash
-python usecases/02_wildfire_arson_effects/run.py \
-  --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
-  --output-dir output/wildfire_case \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --material paper \
-  --height-agl-m 3
-```
-
-## Classroom/demo run
-
-```bash
-python usecases/02_wildfire_arson_effects/run.py \
-  --allow-synthetic-wrf \
-  --interchange json \
-  --backend gaussian \
-  --output-dir output/demo_wildfire \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --material generic \
-  --duration-s 600 \
-  --area-m2 500
 ```
 
 ## Event timing, materials, and source height
@@ -118,10 +119,8 @@ set `id`, `latitude`, `longitude`, `height_agl_m`, `start_datetime`,
 `emission_factor_g_m2`.
 
 ```bash
-python usecases/02_wildfire_arson_effects/run.py \
-  --allow-synthetic-wrf \
-  --interchange json \
-  --output-dir output/multi_fire \
+python usecases/02_wildfire_arson_effects/step_02_build_config.py \
+  --output output/multi_fire/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --weather-start 2026-06-01T00:00:00+00:00 \

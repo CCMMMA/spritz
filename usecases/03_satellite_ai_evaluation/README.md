@@ -35,13 +35,13 @@ scenario includes terrain.
 ## Create a tiny demo mask
 
 ```bash
-python usecases/03_satellite_ai_evaluation/make_demo_mask.py output/demo_mask.json
+python usecases/03_satellite_ai_evaluation/step_01_make_demo_mask.py output/demo_mask.json
 ```
 
 ## Run evaluation
 
 ```bash
-python usecases/03_satellite_ai_evaluation/run.py \
+python usecases/03_satellite_ai_evaluation/step_02_evaluate.py \
   --concentration output/wildfire_case/model/concentration.nc \
   --satellite-mask output/demo_mask.json \
   --output output/wildfire_case/evaluation.json \

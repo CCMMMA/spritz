@@ -1,6 +1,6 @@
 # Operational use cases
 
-The root-level `usecases/` directory contains six documented operational templates.  They are meant to be copied into project-specific case folders and version-controlled with event metadata.
+The root-level `usecases/` directory contains documented operational templates. They are meant to be copied into project-specific case folders and version-controlled with event metadata. Each folder exposes explicit `step_*.py` scripts rather than one script that runs the whole case.
 
 ## Data Preparation
 
@@ -87,7 +87,7 @@ plant-specific data and validation.
 
 ## Documentation standard
 
-Each use case README contains purpose, workflow, inputs, commands, outputs, assumptions, and validation checks.  Commands use the same coordinate examples and WRF archive pattern so the use cases remain consistent.
+Each use case README contains purpose, workflow, inputs, commands, outputs, assumptions, and validation checks. Commands use the same coordinate examples and WRF archive pattern so the use cases remain consistent.
 # Use Cases
 
 Use cases are runnable teaching and production templates under `usecases/`.
@@ -101,7 +101,8 @@ For SLURM, wrap each command in a batch file with environment setup:
 #SBATCH --time=00:20:00
 module load python/3.11 openmpi/4.1
 source .venv/bin/activate
-mpiexec -n $SLURM_NTASKS python usecases/10_backward_plume_origin/run.py
+python usecases/10_backward_plume_origin/step_01_prepare_meteorology.py
+mpiexec -n $SLURM_NTASKS python usecases/10_backward_plume_origin/step_02_estimate_source.py
 ```
 
 See `docs/hpc.md` for full SLURM templates.

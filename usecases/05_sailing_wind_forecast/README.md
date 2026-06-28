@@ -54,14 +54,14 @@ DEM and LC100 land cover can be used by `sprtz-terrain fetch` for shoreline or
 terrain-aware preprocessing.
 
 ```bash
-python usecases/05_sailing_wind_forecast/run.py \
+python usecases/05_sailing_wind_forecast/step_01_build_forecast.py \
   --output output/sailing/bay_of_naples_forecast.json
 ```
 
 Pin an initialization date explicitly:
 
 ```bash
-python usecases/05_sailing_wind_forecast/run.py \
+python usecases/05_sailing_wind_forecast/step_01_build_forecast.py \
   --initialization-date 2026-06-01 \
   --outlook-hours 24 \
   --bbox 14.18,40.78,14.33,40.85 \

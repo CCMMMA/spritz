@@ -4,11 +4,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-THIS_DIR = Path(__file__).resolve().parent
-USECASES_ROOT = THIS_DIR.parent
+USECASES_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(USECASES_ROOT))
 
-from acerra_waste_to_energy import main
+from high_resolution_wind import main
 
 
 if __name__ == "__main__":

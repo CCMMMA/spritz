@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+USECASES_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(USECASES_ROOT))
+
+from wildfire import BURNING_MATERIALS, _load_fire_events, build_wildfire_config
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Build the wildfire/arson Spritz configuration")
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--center-lat", type=float, required=True)
+    parser.add_argument("--center-lon", type=float, required=True)
+    parser.add_argument("--temperature-k", type=float, default=None)
+    parser.add_argument("--material", choices=sorted(BURNING_MATERIALS), default="generic")
+    parser.add_argument("--start", default=None)
+    parser.add_argument("--end", default=None)
+    parser.add_argument("--duration-s", type=float, default=3600.0)
+    parser.add_argument("--area-m2", type=float, default=2500.0)
+    parser.add_argument("--height-agl-m", type=float, default=0.0)
+    parser.add_argument("--fire-events-json", default=None)
+    parser.add_argument("--weather-start", default=None)
+    parser.add_argument("--weather-end", default=None)
+    parser.add_argument("--firefighters-start", default=None)
+    parser.add_argument("--firefighters-end", default=None)
+    parser.add_argument("--firefighters-emission-factor", type=float, default=1.0)
+    parser.add_argument("--precipitation-washout", action="store_true")
+    parser.add_argument("--precipitation-rate-mm-h", type=float, default=0.0)
+    parser.add_argument("--wind-speed-m-s", type=float, default=4.0)
+    parser.add_argument("--wind-from-direction-deg", type=float, default=270.0)
+    args = parser.parse_args(argv)
+    build_wildfire_config(
+        args.output,
+        center_lat=args.center_lat,
+        center_lon=args.center_lon,
+        burning_temperature_k=args.temperature_k,
+        burning_material=args.material,
+        burning_start=args.start,
+        burning_end=args.end,
+        burning_duration_s=args.duration_s,
+        burning_area_m2=args.area_m2,
+        source_height_agl_m=args.height_agl_m,
+        fire_events=_load_fire_events(args.fire_events_json),
+        weather_start=args.weather_start,
+        weather_end=args.weather_end,
+        firefighters_start=args.firefighters_start,
+        firefighters_end=args.firefighters_end,
+        firefighters_emission_factor=args.firefighters_emission_factor,
+        precipitation_washout=args.precipitation_washout,
+        precipitation_rate_mm_h=args.precipitation_rate_mm_h,
+        wind_speed_m_s=args.wind_speed_m_s,
+        wind_from_direction_deg=args.wind_from_direction_deg,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

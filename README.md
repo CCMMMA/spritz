@@ -260,15 +260,18 @@ Spritz includes a root-level `usecases/` folder with reproducible templates for:
 - high-resolution Bay of Naples sailing wind forecasts with configurable outlook, bounding box, vertical levels, and temporal cadence.
 - a 12-hour Acerra waste-to-energy chimney screening case starting on 2026-06-01.
 
-Install the package, then run the root-level didactic scripts. The use cases are intentionally not importable suite modules:
+Install the package, then run the explicit root-level didactic steps. The use cases are intentionally not importable suite modules:
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py --download-date 2026-05-27 --download-cycle-hour 0 --output wrf_100m_wind.nc --center-lat 40.85 --center-lon 14.27
-python usecases/02_wildfire_arson_effects/run.py --download-date 2026-05-27 --download-cycle-hour 0 --output-dir wildfire_case --center-lat 40.85 --center-lon 14.27 --material plastic --start 2026-05-27T00:00:00+00:00 --end 2026-05-27T01:00:00+00:00 --precipitation-washout
-python usecases/03_satellite_ai_evaluation/run.py --concentration wildfire_case/model/concentration.nc --satellite-mask satellite_mask.json --output wildfire_case/evaluation.json
-python usecases/04_production_incidents/run.py --code 2021_44 --output-dir production_2021_44 --interchange netcdf
-python usecases/05_sailing_wind_forecast/run.py --output sailing_bay_of_naples.json
-python usecases/06_acerra_waste_to_energy/run.py --output-dir acerra_wte --interchange netcdf
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py --download-date 2026-05-27 --download-cycle-hour 0 --output data/wrf_100m_wind.nc --center-lat 40.85 --center-lon 14.27
+python usecases/02_wildfire_arson_effects/step_02_build_config.py --output data/wildfire_case/wildfire_event.json --center-lat 40.85 --center-lon 14.27 --material plastic --start 2026-05-27T00:00:00+00:00 --end 2026-05-27T01:00:00+00:00 --precipitation-washout
+python usecases/02_wildfire_arson_effects/step_03_run_model.py --config data/wildfire_case/wildfire_event.json --output-dir data/wildfire_case/model --backend gaussian --interchange netcdf
+python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --concentration data/wildfire_case/model/concentration.nc --satellite-mask data/satellite_mask.json --output data/wildfire_case/evaluation.json
+python usecases/04_production_incidents/step_01_build_config.py --code 2021_44 --output data/production_2021_44/2021_44_config.json
+python usecases/04_production_incidents/step_02_run_model.py --config data/production_2021_44/2021_44_config.json --output-dir data/production_2021_44/model --interchange netcdf
+python usecases/05_sailing_wind_forecast/step_01_build_forecast.py --output data/sailing_bay_of_naples.json
+python usecases/06_acerra_waste_to_energy/step_01_build_config.py --output data/acerra_wte/acerra_waste_to_energy.json
+python usecases/06_acerra_waste_to_energy/step_02_run_model.py --config data/acerra_wte/acerra_waste_to_energy.json --output-dir data/acerra_wte/model --interchange netcdf
 ```
 
 The use cases prefer NetCDF-CF products when `netCDF4` is installed and fall back to JSON/CSV for lightweight runs and automated tests. They are documented examples under `usecases/`, not part of the `sprtz` package namespace.

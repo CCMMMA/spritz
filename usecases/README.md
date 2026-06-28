@@ -49,17 +49,21 @@ downloader prepares the matching categorical land-cover GeoTIFF. Install
 5. `05_sailing_wind_forecast` — build a high-resolution space-height-time wind forecast product for professional sailing race planning.
 6. `06_acerra_waste_to_energy` — run a 12-hour Acerra waste-to-energy chimney screening case starting on 2026-06-01 with a 110 m release height.
 
-Run the scripts directly:
+Run the step scripts directly:
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py --help
-python usecases/02_wildfire_arson_effects/run.py --help
-python usecases/03_satellite_ai_evaluation/run.py --help
-python usecases/04_production_incidents/run.py --help
-python usecases/05_sailing_wind_forecast/run.py --help
-python usecases/06_acerra_waste_to_energy/run.py --help
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py --help
+python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py --help
+python usecases/02_wildfire_arson_effects/step_02_build_config.py --help
+python usecases/02_wildfire_arson_effects/step_03_run_model.py --help
+python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --help
+python usecases/04_production_incidents/step_01_build_config.py --help
+python usecases/04_production_incidents/step_02_run_model.py --help
+python usecases/05_sailing_wind_forecast/step_01_build_forecast.py --help
+python usecases/06_acerra_waste_to_energy/step_01_build_config.py --help
+python usecases/06_acerra_waste_to_energy/step_02_run_model.py --help
 ```
 
 ## Repository boundary
 
-Do not import use cases from `sprtz.usecases`; that namespace does not exist. New didactic cases should be added here as folders with a `README.md`, a `run.py`, and any tiny synthetic helpers needed for automated tests. Large meteorological, satellite, or NetCDF products must not be committed.
+Do not import use cases from `sprtz.usecases`; that namespace does not exist. New didactic cases should be added here as folders with a `README.md`, explicit `step_*.py` scripts, and any tiny synthetic helpers needed for automated tests. Large meteorological, satellite, or NetCDF products must not be committed.

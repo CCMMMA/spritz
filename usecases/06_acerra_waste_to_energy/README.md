@@ -31,20 +31,20 @@ meteorology with WRF-derived SpritzMet products and use the DEM through
 `sprtz-terrain fetch` with the LC100 land-cover raster when operational terrain
 is required.
 
-## Run
+## Step 1: Build the configuration
 
 ```bash
-python usecases/06_acerra_waste_to_energy/run.py \
-  --output-dir output/acerra_wte \
-  --interchange netcdf
+python usecases/06_acerra_waste_to_energy/step_01_build_config.py \
+  --output output/acerra_wte/acerra_waste_to_energy.json
 ```
 
-For a configuration-only run:
+## Step 2: Run the model
 
 ```bash
-python usecases/06_acerra_waste_to_energy/run.py \
-  --output-dir output/acerra_wte \
-  --config-only
+python usecases/06_acerra_waste_to_energy/step_02_run_model.py \
+  --config output/acerra_wte/acerra_waste_to_energy.json \
+  --output-dir output/acerra_wte/model \
+  --interchange netcdf
 ```
 
 ## Scenario

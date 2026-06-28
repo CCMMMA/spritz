@@ -8,10 +8,9 @@ from sprtz.models import backward
 
 def main() -> None:
     root = Path(__file__).resolve().parents[2]
-    cfg = load_config(root / "examples" / "backward_firefront.json")
-    out = root / "output_backward_fire"
-    out.mkdir(parents=True, exist_ok=True)
-    backward.run_backward(cfg, None, out / "ignition_likelihood.json", model="firefront")
+    out = root / "output_backward_plume"
+    cfg = load_config(root / "examples" / "backward_plume.json")
+    backward.run_backward(cfg, out / "meteo.json", out / "source_likelihood.json", model="gaussian")
 
 
 if __name__ == "__main__":

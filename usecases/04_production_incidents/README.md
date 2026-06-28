@@ -34,12 +34,20 @@ duration. Use the COP30 GeoTIFF as the local DEM and the LC100 GeoTIFF as the
 local land-cover source for `sprtz-terrain fetch` when terrain/GEO products are
 part of the incident package.
 
-## Run the configured incident
+## Step 1: Build the configured incident
 
 ```bash
-python usecases/04_production_incidents/run.py \
+python usecases/04_production_incidents/step_01_build_config.py \
   --code 2021_44 \
-  --output-dir output/production_2021_44 \
+  --output output/production_2021_44/2021_44_config.json
+```
+
+## Step 2: Run the model
+
+```bash
+python usecases/04_production_incidents/step_02_run_model.py \
+  --config output/production_2021_44/2021_44_config.json \
+  --output-dir output/production_2021_44/model \
   --interchange netcdf
 ```
 
@@ -51,22 +59,24 @@ Expected products:
 - `model/meteo.nc` - SpritzMet meteorology exchange file;
 - `model/concentration.nc` - Spritz concentration output with receptor lat/lon;
 - `model/post.json` - SpritzPost statistics;
-- `2021_44_concentration_map.png` - geographic concentration map.
+- optional map products should be generated explicitly from the concentration
+  output with the visualization tools used by the project dossier.
 
 ## Optional local basemap
 
-For offline production dossiers, pass a prepared high-resolution raster basemap:
+For offline production dossiers, keep prepared high-resolution raster basemaps
+under `data/` and use them when creating explicit map products from model
+outputs:
 
 ```bash
-python usecases/04_production_incidents/run.py \
-  --code 2021_44 \
-  --output-dir output/production_2021_44 \
-  --basemap data/basemaps/acerra.png \
-  --basemap-extent 14.30,40.87,14.46,40.98
+sprtz-plot \
+  --input output/production_2021_44/model/concentration.nc \
+  --output output/production_2021_44/2021_44_concentration_map.png \
+  --title "Acerra 2021_44 concentration"
 ```
 
-The extent is `west,south,east,north` in WGS84 degrees. The repository does not
-download map tiles implicitly.
+The repository does not download map tiles implicitly; prepare maps explicitly
+from model outputs when a dossier needs them.
 
 ## Scientific caution
 

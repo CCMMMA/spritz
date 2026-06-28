@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import sys
 from datetime import date
 from pathlib import Path
@@ -13,9 +14,17 @@ from sprtz.models import spritzwrf
 USECASES = Path(__file__).resolve().parents[1] / "usecases"
 sys.path.insert(0, str(USECASES))
 
+from acerra_waste_to_energy import (  # noqa: E402
+    ACERRA_STACK_HEIGHT_M,
+    build_acerra_config,
+)
 from high_resolution_wind import interpolate_wrf_to_100m, resolve_wrf_input  # noqa: E402
 from model_evaluation import evaluate_wildfire_event  # noqa: E402
-from production_incidents import build_incident_config, load_incident_catalog, select_event  # noqa: E402
+from production_incidents import (  # noqa: E402
+    build_incident_config,
+    load_incident_catalog,
+    select_event,
+)
 from sailing_forecast import (  # noqa: E402
     BAY_OF_NAPLES_RACE_BOX,
     DEFAULT_OUTLOOK_H,
@@ -30,10 +39,16 @@ from wildfire import (  # noqa: E402
     build_wildfire_config,
     run_wildfire_event,
 )
-from acerra_waste_to_energy import (  # noqa: E402
-    ACERRA_STACK_HEIGHT_M,
-    build_acerra_config,
-)
+
+
+def _load_usecase_step(folder: str, script: str):
+    path = USECASES / folder / script
+    spec = importlib.util.spec_from_file_location(f"test_{folder}_{script}", path)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_high_resolution_wind_json_synthetic(tmp_path: Path) -> None:
@@ -51,6 +66,32 @@ def test_high_resolution_wind_json_synthetic(tmp_path: Path) -> None:
     assert out.exists()
     assert result.nx == 9
     assert result.format == "json"
+
+
+def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_interpolate_wind.py")
+    out = tmp_path / "wind.json"
+
+    assert (
+        module.main(
+            [
+                "--allow-synthetic",
+                "--json",
+                "--output",
+                str(out),
+                "--center-lat",
+                "40.85",
+                "--center-lon",
+                "14.27",
+                "--nx",
+                "7",
+                "--ny",
+                "7",
+            ]
+        )
+        == 0
+    )
+    assert out.exists()
 
 
 def test_build_wildfire_config(tmp_path: Path) -> None:
@@ -141,6 +182,32 @@ def test_run_wildfire_event_json_synthetic(tmp_path: Path) -> None:
     assert Path(result.workflow["concentration"]).exists()
 
 
+def test_wildfire_run_entrypoint_synthetic(tmp_path: Path) -> None:
+    module = _load_usecase_step("02_wildfire_arson_effects", "step_02_build_config.py")
+    out = tmp_path / "wildfire"
+    config = out / "wildfire_event.json"
+    out.mkdir()
+
+    assert (
+        module.main(
+            [
+                "--output",
+                str(config),
+                "--center-lat",
+                "40.85",
+                "--center-lon",
+                "14.27",
+                "--duration-s",
+                "600",
+                "--area-m2",
+                "500",
+            ]
+        )
+        == 0
+    )
+    assert config.exists()
+
+
 def test_acerra_waste_to_energy_config(tmp_path: Path) -> None:
     cfg_path = tmp_path / "acerra.json"
     config = build_acerra_config(cfg_path)
@@ -151,6 +218,15 @@ def test_acerra_waste_to_energy_config(tmp_path: Path) -> None:
     assert config["run"]["event_start_datetime"] == "2026-06-01T00:00:00+00:00"
     assert config["run"]["event_end_datetime"] == "2026-06-01T12:00:00+00:00"
     assert config["run"]["output_interval_s"] == 3600.0
+
+
+def test_acerra_run_entrypoint_config_only(tmp_path: Path) -> None:
+    module = _load_usecase_step("06_acerra_waste_to_energy", "step_01_build_config.py")
+    out = tmp_path / "acerra"
+    out.mkdir()
+
+    assert module.main(["--output", str(out / "acerra_waste_to_energy.json")]) == 0
+    assert (out / "acerra_waste_to_energy.json").exists()
 
 
 def test_evaluate_wildfire_event(tmp_path: Path) -> None:
@@ -169,6 +245,41 @@ def test_evaluate_wildfire_event(tmp_path: Path) -> None:
     assert report.exists()
     assert result["metrics"]["accuracy"] >= 0.5
     assert "ai_calibration" in result
+
+
+def test_satellite_evaluation_run_entrypoint(tmp_path: Path) -> None:
+    module = _load_usecase_step("03_satellite_ai_evaluation", "step_02_evaluate.py")
+    concentration = tmp_path / "concentration.json"
+    mask = tmp_path / "mask.json"
+    output = tmp_path / "evaluation.json"
+    write_json(
+        concentration,
+        {
+            "format": "cf-json-fallback",
+            "rows": [
+                {"x": 0.0, "y": 0.0, "concentration": 1.0},
+                {"x": 1.0, "y": 0.0, "concentration": 0.0},
+                {"x": 0.0, "y": 1.0, "concentration": 0.4},
+                {"x": 1.0, "y": 1.0, "concentration": 0.2},
+            ],
+        },
+    )
+    write_json(mask, {"mask": [[1.0, 0.0], [0.0, 0.0]]})
+
+    assert (
+        module.main(
+            [
+                "--concentration",
+                str(concentration),
+                "--satellite-mask",
+                str(mask),
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert output.exists()
 
 
 def test_meteo_uniparthenope_url_builder() -> None:
@@ -232,6 +343,25 @@ def test_production_incident_catalog_and_config(tmp_path: Path) -> None:
     assert "longitude" in config["receptors"][0]
 
 
+def test_production_incident_run_entrypoint_config_only(tmp_path: Path) -> None:
+    module = _load_usecase_step("04_production_incidents", "step_01_build_config.py")
+    out = tmp_path / "incident"
+    out.mkdir()
+
+    assert (
+        module.main(
+            [
+                "--code",
+                "2021_44",
+                "--output",
+                str(out / "2021_44_config.json"),
+            ]
+        )
+        == 0
+    )
+    assert (out / "2021_44_config.json").exists()
+
+
 def test_sailing_forecast_small_grid(tmp_path: Path) -> None:
     output = tmp_path / "sailing.json"
     result = build_sailing_forecast(
@@ -253,11 +383,120 @@ def test_sailing_forecast_small_grid(tmp_path: Path) -> None:
     assert len(result["height_m"]) == 3
 
 
+def test_sailing_forecast_run_entrypoint(tmp_path: Path) -> None:
+    module = _load_usecase_step("05_sailing_wind_forecast", "step_01_build_forecast.py")
+    output = tmp_path / "sailing.json"
+
+    assert (
+        module.main(
+            [
+                "--initialization-date",
+                "2026-06-01",
+                "--outlook-hours",
+                "0.25",
+                "--bbox",
+                "14.20,40.72,14.205,40.725",
+                "--horizontal-resolution-m",
+                "250",
+                "--vertical-resolution-m",
+                "10",
+                "--time-resolution-s",
+                "600",
+                "--top-altitude-m",
+                "20",
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert output.exists()
+
+
 def test_sailing_forecast_demo_defaults() -> None:
     assert BAY_OF_NAPLES_RACE_BOX == (14.18, 40.78, 14.33, 40.85)
     assert DEFAULT_OUTLOOK_H == 24.0
     assert DEFAULT_VERTICAL_RESOLUTION_M == 10.0
     assert DEFAULT_TIME_RESOLUTION_S == 600.0
+
+
+def test_fire_workflow_run_entrypoints_route_backends(monkeypatch, tmp_path: Path) -> None:
+    calls = []
+
+    def fake_run_workflow(config, output_dir, *, backend=None, interchange=None, **kwargs):
+        calls.append(
+            {
+                "config": Path(config).name,
+                "output_dir": Path(output_dir).name,
+                "backend": backend,
+                "interchange": interchange,
+                "kwargs": kwargs,
+            }
+        )
+        return {"concentration": str(Path(output_dir) / "concentration.json")}
+
+    for folder in [
+        "06_wildfire_fire_spread",
+        "07_wildfire_fire_and_smoke",
+        "08_firms_satellite_ignition",
+        "09_gpu_accelerated_spread",
+    ]:
+        script = {
+            "06_wildfire_fire_spread": "step_01_run_fire_spread.py",
+            "07_wildfire_fire_and_smoke": "step_02_run_smoke.py",
+            "08_firms_satellite_ignition": "step_01_run_firms_ignition.py",
+            "09_gpu_accelerated_spread": "step_01_run_gpu_spread.py",
+        }[folder]
+        module = _load_usecase_step(folder, script)
+        module.__file__ = str(tmp_path / "repo" / "usecases" / folder / script)
+        monkeypatch.setattr(module, "run_workflow", fake_run_workflow)
+        assert module.main() is None
+
+    assert [call["backend"] for call in calls] == [
+        "firefront",
+        "fire+puff",
+        "firms+fire",
+        "firefront",
+    ]
+    assert all(call["config"] == "wildfire_minimal.json" for call in calls)
+    assert all(call["interchange"] == "json" for call in calls)
+
+
+def test_backward_run_entrypoints_route_models(monkeypatch, tmp_path: Path) -> None:
+    plume_met = _load_usecase_step("10_backward_plume_origin", "step_01_prepare_meteorology.py")
+    plume_back = _load_usecase_step("10_backward_plume_origin", "step_02_estimate_source.py")
+    fire = _load_usecase_step("11_backward_fire_origin", "step_01_estimate_ignition.py")
+    calls = []
+
+    def fake_spritzmet_run(config, output, fmt):
+        calls.append(("spritzmet", Path(output).name, fmt))
+        write_json(output, {"component": "meteo"})
+        return {"output": str(output)}
+
+    def fake_backward_run(config, meteo, output, *, model):
+        calls.append(
+            ("backward", None if meteo is None else Path(meteo).name, Path(output).name, model)
+        )
+        write_json(output, {"model": model})
+        return {"output": str(output)}
+
+    monkeypatch.setattr(plume_met.spritzmet, "run", fake_spritzmet_run)
+    monkeypatch.setattr(plume_back.backward, "run_backward", fake_backward_run)
+    monkeypatch.setattr(fire.backward, "run_backward", fake_backward_run)
+    monkeypatch.setattr(plume_met, "load_config", lambda path: {"path": str(path)})
+    monkeypatch.setattr(plume_back, "load_config", lambda path: {"path": str(path)})
+    monkeypatch.setattr(fire, "load_config", lambda path: {"path": str(path)})
+    plume_met.__file__ = str(tmp_path / "repo" / "usecases" / "10_backward_plume_origin" / "step_01_prepare_meteorology.py")
+    plume_back.__file__ = str(tmp_path / "repo" / "usecases" / "10_backward_plume_origin" / "step_02_estimate_source.py")
+    fire.__file__ = str(tmp_path / "repo" / "usecases" / "11_backward_fire_origin" / "step_01_estimate_ignition.py")
+
+    assert plume_met.main() is None
+    assert plume_back.main() is None
+    assert fire.main() is None
+
+    assert ("spritzmet", "meteo.json", "json") in calls
+    assert ("backward", "meteo.json", "source_likelihood.json", "gaussian") in calls
+    assert ("backward", None, "ignition_likelihood.json", "firefront") in calls
 
 
 def test_usecases_are_not_packaged_as_suite_modules() -> None:

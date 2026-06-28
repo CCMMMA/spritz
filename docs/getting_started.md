@@ -73,7 +73,7 @@ https://data.meteo.uniparthenope.it/files/wrf5/d03/history/2026/05/27/wrf5_d03_2
 To ask Spritz to print the exact URL without downloading:
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --download-date 2026-05-27 \
   --download-cycle-hour 0 \
   --output ignored.nc \
@@ -89,7 +89,7 @@ This command downloads the WRF file when it is not already present in `data/wrf/
 ```bash
 mkdir -p data/wrf output
 
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --download-date 2026-05-27 \
   --download-cycle-hour 0 \
   --download-dir data/wrf \
@@ -118,7 +118,7 @@ Expected NetCDF-CF fields include:
 To rerun from a WRF file already downloaded:
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -134,7 +134,7 @@ python usecases/01_high_resolution_wind_field/run.py \
 For training, CI, or offline classroom sessions, the same workflow can use a deterministic synthetic WRF-like field:
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --allow-synthetic \
   --json \
   --output output/demo_wind.json \
@@ -150,20 +150,31 @@ This does not replace real meteorological data. It is only for checking the inst
 
 ## 5. Build and run a wildfire/arson scenario
 
-Use case 02 creates a Spritz scenario for a burning place at a known latitude and longitude. It uses the same WRF download mechanism, then generates:
+Use case 02 creates a Spritz scenario for a burning place at a known latitude and longitude. It is intentionally split into explicit steps that generate:
 
 - a local wind product;
 - a Spritz scenario configuration;
 - a model output directory containing meteorology, concentration, and postprocessing files.
 
-Example with the particle backend:
+Prepare the local wind product:
 
 ```bash
-python usecases/02_wildfire_arson_effects/run.py \
+python usecases/02_wildfire_arson_effects/step_01_interpolate_wind.py \
   --download-date 2026-05-27 \
   --download-cycle-hour 0 \
   --download-dir data/wrf \
-  --output-dir output/wildfire_case \
+  --output output/wildfire_case/wrf_100m_wind.nc \
+  --center-lat 40.85 \
+  --center-lon 14.27 \
+  --nx 101 \
+  --ny 101
+```
+
+Build the fire configuration:
+
+```bash
+python usecases/02_wildfire_arson_effects/step_02_build_config.py \
+  --output output/wildfire_case/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --material plastic \
@@ -171,24 +182,16 @@ python usecases/02_wildfire_arson_effects/run.py \
   --area-m2 2500 \
   --start 2026-05-27T00:00:00+00:00 \
   --end 2026-05-27T01:00:00+00:00 \
-  --precipitation-washout \
-  --backend particles \
-  --interchange netcdf
+  --precipitation-washout
 ```
 
-Example with an already downloaded WRF file and the Gaussian backend:
+Run the model:
 
 ```bash
-python usecases/02_wildfire_arson_effects/run.py \
-  --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
-  --output-dir output/wildfire_case \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --material paper \
-  --duration-s 3600 \
-  --area-m2 2500 \
-  --height-agl-m 5 \
-  --backend gaussian \
+python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+  --config output/wildfire_case/wildfire_event.json \
+  --output-dir output/wildfire_case/model \
+  --backend particles \
   --interchange netcdf
 ```
 
@@ -204,15 +207,13 @@ JSON list. Each entry can define `latitude`, `longitude`, `height_agl_m`,
 temperature or emission overrides:
 
 ```bash
-python usecases/02_wildfire_arson_effects/run.py \
-  --allow-synthetic-wrf \
-  --output-dir output/multi_fire \
+python usecases/02_wildfire_arson_effects/step_02_build_config.py \
+  --output output/multi_fire/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --fire-events-json '[{"id":"F1","latitude":40.85,"longitude":14.27,"material":"paper","start_datetime":"2026-06-01T00:00:00+00:00","end_datetime":"2026-06-01T03:00:00+00:00"},{"id":"F2","latitude":40.855,"longitude":14.275,"height_agl_m":2.0,"material":"plastic","start_datetime":"2026-06-01T01:00:00+00:00","end_datetime":"2026-06-01T04:00:00+00:00"}]' \
   --weather-start 2026-06-01T00:00:00+00:00 \
-  --weather-end 2026-06-01T04:00:00+00:00 \
-  --interchange json
+  --weather-end 2026-06-01T04:00:00+00:00
 ```
 
 Expected products:
@@ -319,14 +320,14 @@ Use case 03 compares the model concentration field with a satellite-derived smok
 Create a tiny deterministic demo mask:
 
 ```bash
-python usecases/03_satellite_ai_evaluation/make_demo_mask.py \
+python usecases/03_satellite_ai_evaluation/step_01_make_demo_mask.py \
   output/demo_mask.json
 ```
 
 Run evaluation:
 
 ```bash
-python usecases/03_satellite_ai_evaluation/run.py \
+python usecases/03_satellite_ai_evaluation/step_02_evaluate.py \
   --concentration output/wildfire_case/model/concentration.nc \
   --satellite-mask output/demo_mask.json \
   --output output/wildfire_case/evaluation.json \
@@ -342,17 +343,19 @@ Acerra at `40.978473 N, 14.384058 E`, with a 110 m chimney release height and a
 start datetime of `2026-06-01T00:00:00+00:00`.
 
 ```bash
-python usecases/06_acerra_waste_to_energy/run.py \
-  --output-dir output/acerra_wte \
+python usecases/06_acerra_waste_to_energy/step_01_build_config.py \
+  --output output/acerra_wte/acerra_waste_to_energy.json
+python usecases/06_acerra_waste_to_energy/step_02_run_model.py \
+  --config output/acerra_wte/acerra_waste_to_energy.json \
+  --output-dir output/acerra_wte/model \
   --interchange netcdf
 ```
 
 For configuration review only:
 
 ```bash
-python usecases/06_acerra_waste_to_energy/run.py \
-  --output-dir output/acerra_wte \
-  --config-only
+python usecases/06_acerra_waste_to_energy/step_01_build_config.py \
+  --output output/acerra_wte/acerra_waste_to_energy.json
 ```
 
 The generated `acerra_waste_to_energy.json` uses source-level
@@ -420,7 +423,7 @@ python -m pip install -e .[viz]
 Check the URL first:
 
 ```bash
-python usecases/01_high_resolution_wind_field/run.py \
+python usecases/01_high_resolution_wind_field/step_01_interpolate_wind.py \
   --download-date 2026-05-27 \
   --download-cycle-hour 0 \
   --output ignored.nc \
