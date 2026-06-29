@@ -164,10 +164,18 @@ JSON can select the dispersion behavior directly:
   "run": {
     "backend": "gaussian",
     "concentration_output": "grid",
-    "field_z_levels": [0.0, 25.0, 50.0]
+    "field_z_levels": {
+      "preset": "exponential",
+      "count": 21,
+      "base_m": 10.0
+    }
   }
 }
 ```
+
+This preset samples heights above ground as `10 * exp(level_index)` for
+`level_index` values `0..20`. A literal list such as `[0.0, 25.0, 50.0]`
+remains supported when exact heights are required.
 
 With NetCDF-CF output, gridded runs include receptor-table variables plus
 `concentration_field(time, field_z, field_y, field_x)`.

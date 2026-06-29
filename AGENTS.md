@@ -124,6 +124,11 @@ neighbor or a documented majority/aggregation method.
 
 Sprtz should prefer NetCDF-CF for module interoperability while retaining tolerant JSON and legacy-style input support.
 
+Use a single shared `config.json` text for Spritz component configuration where
+practical. Runnable shell/use-case scripts may expose an optional
+`--config config.json`; when the same option appears in both JSON and on the
+command line, the command-line value has priority.
+
 All Sprtz-produced NetCDF files must follow strict CF conventions for
 coordinates, dimensions, units, and metadata. Any file with a time dimension
 must provide a CF-compliant `time` coordinate variable with absolute UTC units

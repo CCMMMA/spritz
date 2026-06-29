@@ -1,6 +1,8 @@
+import math
+
 import pytest
 
-from sprtz.config import configured_backend, from_mapping, load_config
+from sprtz.config import config_defaults, configured_backend, from_mapping, load_config, parse_field_z_levels
 from sprtz.exceptions import ConfigurationError
 
 
@@ -51,3 +53,24 @@ def test_source_height_alias_and_datetime_validation():
     raw["sources"][0]["end_datetime"] = "2026-05-31T23:00:00+00:00"
     with pytest.raises(ConfigurationError):
         from_mapping(raw)
+
+
+def test_generated_exponential_field_z_levels():
+    levels = parse_field_z_levels({"preset": "exponential", "count": 3, "base_m": 10.0})
+    assert levels == pytest.approx((10.0, 10.0 * math.e, 10.0 * math.e**2))
+
+
+def test_shared_json_config_defaults_flatten_sections(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(
+        (
+            '{"domain": {"center_lat": 40.8, "dx_m": 100.0}, '
+            '"terrain": {"dem_path": "dem.tif"}, "run": {"level_index": 2}}'
+        ),
+        encoding="utf-8",
+    )
+    defaults = config_defaults(path)
+    assert defaults["center_lat"] == 40.8
+    assert defaults["dx"] == 100.0
+    assert defaults["dem"] == "dem.tif"
+    assert defaults["level_index"] == 2

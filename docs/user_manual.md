@@ -370,6 +370,23 @@ To request a model-grid concentration field, set `run.concentration_output`.
 }
 ```
 
+`field_z_levels` may also be generated from a documented distribution. The
+exponential preset below creates 21 heights in metres above ground using
+`10 * exp(level_index)` for `level_index` values `0..20`.
+
+```json
+{
+  "run": {
+    "concentration_output": "grid",
+    "field_z_levels": {
+      "preset": "exponential",
+      "count": 21,
+      "base_m": 10.0
+    }
+  }
+}
+```
+
 Accepted `concentration_output` values:
 
 - `receptors`: sample explicit receptors, or grid cells at `z=0` if no

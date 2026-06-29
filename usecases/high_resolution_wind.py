@@ -10,6 +10,7 @@ import numpy as np
 
 from sprtz.models import spritzmet, spritzwrf
 from sprtz.logging import configure_logging
+from sprtz.config import config_defaults
 from datetime_args import script_datetime_to_date_and_hour
 from plotting import plot_netcdf_if_available
 
@@ -198,15 +199,16 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="SpritzWRF -> SpritzMet: downscale WRF 1 km winds to a 100 m local grid")
+    parser.add_argument("--config", default=None, help="optional shared JSON configuration; CLI options override matching values")
     parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --download-time or --allow-synthetic")
     parser.add_argument("--download-time", default=None, help="Download meteo@uniparthenope WRF5 d03 file for UTC YYYYMMDDZhhmm")
     parser.add_argument("--download-dir", default="data/wrf", help="Directory for downloaded WRF files")
     parser.add_argument("--download-timeout-s", type=float, default=120.0)
     parser.add_argument("--force-download", action="store_true")
     parser.add_argument("--print-download-url", action="store_true", help="Print the meteo@uniparthenope URL and exit")
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--center-lat", type=float, required=True)
-    parser.add_argument("--center-lon", type=float, required=True)
+    parser.add_argument("--output", default=None)
+    parser.add_argument("--center-lat", type=float, default=None)
+    parser.add_argument("--center-lon", type=float, default=None)
     parser.add_argument("--nx", type=int, default=101)
     parser.add_argument("--ny", type=int, default=101)
     parser.add_argument("--dx", type=float, default=100.0)
@@ -217,7 +219,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster, e.g. data/landcover/lc100_naples.tif")
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--allow-synthetic", action="store_true")
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", default=None)
+    config_args, _ = config_parser.parse_known_args(argv)
+    if config_args.config:
+        parser.set_defaults(**config_defaults(config_args.config, sections=("run", "domain", "terrain", "spritzmet")))
     args = parser.parse_args(argv)
+    if args.output is None:
+        parser.error("--output is required unless provided by --config")
+    if args.center_lat is None or args.center_lon is None:
+        parser.error("--center-lat and --center-lon are required unless provided by --config")
     download_date = None
     download_cycle_hour = 0
     if args.download_time is not None:

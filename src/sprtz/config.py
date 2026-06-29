@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+import math
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,11 @@ def parse_field_z_levels(value: Any) -> tuple[float, ...]:
     """Parse vertical field levels from JSON scalars, arrays, or legacy strings."""
     if value is None:
         return (0.0,)
+    if isinstance(value, dict):
+        levels = _generated_field_z_levels(value)
+        if not levels:
+            raise ConfigurationError("run.field_z_levels.count must be positive")
+        return levels
     if isinstance(value, str):
         parts = [part.strip() for part in value.split(",") if part.strip()]
         if not parts:
@@ -75,6 +81,26 @@ def parse_field_z_levels(value: Any) -> tuple[float, ...]:
     if any(level < 0 for level in levels):
         raise ConfigurationError("run.field_z_levels must be non-negative")
     return levels
+
+
+def _generated_field_z_levels(spec: dict[str, Any]) -> tuple[float, ...]:
+    preset = str(spec.get("preset", spec.get("distribution", "explicit"))).strip().lower()
+    count = int(spec.get("count", spec.get("levels", spec.get("n_levels", 0))))
+    if count <= 0:
+        return ()
+    start_index = int(spec.get("start_index", 0))
+    if preset in {"exponential", "exp"}:
+        base_m = float(spec.get("base_m", spec.get("scale_m", 10.0)))
+        if base_m < 0:
+            raise ConfigurationError("run.field_z_levels.base_m must be non-negative")
+        return tuple(base_m * math.exp(start_index + i) for i in range(count))
+    if preset in {"linear", "uniform"}:
+        start_m = float(spec.get("start_m", 0.0))
+        spacing_m = float(spec.get("spacing_m", spec.get("dz_m", 1.0)))
+        if start_m < 0 or spacing_m < 0:
+            raise ConfigurationError("run.field_z_levels linear values must be non-negative")
+        return tuple(start_m + spacing_m * i for i in range(count))
+    raise ConfigurationError("run.field_z_levels.preset must be exponential or linear")
 
 
 def parse_datetime_value(value: Any, *, field_name: str = "datetime") -> datetime | None:
@@ -562,3 +588,39 @@ def load_config(path: str | Path) -> SuiteConfig:
     if p.suffix.lower() == ".json":
         return from_mapping(read_json(p))
     return from_mapping(_legacy_to_mapping(p))
+
+
+def config_defaults(path: str | Path, *, sections: tuple[str, ...] = ("run", "domain", "terrain")) -> dict[str, Any]:
+    """Return flat argparse defaults from a shared JSON configuration file.
+
+    Explicit command-line arguments should be parsed after applying these
+    defaults so CLI values retain priority over values present in JSON.
+    """
+    data = read_json(Path(path))
+    defaults: dict[str, Any] = {}
+    for section in sections:
+        block = data.get(section)
+        if isinstance(block, dict):
+            defaults.update(block)
+    defaults.update(
+        {
+            key: value
+            for key, value in data.items()
+            if key not in sections and not isinstance(value, (dict, list))
+        }
+    )
+    aliases = {
+        "center_lat": "center_lat",
+        "center_lon": "center_lon",
+        "dx_m": "dx",
+        "dy_m": "dy",
+        "dem_path": "dem",
+        "land_cover_path": "land_cover",
+        "landuse_path": "land_cover",
+        "wrf_path": "wrf",
+        "output_path": "output",
+    }
+    for source, target in aliases.items():
+        if source in defaults and target not in defaults:
+            defaults[target] = defaults[source]
+    return defaults
