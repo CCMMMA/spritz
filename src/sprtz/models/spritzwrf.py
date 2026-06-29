@@ -19,7 +19,7 @@ import numpy as np
 from sprtz.io.jsonio import write_json
 from sprtz.io.netcdf_cf import available as netcdf_available, iso_utc
 
-METEO_UNIPARTHENOPE_BASE = "https://data.meteo.uniparthenope.it/files/wrf5/d03/history"
+METEO_UNIPARTHENOPE_HISTORY_BASE = "https://data.meteo.uniparthenope.it/files/wrf5/d03/history"
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class WRFWindField:
 def meteo_uniparthenope_wrf_url(run_date: str | date | datetime, cycle_hour: int | str) -> str:
     """Return the canonical meteo@uniparthenope WRF5 d03 history URL.
 
-    The public archive path used by the operational use cases is::
+    The public history-file path used by the operational use cases is::
 
         https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
 
@@ -70,7 +70,7 @@ def meteo_uniparthenope_wrf_url(run_date: str | date | datetime, cycle_hour: int
         raise ValueError("cycle_hour must be between 0 and 23")
     hh = f"{hour:02d}"
     ymd = d.strftime("%Y%m%d")
-    return f"{METEO_UNIPARTHENOPE_BASE}/{d:%Y/%m/%d}/wrf5_d03_{ymd}Z{hh}00.nc"
+    return f"{METEO_UNIPARTHENOPE_HISTORY_BASE}/{d:%Y/%m/%d}/wrf5_d03_{ymd}Z{hh}00.nc"
 
 
 def download_meteo_uniparthenope_wrf(
@@ -81,7 +81,7 @@ def download_meteo_uniparthenope_wrf(
     timeout_s: float = 120.0,
     force: bool = False,
 ) -> Path:
-    """Download a WRF5 d03 NetCDF file from the meteo@uniparthenope archive.
+    """Download a WRF5 d03 history NetCDF file from meteo@uniparthenope.
 
     Existing files are reused unless ``force=True``.  The function uses only the
     Python standard library so the downloader works in minimal deployments.
@@ -401,6 +401,50 @@ def _selected_wrf_datetimes(ds: Any) -> list[str] | None:
     return None
 
 
+def _wrf_geopotential_level_meters(ds: Any, level_index: int | None, time_index: int | None) -> list[float] | None:
+    if not all(name in ds.variables for name in ("PH", "PHB")):
+        return None
+    try:
+        ph = np.asarray(ds.variables["PH"][:], dtype=float)
+        phb = np.asarray(ds.variables["PHB"][:], dtype=float)
+    except Exception:
+        return None
+    if ph.shape != phb.shape or ph.ndim != 4:
+        return None
+    time_size = ph.shape[0]
+    selected_time = 0 if time_index is None else _bounded_index(time_index, time_size)
+    z_stag = (ph[selected_time] + phb[selected_time]) / 9.80665
+    if z_stag.shape[0] < 2:
+        return None
+    z_mass_asl = 0.5 * (z_stag[:-1] + z_stag[1:])
+    levels = [float(np.nanmean(z_mass_asl[index])) for index in range(z_mass_asl.shape[0])]
+    if level_index is None:
+        return levels
+    index = _bounded_index(level_index, len(levels))
+    return [levels[index]]
+
+
+def _wrf_level_meters(ds: Any, level_index: int | None, time_index: int | None = 0) -> list[float] | None:
+    for name in ("height_m", "height", "z", "level", "bottom_top"):
+        if name not in ds.variables:
+            continue
+        variable = ds.variables[name]
+        dims = tuple(str(dim) for dim in getattr(variable, "dimensions", ()))
+        if len(dims) != 1 or _dimension_kind(dims[0]) != "level":
+            continue
+        try:
+            values = np.asarray(variable[:], dtype=float).ravel()
+        except Exception:
+            continue
+        if not values.size:
+            continue
+        if level_index is None:
+            return [float(value) for value in values]
+        index = _bounded_index(level_index, values.size)
+        return [float(values[index])]
+    return _wrf_geopotential_level_meters(ds, level_index, time_index)
+
+
 def load_near_surface_wind(
     path: str | Path,
     *,
@@ -449,15 +493,18 @@ def load_near_surface_wind(
 
         lat = read_coordinate(("XLAT", "XLAT_M", "lat", "latitude"))
         lon = read_coordinate(("XLONG", "XLONG_M", "lon", "longitude"))
+        diagnostic_height_m: float | None = None
         if "U10" in ds.variables and "V10" in ds.variables:
             u = read2d(("U10",))
             v = read2d(("V10",))
+            diagnostic_height_m = 10.0
         elif "WSPD10" in ds.variables and "WDIR10" in ds.variables:
             wspd = read2d(("WSPD10",))
             wdir = read2d(("WDIR10",))
             theta = np.deg2rad(270.0 - wdir)
             u = wspd * np.cos(theta)
             v = wspd * np.sin(theta)
+            diagnostic_height_m = 10.0
         else:
             u = read2d(("eastward_wind", "u", "U"))
             v = read2d(("northward_wind", "v", "V"))
@@ -474,6 +521,11 @@ def load_near_surface_wind(
                 attrs["time_datetime"] = selected_datetime
         attrs["time_index"] = "all" if time_index is None else str(time_index)
         attrs["level_index"] = "all" if level_index is None else str(level_index)
+        level_meters = [diagnostic_height_m] if diagnostic_height_m is not None else _wrf_level_meters(ds, level_index, time_index)
+        if level_meters:
+            attrs["level_meters"] = level_meters
+            attrs["level_meters_kind"] = "height_above_ground" if diagnostic_height_m is not None else "height_above_sea_level"
+            attrs["level_meters_source"] = "diagnostic_10m_wind" if diagnostic_height_m is not None else "wrf_vertical_coordinate"
     return WRFWindField(
         lat,
         lon,

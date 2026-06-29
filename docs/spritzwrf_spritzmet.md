@@ -7,9 +7,9 @@ Spritz uses clean-room module names for the WRF-to-meteorology part of the workf
 
 These modules are clean-room Python APIs that implement a compatible workflow and prefer NetCDF-CF interchange.
 
-## meteo@uniparthenope WRF5 d03 archive
+## meteo@uniparthenope WRF5 d03 History Files
 
-The downloader constructs URLs using this pattern:
+The downloader constructs URLs using this `history` directory pattern:
 
 ```text
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
@@ -59,13 +59,29 @@ spritzmet.write_local_meteorology("output/wrf_100m_wind.nc", met)
 When DEM elevation and land-cover fields have already been regridded to the
 same local SpritzMet grid, pass them as `dem_elevation_m` and `land_cover`.
 SpritzMet then follows a clean-room CALMET-style diagnostic downscaling
-sequence: objective WRF interpolation to the local grid, terrain/slope and
+sequence: objective WRF downscaling to the local grid, terrain/slope and
 elevation wind adjustment, land-cover roughness exposure adjustment, and
 orographic plus land-cover precipitation factors. The implementation is not a
 copy, port, or regulatory-equivalent CALMET release; its coefficients are named
 in `sprtz.models.spritzmet` and bounded for deterministic screening workflows.
 Without these optional arrays, the pipeline preserves the original
-WRF-to-local-grid interpolation behavior.
+WRF-to-local-grid downscaling behavior.
+
+`downscale_wrf_to_local_grid` defaults to `downscaling_mode="deterministic"`.
+That mode uses DEM elevation and land cover whenever they are supplied. The
+optional `ai` and `diffusion` modes run built-in clean-room NumPy downscalers by
+default. The `ai` mode applies a deterministic feature-residual refinement using
+local meteorological detail plus DEM and roughness features when present. The
+`diffusion` mode applies terrain-conditioned anisotropic diffusion refinement
+with mean-preserving bounds. Callers may override either path with
+`ai_model` or `diffusion_model` callables, and output metadata records whether
+the built-in or supplied model was applied.
+All modes can be improved with `station_measurements`, which applies
+inverse-distance residual corrections from observed wind and precipitation
+without changing the underlying downscaling method. For command-line workflows,
+station measurements are read from CSV with either local `x,y` coordinates in
+meters or `latitude,longitude` columns. Observation columns are
+`wind_speed`/`wind_dir` and/or `precipitation_rate`.
 
 Use case 01 exposes the same path from the command line:
 
@@ -77,9 +93,11 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --center-lon 14.27 \
   --nx 101 \
   --ny 101 \
-  --vertical-levels-m usecase01-exponential \
+  --config usecases/01_high_resolution_wind_field/config.json \
   --dem data/dem/cop30_naples.tif \
-  --land-cover data/landcover/lc100_naples.tif
+  --land-cover data/landcover/lc100_naples.tif \
+  --station-measurements data/stations/weather_observations.csv \
+  --downscaling-mode deterministic
 ```
 
 SpritzWRF handles WRF/CF dimensions explicitly. Four-dimensional wind variables
@@ -96,9 +114,14 @@ preserved. SpritzMet downscales the precipitation field using the same
 local-grid transform as the wind field.
 
 Use case 01 can set the output vertical coordinate explicitly with
-`--vertical-levels-m`. The named preset `usecase01-exponential` expands to 21
-heights above local ground using `10 * exp(0.46 * x)` for integer `x=0..20`;
-the height list must have the same length as the preserved WRF wind-level axis.
+`--vertical-levels-m` or through
+`usecases/01_high_resolution_wind_field/config.json`. The documented use-case
+configuration sets fixed heights above mean sea level:
+`10, 15, 25, 50, 75, 100, 150, 250, 500, 750, 1000, 1250` m. Four-dimensional
+WRF wind is interpreted as `time, level, y, x` with levels in metres above sea
+level. Three-dimensional diagnostic wind such as `U10/V10` is interpreted as
+`time, y, x` at 10 m above local ground. Precipitation stays three-dimensional
+as `time, y, x`.
 
 SpritzWRF also owns WRF valid-time extraction. It reads datetimes only from
 WRF/CF time metadata such as `Times`, CF `time` units, or explicit global time

@@ -20,10 +20,13 @@ CF `time(time)` coordinate with absolute UTC units when the WRF file provides
 valid-time metadata.
 
 Use `--vertical-levels-m` to set the physical `z` coordinate written by
-SpritzMet. The use-case preset `usecase01-exponential` creates 21 heights above
-local ground: the first level is 10 m and the full list follows
-`10 * exp(0.46 * x)` for integer `x=0..20`. The supplied height count must match
-the number of WRF wind levels being downscaled.
+SpritzMet, or use `--config usecases/01_high_resolution_wind_field/config.json`
+for the documented use-case heights above mean sea level:
+`10, 15, 25, 50, 75, 100, 150, 250, 500, 750, 1000, 1250` m. Four-dimensional
+WRF wind is treated as `time, level, y, x` with levels in metres above sea
+level; diagnostic three-dimensional WRF wind such as `U10/V10` is treated as
+`time, y, x` at 10 m above local ground. Precipitation remains
+`time, y, x`.
 
 The default use-case bounding box is:
 
@@ -93,7 +96,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --center-lon 14.27 \
   --nx 101 --ny 101 \
   --dx 100 --dy 100 \
-  --vertical-levels-m usecase01-exponential \
+  --config usecases/01_high_resolution_wind_field/config.json \
   --dem data/dem/cop30_naples.tif \
   --land-cover data/landcover/lc100_naples.tif \
   --station-measurements data/stations/weather_observations.csv
@@ -122,7 +125,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --output data/output/wrf_100m_wind_bbox.nc \
   --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
   --dx 100 --dy 100 \
-  --vertical-levels-m usecase01-exponential \
+  --config usecases/01_high_resolution_wind_field/config.json \
   --dem data/dem/cop30_naples.tif \
   --land-cover data/landcover/lc100_naples.tif
 ```
@@ -210,7 +213,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
 
 - `wrf_100m_wind.nc` or `.json`
 - `wrf_100m_wind.png` when NetCDF output is selected and plotting dependencies are available
-- variables/fields: `latitude`, `longitude`, `z` height above local ground when `--vertical-levels-m` is supplied, `eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, `wind_speed(time,z,y,x)`, `wind_from_direction(time,z,y,x)`, `precipitation_rate(time,y,x)`
+- variables/fields: `latitude`, `longitude`, `z` height above mean sea level when `--vertical-levels-m` is supplied, `eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, `wind_speed(time,z,y,x)`, `wind_from_direction(time,z,y,x)`, `precipitation_rate(time,y,x)`
 
 ## Teaching notes
 

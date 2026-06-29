@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import math
 import sys
 from datetime import date
 from pathlib import Path
@@ -20,7 +19,11 @@ from acerra_waste_to_energy import (  # noqa: E402
     ACERRA_STACK_HEIGHT_M,
     build_acerra_config,
 )
-from high_resolution_wind import downscale_wrf_to_100m, resolve_wrf_input  # noqa: E402
+from high_resolution_wind import (  # noqa: E402
+    UseCaseDependencyError,
+    downscale_wrf_to_100m,
+    resolve_wrf_input,
+)
 from model_evaluation import evaluate_wildfire_event  # noqa: E402
 from production_incidents import (  # noqa: E402
     build_incident_config,
@@ -95,6 +98,8 @@ def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
                 "--json",
                 "--output",
                 str(out),
+                "--config",
+                "usecases/01_high_resolution_wind_field/config.json",
                 "--center-lat",
                 "40.85",
                 "--center-lon",
@@ -108,6 +113,29 @@ def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
         == 0
     )
     assert out.exists()
+    payload = read_json(out)
+    assert payload["z"] == pytest.approx(
+        [10.0, 15.0, 25.0, 50.0, 75.0, 100.0, 150.0, 250.0, 500.0, 750.0, 1000.0, 1250.0]
+    )
+    assert payload["metadata"]["level_meters_kind"] == "height_above_sea_level"
+
+
+def test_high_resolution_wind_geotiff_dependency_fails_before_wrf_work(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def fake_find_spec(name: str):
+        if name == "rasterio":
+            return None
+        return importlib.util.find_spec(name)
+
+    monkeypatch.setattr("high_resolution_wind.importlib.util.find_spec", fake_find_spec)
+    with pytest.raises(UseCaseDependencyError, match=r"python -m pip install -e '.\[geo,netcdf\]'"):
+        downscale_wrf_to_100m(
+            tmp_path / "missing-wrf.nc",
+            tmp_path / "wind.json",
+            center_lat=40.85,
+            center_lon=14.27,
+            prefer_netcdf=False,
+            dem_path=tmp_path / "dem.tif",
+        )
 
 
 def test_high_resolution_wind_entrypoint_uses_dem_and_land_cover_rasters(tmp_path: Path) -> None:
@@ -269,9 +297,14 @@ def test_run_wildfire_event_json_synthetic(tmp_path: Path) -> None:
         backend="gaussian",
         interchange="json",
         allow_synthetic_wrf=True,
+        dem_path="examples/data/highres_dem.asc",
+        land_cover_path="examples/data/highres_landcover.asc",
     )
     assert result.config_path.exists()
     assert Path(result.workflow["concentration"]).exists()
+    meteo = read_json(tmp_path / "case" / "wrf_100m_wind.json")
+    assert meteo["metadata"]["uses_dem_elevation_m"] is True
+    assert meteo["metadata"]["uses_land_cover"] is True
 
 
 def test_wildfire_run_entrypoint_synthetic(tmp_path: Path) -> None:
@@ -379,12 +412,16 @@ def test_satellite_evaluation_run_entrypoint(tmp_path: Path) -> None:
 
 
 def test_meteo_uniparthenope_url_builder() -> None:
-    assert spritzwrf.meteo_uniparthenope_wrf_url("2026-05-27", 0).endswith(
-        "/2026/05/27/wrf5_d03_20260527Z0000.nc"
+    url = spritzwrf.meteo_uniparthenope_wrf_url("2026-05-27", 0)
+    evening_url = spritzwrf.meteo_uniparthenope_wrf_url("2026-05-27", "18")
+
+    assert url == (
+        "https://data.meteo.uniparthenope.it/files/wrf5/d03/history/2026/05/27/"
+        "wrf5_d03_20260527Z0000.nc"
     )
-    assert spritzwrf.meteo_uniparthenope_wrf_url("2026-05-27", "18").endswith(
-        "wrf5_d03_20260527Z1800.nc"
-    )
+    assert "/history/" in evening_url
+    assert "/archive/" not in evening_url
+    assert evening_url.endswith("wrf5_d03_20260527Z1800.nc")
 
 
 def test_wrf_precipitation_rate_extraction(tmp_path: Path) -> None:
@@ -423,6 +460,8 @@ def test_wrf_four_dimensional_wind_selects_time_and_level_independently(tmp_path
         ds.createDimension("bottom_top", 3)
         ds.createDimension("south_north", 2)
         ds.createDimension("west_east", 2)
+        height = ds.createVariable("height_m", "f8", ("bottom_top",))
+        height[:] = np.asarray([10.0, 80.0, 250.0])
         lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]], [[41.0, 41.0], [41.01, 41.01]]])
         lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]], [[15.0, 15.01], [15.0, 15.01]]])
         for name, values in [("XLAT", lat_values), ("XLONG", lon_values)]:
@@ -445,6 +484,121 @@ def test_wrf_four_dimensional_wind_selects_time_and_level_independently(tmp_path
     assert wrf.metadata is not None
     assert wrf.metadata["time_index"] == "1"
     assert wrf.metadata["level_index"] == "2"
+    assert wrf.metadata["level_meters"] == [250.0]
+    assert wrf.metadata["level_meters_kind"] == "height_above_sea_level"
+
+
+def test_wrf_level_meters_from_geopotential_height(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wrf_geopotential_height.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("Time", 1)
+        ds.createDimension("bottom_top", 2)
+        ds.createDimension("bottom_top_stag", 3)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]]])
+        lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]]])
+        for name, values in [("XLAT", lat_values), ("XLONG", lon_values)]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+        for name in ("U", "V"):
+            var = ds.createVariable(name, "f8", ("Time", "bottom_top", "south_north", "west_east"))
+            var[:, :, :, :] = np.ones((1, 2, 2, 2), dtype=float)
+        hgt = ds.createVariable("HGT", "f8", ("Time", "south_north", "west_east"))
+        hgt[:, :, :] = np.full((1, 2, 2), 100.0)
+        ph = ds.createVariable("PH", "f8", ("Time", "bottom_top_stag", "south_north", "west_east"))
+        phb = ds.createVariable("PHB", "f8", ("Time", "bottom_top_stag", "south_north", "west_east"))
+        ph[:, :, :, :] = 0.0
+        phb[:, :, :, :] = np.asarray([[[[100.0]], [[120.0]], [[160.0]]]]) * 9.80665
+
+    wrf = spritzwrf.load_near_surface_wind(path, time_index=0, level_index=1)
+
+    assert wrf.metadata is not None
+    assert wrf.metadata["level_meters"] == [140.0]
+    assert wrf.metadata["level_meters_kind"] == "height_above_sea_level"
+
+
+def test_wrf_u10_level_meters_is_ten_above_ground(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wrf_u10_with_geopotential.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("Time", 1)
+        ds.createDimension("bottom_top_stag", 3)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]]])
+        lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]]])
+        for name, values in [("XLAT", lat_values), ("XLONG", lon_values)]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+        for name in ("U10", "V10"):
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = np.ones((1, 2, 2), dtype=float)
+        hgt = ds.createVariable("HGT", "f8", ("Time", "south_north", "west_east"))
+        hgt[:, :, :] = np.full((1, 2, 2), 100.0)
+        ph = ds.createVariable("PH", "f8", ("Time", "bottom_top_stag", "south_north", "west_east"))
+        phb = ds.createVariable("PHB", "f8", ("Time", "bottom_top_stag", "south_north", "west_east"))
+        ph[:, :, :, :] = 0.0
+        phb[:, :, :, :] = np.asarray([[[[100.0]], [[120.0]], [[160.0]]]]) * 9.80665
+
+    wrf = spritzwrf.load_near_surface_wind(path, time_index=0, level_index=0)
+
+    assert wrf.metadata is not None
+    assert wrf.metadata["level_meters"] == [10.0]
+    assert wrf.metadata["level_meters_kind"] == "height_above_ground"
+
+
+def test_spritzmet_logs_time_datetime_and_level_meters(caplog: pytest.LogCaptureFixture, tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wrf_4d_wind_logging.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("Time", 2)
+        ds.createDimension("DateStrLen", 19)
+        ds.createDimension("bottom_top", 2)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        times = ds.createVariable("Times", "S1", ("Time", "DateStrLen"))
+        times[0, :] = np.asarray(list("2026-05-27_00:00:00"), dtype="S1")
+        times[1, :] = np.asarray(list("2026-05-27_01:00:00"), dtype="S1")
+        height = ds.createVariable("height_m", "f8", ("bottom_top",))
+        height[:] = np.asarray([10.0, 80.0])
+        lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]], [[40.0, 40.0], [40.01, 40.01]]])
+        lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]], [[14.0, 14.01], [14.0, 14.01]]])
+        for name, values in [("XLAT", lat_values), ("XLONG", lon_values)]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+        for name in ("U", "V"):
+            var = ds.createVariable(name, "f8", ("Time", "bottom_top", "south_north", "west_east"))
+            var[:, :, :, :] = np.ones((2, 2, 2, 2), dtype=float)
+
+    wrf = spritzwrf.load_near_surface_wind(path, time_index=None, level_index=None)
+    assert wrf.metadata is not None
+    assert wrf.metadata["level_meters"] == [10.0, 80.0]
+
+    with caplog.at_level("INFO", logger="sprtz.models.spritzmet"):
+        spritzmet.downscale_wrf_to_local_grid(
+            wrf,
+            center_lat=40.005,
+            center_lon=14.005,
+            nx=3,
+            ny=3,
+            dx_m=100.0,
+            dy_m=100.0,
+        )
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "time_index=1 datetime_utc=2026-05-27T01:00:00Z" in messages
+    assert "level_index=1 level_m=80.000" in messages
 
 
 def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_and_levels(tmp_path: Path) -> None:
@@ -481,6 +635,11 @@ def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_an
         rain[:, :, :] = np.asarray([np.full((2, 2), 0.5), np.full((2, 2), 1.5)])
 
     out = tmp_path / "local_all.nc"
+    stations = tmp_path / "stations.csv"
+    stations.write_text(
+        "id,x,y,wind_speed,wind_dir,precipitation_rate\nS1,0,0,8,270,2.0\n",
+        encoding="utf-8",
+    )
     assert (
         module.main(
             [
@@ -504,6 +663,8 @@ def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_an
                 "examples/data/highres_dem.asc",
                 "--land-cover",
                 "examples/data/highres_landcover.asc",
+                "--station-measurements",
+                str(stations),
             ]
         )
         == 0
@@ -518,15 +679,29 @@ def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_an
         assert ds.spritzmet_downscaling_algorithm == "clean_room_calmet_style_diagnostic"
         assert ds.spritzmet_uses_dem_elevation_m == "true"
         assert ds.spritzmet_uses_land_cover == "true"
+        assert ds.spritzmet_station_measurement_improvement == "true"
+        assert ds.spritzmet_station_measurement_count == 1
+        assert ds.variables["z"].units == "1"
+        assert ds.variables["z"].long_name == "vertical level index"
 
 
-def test_high_resolution_wind_vertical_level_preset() -> None:
+def test_high_resolution_wind_vertical_level_preset_points_to_config() -> None:
     module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
-    levels = module._parse_vertical_levels_m("usecase01-exponential")
-    assert len(levels) == 21
-    assert levels[0] == pytest.approx(10.0)
-    assert levels[1] == pytest.approx(10.0 * math.exp(0.46))
-    assert levels[-1] == pytest.approx(10.0 * math.exp(0.46 * 20.0))
+    with pytest.raises(ValueError, match="config.json"):
+        module._parse_vertical_levels_m("usecase01-exponential")
+
+
+def test_high_resolution_wind_vertical_levels_expand_single_level_wrf() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    wrf = module._synthetic_wrf(40.0, 14.0)
+    expanded = module._with_vertical_level_metadata(wrf, [10.0, 20.0, 40.0])
+    assert expanded.u.shape == (1, 3, 7, 7)
+    assert expanded.v.shape == (1, 3, 7, 7)
+    assert expanded.metadata["level_meters"] == [10.0, 20.0, 40.0]
+    assert expanded.metadata["level_meters_kind"] == "height_above_sea_level"
+    assert expanded.metadata["vertical_level_expansion"] == "single_near_surface_level_repeated"
+    np.testing.assert_allclose(expanded.u[0, 0], wrf.u)
+    np.testing.assert_allclose(expanded.u[0, 1], wrf.u)
 
 
 def test_high_resolution_wind_entrypoint_date_hours_writes_one_multitime_file(tmp_path: Path) -> None:

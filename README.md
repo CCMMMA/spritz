@@ -18,7 +18,7 @@ It provides shared configuration, legacy-control parsing, NetCDF-CF interoperabi
 | `spritzwrf` | `sprtz.models.spritzwrf` | Legacy-compatible WRF/NetCDF metadata adapter. |
 | SpritzWRF API | `sprtz.models.spritzwrf` | Clean-room WRF extraction and downloader. |
 | SpritzMet API | `sprtz.models.spritzmet` | Clean-room diagnostic meteorology and WRF downscaling. |
-| `terrain` | `sprtz.models.terrain` | Clean-room terrain interpolation and preprocessing. |
+| `terrain` | `sprtz.models.terrain` | Clean-room terrain resampling and preprocessing. |
 | `ctgproc` | `sprtz.models.ctgproc` | Land-use category aggregation. |
 | `makegeo` | `sprtz.models.makegeo` | Terrain/land-use GEO table builder. |
 | `spritzmet` | `sprtz.models.spritzmet` | Diagnostic gridded meteorology builder. |
@@ -271,7 +271,7 @@ Spritz includes a root-level `usecases/` folder with reproducible templates for:
 Install the package, then run the explicit root-level didactic steps. The use cases are intentionally not importable suite modules:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py --date 20260527Z0000 --hours 24 --download-dir data/wrf --output data/wrf_100m_wind.nc --center-lat 40.85 --center-lon 14.27 --nx 101 --ny 101 --dx 100 --dy 100 --vertical-levels-m usecase01-exponential
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py --date 20260527Z0000 --hours 24 --download-dir data/wrf --output data/wrf_100m_wind.nc --center-lat 40.85 --center-lon 14.27 --nx 101 --ny 101 --dx 100 --dy 100 --config usecases/01_high_resolution_wind_field/config.json
 python usecases/02_wildfire_arson_effects/step_02_build_config.py --output data/wildfire_case/wildfire_event.json --center-lat 40.85 --center-lon 14.27 --material plastic --start 20260527Z0000 --end 20260527Z0100 --precipitation-washout
 python usecases/02_wildfire_arson_effects/step_03_run_model.py --config data/wildfire_case/wildfire_event.json --output-dir data/wildfire_case/model --backend gaussian --interchange netcdf
 python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --concentration data/wildfire_case/model/concentration.nc --satellite-mask data/satellite_mask.json --output data/wildfire_case/evaluation.json

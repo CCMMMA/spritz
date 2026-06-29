@@ -32,10 +32,6 @@ DEFAULT_USE_CASE_BOUNDS = {
 }
 RASTERIO_SUFFIXES = {".tif", ".tiff", ".cog"}
 NETCDF_SUFFIXES = {".nc", ".nc4", ".cdf", ".netcdf"}
-DEFAULT_VERTICAL_LEVELS_K = 0.46
-DEFAULT_VERTICAL_LEVELS_COUNT = 21
-
-
 class UseCaseDependencyError(RuntimeError):
     """Raised when the selected use-case inputs need optional dependencies."""
 
@@ -219,28 +215,33 @@ def _actual_bounds(met: spritzmet.LocalMeteorology) -> dict[str, float]:
     }
 
 
-def _default_vertical_levels_m() -> list[float]:
-    return [
-        10.0 * math.exp(DEFAULT_VERTICAL_LEVELS_K * float(index))
-        for index in range(DEFAULT_VERTICAL_LEVELS_COUNT)
-    ]
-
-
-def _parse_vertical_levels_m(value: str | None) -> list[float] | None:
+def _parse_vertical_levels_m(value: str | list[float] | list[int] | tuple[float, ...] | None) -> list[float] | None:
     if value is None:
         return None
+    if isinstance(value, (list, tuple)):
+        levels = [float(part) for part in value]
+        return _validate_vertical_levels_m(levels)
     normalized = value.strip().lower()
     if normalized in {"usecase01", "usecase01-exponential", "default", "exp"}:
-        return _default_vertical_levels_m()
+        raise ValueError(
+            "the usecase01-exponential preset was replaced by "
+            "usecases/01_high_resolution_wind_field/config.json; pass --config with that file"
+        )
     parts = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
     if not parts:
-        raise ValueError("--vertical-levels-m must be a comma-separated list of positive heights or usecase01-exponential")
+        raise ValueError("--vertical-levels-m must be a comma-separated list of positive heights above sea level")
     try:
         levels = [float(part) for part in parts]
     except ValueError as exc:
         raise ValueError("--vertical-levels-m must contain numeric heights in metres") from exc
+    return _validate_vertical_levels_m(levels)
+
+
+def _validate_vertical_levels_m(levels: list[float]) -> list[float]:
+    if not levels:
+        raise ValueError("--vertical-levels-m must contain at least one height")
     if any(level <= 0.0 for level in levels):
-        raise ValueError("--vertical-levels-m heights must be positive metres above ground")
+        raise ValueError("--vertical-levels-m heights must be positive metres above sea level")
     if any(next_level <= level for level, next_level in zip(levels, levels[1:])):
         raise ValueError("--vertical-levels-m heights must be strictly increasing")
     return levels
@@ -253,18 +254,54 @@ def _with_vertical_level_metadata(
     if vertical_levels_m is None:
         return wrf
     metadata = dict(wrf.metadata or {})
+    u = _expand_single_level_wind(wrf.u, vertical_levels_m, "u", metadata)
+    v = _expand_single_level_wind(wrf.v, vertical_levels_m, "v", metadata)
     metadata["level_meters"] = [float(level) for level in vertical_levels_m]
     metadata["level_meters_source"] = "usecase01_command_line"
-    metadata["level_meters_kind"] = "height_above_ground"
+    metadata["level_meters_kind"] = "height_above_sea_level"
+    if np.asarray(wrf.u).shape != np.asarray(u).shape:
+        metadata["vertical_level_expansion"] = "single_near_surface_level_repeated"
     return spritzwrf.WRFWindField(
         wrf.latitude,
         wrf.longitude,
-        wrf.u,
-        wrf.v,
+        u,
+        v,
         wrf.source_path,
         time_index=wrf.time_index,
         metadata=metadata,
         precipitation_rate=wrf.precipitation_rate,
+    )
+
+
+def _expand_single_level_wind(
+    values: np.ndarray,
+    vertical_levels_m: list[float],
+    field_name: str,
+    metadata: dict[str, Any],
+) -> np.ndarray:
+    """Repeat one diagnostic near-surface level onto the didactic height grid."""
+    arr = np.asarray(values, dtype=float)
+    nz = len(vertical_levels_m)
+    if arr.ndim == 2:
+        return np.broadcast_to(arr[np.newaxis, np.newaxis, :, :], (1, nz, *arr.shape)).copy()
+    if arr.ndim == 3:
+        if metadata.get("level_index") == "all" and metadata.get("time_index") != "all":
+            if arr.shape[0] == nz:
+                return arr[np.newaxis, :, :, :]
+            if arr.shape[0] == 1:
+                return np.broadcast_to(arr[np.newaxis, :, :, :], (1, nz, *arr.shape[-2:])).copy()
+            raise ValueError(
+                f"--vertical-levels-m contains {nz} heights, but {field_name} has {arr.shape[0]} WRF levels"
+            )
+        return np.broadcast_to(arr[:, np.newaxis, :, :], (arr.shape[0], nz, *arr.shape[-2:])).copy()
+    if arr.ndim == 4:
+        if arr.shape[1] == 1:
+            return np.broadcast_to(arr, (arr.shape[0], nz, *arr.shape[-2:])).copy()
+        if arr.shape[1] == nz:
+            return arr
+    raise ValueError(
+        f"--vertical-levels-m contains {nz} heights, but {field_name} has shape {arr.shape}; "
+        "use matching WRF levels or load a single near-surface level for didactic expansion"
     )
 
 
@@ -628,9 +665,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--vertical-levels-m",
         default=None,
         help=(
-            "Comma-separated vertical heights above ground in metres, or "
-            "'usecase01-exponential' for 10*exp(0.46*x), x=0..20. "
-            "The list must match the number of downscaled WRF wind levels."
+            "Comma-separated vertical heights above sea level in metres. "
+            "Use --config usecases/01_high_resolution_wind_field/config.json for the documented ASL levels. "
+            "A single loaded WRF wind level is repeated onto this didactic z grid; "
+            "multi-level WRF input must already match the requested height count."
         ),
     )
     parser.add_argument("--dem", default=None, help="Optional DEM raster for terrain-aware SpritzMet downscaling, e.g. data/dem/cop30_naples.tif")
