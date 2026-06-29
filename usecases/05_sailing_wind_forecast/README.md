@@ -47,18 +47,19 @@ tools/meteouniparthenope-wrf-download.py 20260601Z0000 \
   --domain d03 \
   --data-root data
 python3 tools/copernicus-cop30-dem-download.py \
-  --south 40.76 --north 40.87 \
-  --west 14.16 --east 14.35 \
+  --south 40.78 --north 40.85 \
+  --west 14.18 --east 14.33 \
   --output data/dem/cop30_bay_of_naples.tif
 python3 tools/copernicus-lc100-download.py \
-  --south 40.76 --north 40.87 \
-  --west 14.16 --east 14.35 \
+  --south 40.78 --north 40.85 \
+  --west 14.18 --east 14.33 \
   --output data/landcover/lc100_bay_of_naples.tif
 ```
 
-The WRF files are the source for replacing the synthetic wind field. The COP30
-DEM and LC100 land cover can be used by `sprtz-terrain fetch` for shoreline or
-terrain-aware preprocessing.
+The WRF files are the source for replacing the synthetic wind field. Pass the
+COP30 DEM as `--dem` and LC100 land cover as `--land-cover` when preparing
+SpritzMet wind and precipitation products; the same rasters can also be used by
+`sprtz-terrain fetch` for shoreline or terrain-aware preprocessing.
 
 ```bash
 python usecases/05_sailing_wind_forecast/step_01_build_forecast.py \

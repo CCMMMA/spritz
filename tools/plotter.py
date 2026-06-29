@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import ast
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -47,6 +48,83 @@ SKIP_VARIABLES = {
 
 TIME_DIMENSION_TOKENS = ("time", "date")
 LEVEL_DIMENSION_TOKENS = ("z", "level", "height", "altitude", "bottom_top", "lev")
+MPS_TO_KNOTS = 1.9438444924406048
+WIND_SPEED_KNOT_LEVELS = (
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    32,
+    34,
+    36,
+    38,
+    40,
+    42,
+    44,
+    46,
+    48,
+    50,
+)
+WIND_SPEED_KNOT_COLOR_ANCHORS = (
+    (0, 0, 51, 255),
+    (1, 23, 186, 255),
+    (1, 31, 243, 255),
+    (5, 51, 252, 255),
+    (25, 87, 255, 255),
+    (59, 139, 244, 255),
+    (79, 189, 248, 255),
+    (104, 245, 231, 255),
+    (119, 254, 198, 255),
+    (146, 251, 158, 255),
+    (168, 254, 125, 255),
+    (202, 254, 90, 255),
+    (237, 253, 77, 255),
+    (245, 208, 58, 255),
+    (239, 169, 57, 255),
+    (250, 115, 46, 255),
+    (231, 83, 38, 255),
+    (238, 48, 33, 255),
+    (187, 32, 24, 255),
+    (122, 22, 16, 255),
+    (100, 22, 16, 255),
+)
+WIND_SPEED_KNOT_COLOR_ANCHOR_LEVELS = (0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 30, 35, 40, 45, 50, 52)
+WIND_SPEED_KNOT_COLORS = tuple(
+    tuple(
+        int(round(float(np.interp(level, WIND_SPEED_KNOT_COLOR_ANCHOR_LEVELS, channel_values))))
+        for channel_values in zip(*WIND_SPEED_KNOT_COLOR_ANCHORS)
+    )
+    for level in WIND_SPEED_KNOT_LEVELS
+)
+
+
 @dataclass(frozen=True)
 class VectorField:
     u: np.ndarray
@@ -65,6 +143,9 @@ class MapField:
     title: str
     vectors: VectorField | None = None
     time_label: str | None = None
+    level_label: str | None = None
+    color_levels: tuple[float, ...] | None = None
+    color_palette: tuple[tuple[int, int, int, int], ...] | None = None
 
 
 def _decode_text(value: Any) -> str:
@@ -305,6 +386,100 @@ def _read_time_label(ds: Any, *, time_index: int) -> str | None:
     return f"Time: {value:g} {units}".strip()
 
 
+def _is_level_dimension(name: str) -> bool:
+    lowered = name.lower()
+    return any(token in lowered for token in LEVEL_DIMENSION_TOKENS)
+
+
+def _format_meters(value: float) -> str:
+    if math.isfinite(value) and abs(value - round(value)) < 1.0e-6:
+        return f"{value:.0f} m"
+    return f"{value:.2f} m"
+
+
+def _parse_float_list(value: Any) -> list[float]:
+    if value is None:
+        return []
+    if isinstance(value, np.ndarray):
+        return [float(item) for item in value.ravel()]
+    if isinstance(value, (list, tuple)):
+        return [float(item) for item in value]
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return [float(value)]
+    text = str(value).strip()
+    if not text:
+        return []
+    try:
+        parsed = ast.literal_eval(text)
+    except (SyntaxError, ValueError):
+        try:
+            return [float(text)]
+        except ValueError:
+            return []
+    return _parse_float_list(parsed)
+
+
+def _height_to_meters(value: float, units: str) -> float | None:
+    lowered = units.strip().lower()
+    if lowered in {"", "m", "meter", "meters", "metre", "metres"}:
+        return value
+    if lowered in {"km", "kilometer", "kilometers", "kilometre", "kilometres"}:
+        return value * 1000.0
+    if lowered in {"cm", "centimeter", "centimeters", "centimetre", "centimetres"}:
+        return value / 100.0
+    return None
+
+
+def _read_level_label(ds: Any, variable: Any, *, level_index: int) -> str | None:
+    level_dim = next((dim for dim in getattr(variable, "dimensions", ()) if _is_level_dimension(dim)), None)
+    if level_dim is None:
+        return None
+    level_prefix = f"Level index: {level_index}"
+    for attr_name in ("spritzmet_level_meters", "level_meters"):
+        levels = _parse_float_list(getattr(ds, attr_name, None))
+        if level_index < len(levels):
+            return f"{level_prefix} ({_format_meters(levels[level_index])})"
+    candidates = [level_dim, "height_m", "height", "z", "level", "bottom_top"]
+    lowered = {name.lower(): name for name in ds.variables}
+    for candidate in candidates:
+        actual = lowered.get(candidate.lower())
+        if actual is None:
+            continue
+        coord = ds.variables[actual]
+        if len(getattr(coord, "dimensions", ())) != 1:
+            continue
+        coord_dims = tuple(getattr(coord, "dimensions", ()))
+        if coord_dims and coord_dims[0] != level_dim:
+            continue
+        values = np.asarray(coord[:], dtype=float).reshape(-1)
+        if values.size == 0 or level_index < 0 or level_index >= values.size:
+            continue
+        meters = _height_to_meters(float(values[level_index]), str(getattr(coord, "units", "")))
+        if meters is not None:
+            return f"{level_prefix} ({_format_meters(meters)})"
+    return f"{level_prefix} (meters unavailable)"
+
+
+def _is_wind_speed_variable(variable: Any) -> bool:
+    name = str(getattr(variable, "name", "")).lower()
+    standard_name = str(getattr(variable, "standard_name", "")).lower()
+    long_name = str(getattr(variable, "long_name", "")).lower()
+    return (
+        name in {candidate.lower() for candidate in WIND_SPEED_NAMES}
+        or standard_name == "wind_speed"
+        or "wind speed" in long_name
+    )
+
+
+def _values_to_knots(values: np.ndarray, units: str) -> np.ndarray:
+    lowered = units.strip().lower()
+    if lowered in {"kt", "kts", "knot", "knots"}:
+        return values
+    if lowered in {"m s-1", "m/s", "meter s-1", "meters s-1", "metre s-1", "metres s-1"}:
+        return values * MPS_TO_KNOTS
+    return values * MPS_TO_KNOTS
+
+
 def _local_to_lat_lon(
     x: np.ndarray,
     y: np.ndarray,
@@ -353,11 +528,33 @@ def read_map_field(
         )
         units = getattr(variable, "units", "")
         long_name = getattr(variable, "long_name", "") or getattr(variable, "standard_name", "")
+        color_levels: tuple[float, ...] | None = None
+        color_palette: tuple[tuple[int, int, int, int], ...] | None = None
+        if _is_wind_speed_variable(variable):
+            values = _values_to_knots(values, str(units))
+            units = "kt"
+            long_name = long_name or "Wind speed"
+            color_levels = tuple(float(level) for level in WIND_SPEED_KNOT_LEVELS)
+            color_palette = WIND_SPEED_KNOT_COLORS
         label = f"{long_name or variable.name}{f' [{units}]' if units else ''}"
         title = f"{Path(input_path).name}: {long_name or variable.name}"
         vectors = _read_vectors(ds, values.shape, time_index=time_index, level_index=level_index)
         time_label = _read_time_label(ds, time_index=time_index)
-        return MapField(variable.name, values, x, y, geographic, label, title, vectors=vectors, time_label=time_label)
+        level_label = _read_level_label(ds, variable, level_index=level_index)
+        return MapField(
+            variable.name,
+            values,
+            x,
+            y,
+            geographic,
+            label,
+            title,
+            vectors=vectors,
+            time_label=time_label,
+            level_label=level_label,
+            color_levels=color_levels,
+            color_palette=color_palette,
+        )
 
 
 def _extent(x: np.ndarray, y: np.ndarray, margin_fraction: float) -> tuple[float, float, float, float]:
@@ -390,10 +587,21 @@ def _add_cartopy_coastlines(
     except Exception:
         LOGGER.warning("cartopy is not installed; skipping high-resolution coastlines")
         return
-    if not allow_download:
-        cartopy.config["downloaders"] = {}
     west, east, south, north = extent
     ax.set_extent((west, east, south, north), crs=ccrs.PlateCarree())
+
+    def natural_earth_path(category: str, name: str) -> str | None:
+        filename = f"ne_{resolution}_{name}.shp"
+        for config_key in ("pre_existing_data_dir", "data_dir"):
+            root = cartopy.config.get(config_key)
+            if not root:
+                continue
+            path = Path(root) / "shapefiles" / "natural_earth" / category / filename
+            if path.exists():
+                return str(path)
+        if not allow_download:
+            return None
+        return str(shpreader.natural_earth(resolution=resolution, category=category, name=name))
 
     def add_natural_earth(
         category: str,
@@ -405,7 +613,7 @@ def _add_cartopy_coastlines(
         linewidth: float,
     ) -> None:
         try:
-            shpreader.natural_earth(resolution=resolution, category=category, name=name)
+            path = natural_earth_path(category, name)
         except Exception as exc:
             LOGGER.warning(
                 "Cartopy Natural Earth %s/%s at %s is unavailable (%s); "
@@ -416,10 +624,18 @@ def _add_cartopy_coastlines(
                 exc,
             )
             return
-        feature = cfeature.NaturalEarthFeature(
-            category,
-            name,
-            resolution,
+        if path is None:
+            LOGGER.warning(
+                "Cartopy Natural Earth %s/%s at %s is not installed locally; "
+                "pass --allow-cartopy-download to fetch it",
+                category,
+                name,
+                resolution,
+            )
+            return
+        feature = cfeature.ShapelyFeature(
+            shpreader.Reader(path).geometries(),
+            ccrs.PlateCarree(),
             edgecolor=edgecolor,
             facecolor=facecolor,
             linewidth=linewidth,
@@ -460,7 +676,7 @@ def plot_map(
 
         matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
-        from matplotlib.colors import LogNorm
+        from matplotlib.colors import BoundaryNorm, ListedColormap, LogNorm
     except Exception as exc:  # pragma: no cover - depends on optional extra
         raise RuntimeError("matplotlib is required for plotting; install sprtz[viz]") from exc
 
@@ -484,11 +700,17 @@ def plot_map(
         if positive.size == 0:
             raise ValueError("--log-scale requires at least one positive value")
         norm = LogNorm(vmin=float(np.nanmin(positive)), vmax=float(np.nanmax(positive)))
+    plot_cmap: Any = cmap
+    if field.color_levels is not None and field.color_palette is not None:
+        rgba = np.asarray(field.color_palette, dtype=float) / 255.0
+        plot_cmap = ListedColormap(rgba)
+        if not log_scale:
+            norm = BoundaryNorm(field.color_levels, ncolors=plot_cmap.N, clip=False)
 
     if min(field.values.shape) == 1:
         scatter_kwargs: dict[str, Any] = {
             "c": field.values.ravel(),
-            "cmap": cmap,
+            "cmap": plot_cmap,
             "norm": norm,
             "s": 34.0,
             "edgecolors": "black",
@@ -498,11 +720,14 @@ def plot_map(
             scatter_kwargs["transform"] = transform
         artist = ax.scatter(field.x.ravel(), field.y.ravel(), **scatter_kwargs)
     else:
-        mesh_kwargs: dict[str, Any] = {"cmap": cmap, "shading": "auto", "norm": norm}
+        mesh_kwargs: dict[str, Any] = {"cmap": plot_cmap, "shading": "auto", "norm": norm}
         if transform is not None:
             mesh_kwargs["transform"] = transform
         artist = ax.pcolormesh(field.x, field.y, field.values, **mesh_kwargs)
-    cbar = fig.colorbar(artist, ax=ax, shrink=0.88, pad=0.025)
+    colorbar_kwargs: dict[str, Any] = {"shrink": 0.88, "pad": 0.025}
+    if field.color_levels is not None:
+        colorbar_kwargs["ticks"] = field.color_levels
+    cbar = fig.colorbar(artist, ax=ax, **colorbar_kwargs)
     cbar.set_label(field.label)
 
     if vector_overlay and field.vectors is not None and min(field.values.shape) > 1:
@@ -560,8 +785,9 @@ def plot_map(
         LOGGER.warning("geographic coordinates unavailable; coastlines require latitude/longitude")
 
     title_text = title or field.title
-    if field.time_label:
-        title_text = f"{title_text}\n{field.time_label}"
+    detail_labels = [label for label in (field.time_label, field.level_label) if label]
+    if detail_labels:
+        title_text = f"{title_text}\n{' | '.join(detail_labels)}"
     ax.set_title(title_text, fontsize=11)
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -14,19 +14,20 @@ tools/meteouniparthenope-wrf-download.py 20260601Z0000 \
   --data-root data
 
 python3 tools/copernicus-cop30-dem-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
+  --south 40.78 --north 40.85 \
+  --west 14.18 --east 14.33 \
   --output data/dem/cop30_naples.tif
 
 python3 tools/copernicus-lc100-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
+  --south 40.78 --north 40.85 \
+  --west 14.18 --east 14.33 \
   --output data/landcover/lc100_naples.tif
 ```
 
-The WRF files feed SpritzWRF/SpritzMet. The COP30 GeoTIFF feeds
-`sprtz-terrain fetch` as a local DEM input, and the LC100 GeoTIFF feeds the
-local land-cover input with `target_categories: "copernicus-lc100"`. See
+The WRF files feed SpritzWRF/SpritzMet. Pass the COP30 GeoTIFF as `--dem` and
+the LC100 GeoTIFF as `--land-cover` whenever a use case downscales WRF wind and
+precipitation; the same rasters also feed `sprtz-terrain fetch` with
+`target_categories: "copernicus-lc100"` for standalone GEO products. See
 `docs/meteouniparthenope-wrf-download.md`,
 `docs/copernicus-cop30-dem-download.md`, and
 `docs/copernicus-lc100-download.md`.
@@ -44,7 +45,7 @@ Cartopy coastline options.
 This use case implements the meteorological preprocessing chain:
 
 ```text
-meteo@uniparthenope WRF5 d03 or local WRF NetCDF -> SpritzWRF -> SpritzMet -> 100 m NetCDF-CF wind and precipitation-rate field
+meteo@uniparthenope WRF5 d03 or local WRF NetCDF + DEM + land cover -> SpritzWRF -> SpritzMet -> 100 m NetCDF-CF wind and precipitation-rate field
 ```
 
 It supports direct downloads from:
@@ -53,11 +54,24 @@ It supports direct downloads from:
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
 ```
 
-The default grid is 101 x 101 points at 100 m spacing, centered on the requested coordinate.
+The default domain is the Bay of Naples bounding box
+`14.18,40.78,14.33,40.85` at 100 m spacing, conservatively expanded to exact
+grid spacing. Pass `--center-lat --center-lon --nx --ny` when an exact
+node-count grid centered on one coordinate is needed. Pass `--dem` and
+`--land-cover` to use COP30/LC100-style raster inputs in the SpritzMet wind and
+precipitation downscaling step. Pass
+`--station-measurements stations.csv` to apply optional weather-station residual
+corrections after the selected deterministic, AI, or diffusion downscaling mode.
 
 ## 02 - Arson or wildfire effects
 
-This use case consumes the same WRF/SpritzWRF/SpritzMet path as use case 01, then builds a Spritz scenario from event location, burning material, source height above ground, start/end datetimes, area, firefighter-action windows, and emission assumptions. It accepts `generic`, `paper`, and `plastic` material presets and can expand a JSON list of multiple fire events into multiple Spritz source records. It can run the configured Gaussian or particle backend and writes the ordinary Spritz model outputs.
+This use case consumes the same DEM/LC-aware WRF/SpritzWRF/SpritzMet path as
+use case 01, then builds a Spritz scenario from event location, burning
+material, source height above ground, start/end datetimes, area,
+firefighter-action windows, and emission assumptions. It accepts `generic`,
+`paper`, and `plastic` material presets and can expand a JSON list of multiple
+fire events into multiple Spritz source records. It can run the configured
+Gaussian or particle backend and writes the ordinary Spritz model outputs.
 
 ## 03 - Satellite and AI-supported model evaluation
 

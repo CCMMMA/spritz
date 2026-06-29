@@ -19,12 +19,24 @@ either option only when you need a single slice. The NetCDF-CF output includes a
 CF `time(time)` coordinate with absolute UTC units when the WRF file provides
 valid-time metadata.
 
+The default use-case bounding box is:
+
+```json
+[
+  [14.18, 40.78],
+  [14.18, 40.85],
+  [14.33, 40.85],
+  [14.33, 40.78],
+  [14.18, 40.78]
+]
+```
+
 The grid can be requested in either of two ways:
 
 - `--center-lat --center-lon --nx --ny` creates an exact node-count grid centered on one coordinate.
 - `--south --north --west --east` creates a conservative grid covering the requested bounding box. The script keeps `--dx` and `--dy` as hard constraints and expands the actual covered area outward to the nearest exact spacing multiple.
 
-The WRF archive pattern is:
+The WRF5 history-file pattern is:
 
 ```text
 https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
@@ -35,7 +47,7 @@ https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_Y
 Prepare WRF input with the repository downloader:
 
 ```bash
-tools/meteouniparthenope-wrf-download.py 20260527Z0000 \
+tools/meteouniparthenope-wrf-download.py 20260621Z0000 \
   --hours 1 \
   --domain d03 \
   --data-root data
@@ -45,19 +57,21 @@ Prepare terrain for workflows that also need surface elevation:
 
 ```bash
 python3 tools/copernicus-cop30-dem-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
+  --south 40.78 --north 40.85 \
+  --west 14.18 --east 14.33 \
   --output data/dem/cop30_naples.tif
 
 python3 tools/copernicus-lc100-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
+  --south 40.78 --north 40.85 \
+  --west 14.18 --east 14.33 \
   --output data/landcover/lc100_naples.tif
 ```
 
-The WRF file feeds SpritzWRF/SpritzMet directly. The COP30 GeoTIFF feeds
-`sprtz-terrain fetch` as a local DEM input, and LC100 feeds the matching local
-land-cover input when `sprtz[geo]` is installed; see
+The WRF file feeds SpritzWRF/SpritzMet directly. Pass the COP30 GeoTIFF as
+`--dem` and the LC100 GeoTIFF as `--land-cover` so SpritzMet uses both rasters
+for wind and precipitation downscaling. The same files can feed
+`sprtz-terrain fetch` when standalone terrain/GEO output is needed; install
+`sprtz[geo]` for GeoTIFF support. See
 `docs/copernicus-cop30-dem-download.md` and
 `docs/copernicus-lc100-download.md`.
 
@@ -65,14 +79,17 @@ land-cover input when `sprtz[geo]` is installed; see
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
-  --date 20260627Z0000 \
+  --date 20260621Z0000 \
   --hours 24 \
-  --download-dir data/wrf \
+  --download-dir data/wrf/d03/ \
   --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --nx 101 --ny 101 \
-  --dx 100 --dy 100
+  --dx 100 --dy 100 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif \
+  --station-measurements data/stations/weather_observations.csv
 ```
 
 This mode uses hourly WRF files from `data/wrf` for the interval
@@ -82,16 +99,24 @@ This mode uses hourly WRF files from `data/wrf` for the interval
 NetCDF file with 24 time slices on the requested 101 by 101 grid at 100 m by
 100 m spacing.
 
-## Run with a bounding box
+Station measurements are optional residual observations applied after the
+selected SpritzMet downscaling mode. The CSV header may use local projected
+`x,y` coordinates in meters, or geographic `latitude,longitude` coordinates.
+Provide `wind_speed` and `wind_dir` together for wind correction and/or
+`precipitation_rate` for precipitation correction.
+
+## Run with a bounding box "The Bay of Naples"
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
-  --download-time 20260527Z0000 \
-  --download-dir data/wrf \
+  --date 20260626Z0000 \
+  --hours 24 \
+  --download-dir data/wrf/d03/ \
   --output data/output/wrf_100m_wind_bbox.nc \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
-  --dx 100 --dy 100
+  --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
+  --dx 100 --dy 100 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
 ```
 
 In bounding-box mode, `--dx` and `--dy` are never changed. The workflow derives
@@ -117,7 +142,9 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
-  --center-lon 14.27
+  --center-lon 14.27 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
 ```
 
 This downscales all WRF times and all wind levels into
@@ -132,7 +159,9 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --time-index 0 \
-  --level-index 0
+  --level-index 0 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
 ```
 
 ## Plot the intermediate/final NetCDF map
