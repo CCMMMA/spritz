@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import math
 import sys
 from datetime import date
 from pathlib import Path
@@ -517,6 +518,15 @@ def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_an
         assert ds.spritzmet_downscaling_algorithm == "clean_room_calmet_style_diagnostic"
         assert ds.spritzmet_uses_dem_elevation_m == "true"
         assert ds.spritzmet_uses_land_cover == "true"
+
+
+def test_high_resolution_wind_vertical_level_preset() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    levels = module._parse_vertical_levels_m("usecase01-exponential")
+    assert len(levels) == 21
+    assert levels[0] == pytest.approx(10.0)
+    assert levels[1] == pytest.approx(10.0 * math.exp(0.46))
+    assert levels[-1] == pytest.approx(10.0 * math.exp(0.46 * 20.0))
 
 
 def test_high_resolution_wind_entrypoint_date_hours_writes_one_multitime_file(tmp_path: Path) -> None:

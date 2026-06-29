@@ -77,6 +77,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --center-lon 14.27 \
   --nx 101 \
   --ny 101 \
+  --vertical-levels-m usecase01-exponential \
   --dem data/dem/cop30_naples.tif \
   --land-cover data/landcover/lc100_naples.tif
 ```
@@ -94,6 +95,11 @@ as a millimeters-per-hour screening rate, or all increments when all times are
 preserved. SpritzMet downscales the precipitation field using the same
 local-grid transform as the wind field.
 
+Use case 01 can set the output vertical coordinate explicitly with
+`--vertical-levels-m`. The named preset `usecase01-exponential` expands to 21
+heights above local ground using `10 * exp(0.46 * x)` for integer `x=0..20`;
+the height list must have the same length as the preserved WRF wind-level axis.
+
 SpritzWRF also owns WRF valid-time extraction. It reads datetimes only from
 WRF/CF time metadata such as `Times`, CF `time` units, or explicit global time
 attributes. It does not infer datetimes from WRF filenames. SpritzMet propagates
@@ -108,7 +114,9 @@ variables are stored as `eastward_wind(time,z,y,x)` and
 `northward_wind(time,z,y,x)`. Surface precipitation is stored as
 `precipitation_rate(time,y,x)`. Products with a physical valid time include a
 CF `time(time)` coordinate with absolute UTC units. JSON fallback uses the same
-logical dimensionality for WRF-derived local products.
+logical dimensionality for WRF-derived local products. When physical
+`level_meters` metadata is available, `z` is written as metres above local
+ground; otherwise it remains a vertical level index.
 
 Set `run.precipitation_washout: true` in the Spritz JSON configuration to use
 the downscaled precipitation rate as an additional wet-removal term in the

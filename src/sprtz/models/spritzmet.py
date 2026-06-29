@@ -296,6 +296,17 @@ class LocalMeteorology:
         u, v = self.wind_4d
         return (270.0 - np.rad2deg(np.arctan2(v, u))) % 360.0
 
+    @property
+    def z_levels_m(self) -> list[float] | None:
+        metadata = self.downscaling_metadata or {}
+        raw_levels = metadata.get("level_meters")
+        if not isinstance(raw_levels, list):
+            return None
+        levels = [float(level) for level in raw_levels]
+        if len(levels) != self.wind_4d[0].shape[1]:
+            return None
+        return levels
+
     def to_payload(self) -> dict[str, Any]:
         time_datetime = iso_utc(self.valid_datetime_utc)
         time_datetimes = [iso_utc(value) for value in (self.valid_datetimes_utc or [])]
@@ -312,7 +323,7 @@ class LocalMeteorology:
             "y": self.y.tolist(),
             "latitude": self.latitude.tolist(),
             "longitude": self.longitude.tolist(),
-            "z": list(range(u4.shape[1])),
+            "z": self.z_levels_m or list(range(u4.shape[1])),
             "u": u4.tolist(),
             "v": v4.tolist(),
             "wind_speed": self.wind_speed.tolist(),
@@ -393,6 +404,24 @@ def _idw_interpolate(
         weights = 1.0 / np.maximum(d2[nearest], 1.0e-20) ** (power / 2.0)
         out[i] = float(np.sum(weights * src_values[nearest]) / np.sum(weights))
     return out.reshape(dst_lat.shape)
+
+
+def _metadata_list(metadata: dict[str, Any] | None, key: str) -> list[Any]:
+    if not metadata:
+        return []
+    value = metadata.get(key)
+    return value if isinstance(value, list) else []
+
+
+def _validated_level_meters(metadata: dict[str, Any] | None, nz: int) -> list[float] | None:
+    levels = _metadata_list(metadata, "level_meters")
+    if not levels:
+        return None
+    if len(levels) != nz:
+        raise ValueError(
+            f"level_meters contains {len(levels)} heights, but downscaled wind has {nz} vertical levels"
+        )
+    return [float(level) for level in levels]
 
 
 def _interpolate_spatial_stack(
@@ -741,8 +770,19 @@ def downscale_wrf_to_local_grid(
         dx_m=dx_m,
         dy_m=dy_m,
     )
+    level_meters = _validated_level_meters(wrf.metadata, LocalMeteorology(
+        xx, yy, dst_lat, dst_lon, u, v, precipitation_rate, center_lat, center_lon, dx_m, dy_m, str(wrf.source_path)
+    ).wind_4d[0].shape[1])
     if terrain_input_metadata:
         downscaling_metadata = {**downscaling_metadata, **terrain_input_metadata}
+    if level_meters is not None:
+        downscaling_metadata["level_meters"] = level_meters
+        downscaling_metadata["level_meters_kind"] = (wrf.metadata or {}).get(
+            "level_meters_kind", "height_above_ground"
+        )
+        downscaling_metadata["level_meters_source"] = (wrf.metadata or {}).get(
+            "level_meters_source", "spritzwrf"
+        )
     valid_datetime = None
     valid_datetimes = None
     if wrf.metadata:
@@ -807,10 +847,17 @@ def write_local_meteorology(
                 time_datetimes = [parsed]
             write_cf_time_coordinate(ds, time_datetimes or None)
             z = ds.createVariable("z", "f8", ("z",))
-            z.long_name = "vertical level index"
-            z.units = "1"
+            z_levels = met.z_levels_m
+            if z_levels is None:
+                z.long_name = "vertical level index"
+                z.units = "1"
+                z[:] = np.arange(nz, dtype=float)
+            else:
+                z.standard_name = "height"
+                z.long_name = "height above local ground"
+                z.units = "m"
+                z[:] = np.asarray(z_levels, dtype=float)
             z.positive = "up"
-            z[:] = np.arange(nz, dtype=float)
             variables = [
                 ("x", met.x[0], ("x",), "m", "local projection x coordinate"),
                 ("y", met.y[:, 0], ("y",), "m", "local projection y coordinate"),

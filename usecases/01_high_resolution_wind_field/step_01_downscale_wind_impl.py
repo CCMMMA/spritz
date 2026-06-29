@@ -32,6 +32,8 @@ DEFAULT_USE_CASE_BOUNDS = {
 }
 RASTERIO_SUFFIXES = {".tif", ".tiff", ".cog"}
 NETCDF_SUFFIXES = {".nc", ".nc4", ".cdf", ".netcdf"}
+DEFAULT_VERTICAL_LEVELS_K = 0.46
+DEFAULT_VERTICAL_LEVELS_COUNT = 21
 
 
 class UseCaseDependencyError(RuntimeError):
@@ -217,6 +219,55 @@ def _actual_bounds(met: spritzmet.LocalMeteorology) -> dict[str, float]:
     }
 
 
+def _default_vertical_levels_m() -> list[float]:
+    return [
+        10.0 * math.exp(DEFAULT_VERTICAL_LEVELS_K * float(index))
+        for index in range(DEFAULT_VERTICAL_LEVELS_COUNT)
+    ]
+
+
+def _parse_vertical_levels_m(value: str | None) -> list[float] | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"usecase01", "usecase01-exponential", "default", "exp"}:
+        return _default_vertical_levels_m()
+    parts = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
+    if not parts:
+        raise ValueError("--vertical-levels-m must be a comma-separated list of positive heights or usecase01-exponential")
+    try:
+        levels = [float(part) for part in parts]
+    except ValueError as exc:
+        raise ValueError("--vertical-levels-m must contain numeric heights in metres") from exc
+    if any(level <= 0.0 for level in levels):
+        raise ValueError("--vertical-levels-m heights must be positive metres above ground")
+    if any(next_level <= level for level, next_level in zip(levels, levels[1:])):
+        raise ValueError("--vertical-levels-m heights must be strictly increasing")
+    return levels
+
+
+def _with_vertical_level_metadata(
+    wrf: spritzwrf.WRFWindField,
+    vertical_levels_m: list[float] | None,
+) -> spritzwrf.WRFWindField:
+    if vertical_levels_m is None:
+        return wrf
+    metadata = dict(wrf.metadata or {})
+    metadata["level_meters"] = [float(level) for level in vertical_levels_m]
+    metadata["level_meters_source"] = "usecase01_command_line"
+    metadata["level_meters_kind"] = "height_above_ground"
+    return spritzwrf.WRFWindField(
+        wrf.latitude,
+        wrf.longitude,
+        wrf.u,
+        wrf.v,
+        wrf.source_path,
+        time_index=wrf.time_index,
+        metadata=metadata,
+        precipitation_rate=wrf.precipitation_rate,
+    )
+
+
 def _synthetic_wrf(center_lat: float, center_lon: float, nx: int = 7, ny: int = 7) -> spritzwrf.WRFWindField:
     """Create a deterministic WRF-like field for tests and classroom demos."""
     lat_axis = center_lat + (np.arange(ny) - (ny - 1) / 2.0) * 0.009
@@ -323,11 +374,13 @@ def _load_wrf_sequence(
     *,
     time_index: int | None,
     level_index: int | None,
+    vertical_levels_m: list[float] | None = None,
 ) -> list[spritzwrf.WRFWindField]:
     fields: list[spritzwrf.WRFWindField] = []
     for wrf_path in wrf_paths:
         LOGGER.info("step 2/4 SpritzWRF: loading hourly WRF file %s", wrf_path)
-        fields.append(spritzwrf.load_near_surface_wind(wrf_path, time_index=time_index, level_index=level_index))
+        wrf = spritzwrf.load_near_surface_wind(wrf_path, time_index=time_index, level_index=level_index)
+        fields.append(_with_vertical_level_metadata(wrf, vertical_levels_m))
     return fields
 
 
@@ -368,6 +421,7 @@ def _load_wrf_field(
     *,
     time_index: int | None,
     level_index: int | None,
+    vertical_levels_m: list[float] | None,
     allow_synthetic: bool,
     center_lat: float,
     center_lon: float,
@@ -376,7 +430,10 @@ def _load_wrf_field(
     if wrf_path is not None and wrf_path.exists():
         LOGGER.info("step 2/4 SpritzWRF: spritzwrf.load_near_surface_wind")
         _teach("SpritzWRF converts WRF/WRF-like variables into a clean WRFWindField object")
-        wrf = spritzwrf.load_near_surface_wind(wrf_path, time_index=time_index, level_index=level_index)
+        wrf = _with_vertical_level_metadata(
+            spritzwrf.load_near_surface_wind(wrf_path, time_index=time_index, level_index=level_index),
+            vertical_levels_m,
+        )
         _teach(
             "loaded WRF field shape=%s, time_index=%s, level_index=%s, precipitation=%s",
             wrf.u.shape,
@@ -388,7 +445,7 @@ def _load_wrf_field(
     if allow_synthetic:
         LOGGER.info("step 2/4 SpritzWRF: using deterministic synthetic WRF-like demo field")
         _teach("the synthetic field exercises the same SpritzMet path, but it is not meteorological evidence")
-        wrf = _synthetic_wrf(center_lat, center_lon)
+        wrf = _with_vertical_level_metadata(_synthetic_wrf(center_lat, center_lon), vertical_levels_m)
         _teach("synthetic WRF-like field shape=%s centered near (%.6f, %.6f)", wrf.u.shape, center_lat, center_lon)
         return wrf
     raise FileNotFoundError(
@@ -405,6 +462,13 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
     configure_logging(False)
     _teach("this script is scenario orchestration; numerical work stays in sprtz.models.spritzwrf and sprtz.models.spritzmet")
     center_lat, center_lon, nx, ny, requested_bounds = _resolve_grid(args)
+    vertical_levels_m = _parse_vertical_levels_m(args.vertical_levels_m)
+    if vertical_levels_m is not None:
+        _teach(
+            "vertical levels are set on the command line as metres above ground; first=%.3f m, count=%s",
+            vertical_levels_m[0],
+            len(vertical_levels_m),
+        )
     _check_local_raster_dependencies(args.dem, args.land_cover)
 
     wrf_paths = _resolve_hourly_wrf_inputs(args)
@@ -414,6 +478,7 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
             wrf_path,
             time_index=args.time_index,
             level_index=args.level_index,
+            vertical_levels_m=vertical_levels_m,
             allow_synthetic=args.allow_synthetic,
             center_lat=center_lat,
             center_lon=center_lon,
@@ -421,7 +486,12 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
         _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=not args.json)
         wrf_fields = [wrf]
     else:
-        wrf_fields = _load_wrf_sequence(wrf_paths, time_index=args.time_index, level_index=args.level_index)
+        wrf_fields = _load_wrf_sequence(
+            wrf_paths,
+            time_index=args.time_index,
+            level_index=args.level_index,
+            vertical_levels_m=vertical_levels_m,
+        )
         for wrf in wrf_fields:
             _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=not args.json)
 
@@ -554,6 +624,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dy", type=float, default=100.0)
     parser.add_argument("--time-index", type=int, default=None, help="time index for WRF variables; omit to downscale all times")
     parser.add_argument("--level-index", type=int, default=None, help="vertical level index for 4D WRF wind variables; omit to downscale all levels")
+    parser.add_argument(
+        "--vertical-levels-m",
+        default=None,
+        help=(
+            "Comma-separated vertical heights above ground in metres, or "
+            "'usecase01-exponential' for 10*exp(0.46*x), x=0..20. "
+            "The list must match the number of downscaled WRF wind levels."
+        ),
+    )
     parser.add_argument("--dem", default=None, help="Optional DEM raster for terrain-aware SpritzMet downscaling, e.g. data/dem/cop30_naples.tif")
     parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster, e.g. data/landcover/lc100_naples.tif")
     parser.add_argument("--downscaling-mode", choices=["deterministic", "ai", "diffusion"], default="deterministic")

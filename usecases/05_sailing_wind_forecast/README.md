@@ -15,6 +15,12 @@ resolution, 10 m vertical resolution, and 10 minute time resolution. The
 initialization date defaults to the current UTC day at Z00, and the default
 outlook is 24 hours.
 
+For consistency with use case 01 wind products, operational Bay of Naples
+studies can use the same physical vertical-level convention: the first level is
+10 m above local ground and the 21-level exponential list follows
+`10 * exp(0.46 * x)` for integer `x=0..20`. The bundled synthetic sailing
+forecast still accepts `--vertical-resolution-m` for regular teaching grids.
+
 NetCDF/time convention: the forecast NetCDF writes a strict CF `time(time)`
 coordinate with absolute UTC units derived from the initialization datetime and
 forecast lead seconds. The JSON payload keeps `valid_time_s` as forecast lead
@@ -77,6 +83,22 @@ python usecases/05_sailing_wind_forecast/step_01_build_forecast.py \
   --vertical-resolution-m 10 \
   --time-resolution-s 600 \
   --output output/sailing/bay_of_naples_forecast.json
+```
+
+To prepare the matching SpritzWRF/SpritzMet wind product from use case 01 for
+the same race area, pass the vertical-level preset on that command line:
+
+```bash
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+  --date 20260626Z0000 \
+  --hours 24 \
+  --download-dir data/wrf/d03/ \
+  --output data/output/wrf_100m_wind_bbox.nc \
+  --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
+  --dx 100 --dy 100 \
+  --vertical-levels-m usecase01-exponential \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
 ```
 
 The default product is deterministic and offline. It uses a synthetic
