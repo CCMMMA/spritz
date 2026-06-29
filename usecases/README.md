@@ -54,8 +54,8 @@ downloader prepares the matching categorical land-cover GeoTIFF. Install
 Use-case scripts plot NetCDF intermediate and final products with
 `tools/plotter.py` whenever a plottable NetCDF is produced. Generated maps are
 written beside the corresponding use-case outputs. See `docs/plotter.md` for
-direct plotter commands, Cartopy coastline behavior, and optional dependency
-notes.
+direct plotter commands, Cartopy Natural Earth/GSHHS coastline behavior, and
+optional dependency notes.
 
 ## Use-case sequence
 

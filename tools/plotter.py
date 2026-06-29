@@ -572,10 +572,37 @@ def _extent(x: np.ndarray, y: np.ndarray, margin_fraction: float) -> tuple[float
     )
 
 
+def _download_soest_gshhs(cartopy_config: Any, scale: str, level: int) -> Path:
+    from io import BytesIO
+    from urllib.request import urlopen
+    from zipfile import ZipFile
+
+    data_dir = Path(cartopy_config["data_dir"])
+    target_dir = data_dir / "shapefiles" / "gshhs" / scale
+    target = target_dir / f"GSHHS_{scale}_L{level}.shp"
+    if target.exists():
+        return target
+
+    url = "https://www.soest.hawaii.edu/pwessel/gshhg/gshhg-shp-2.3.7.zip"
+    LOGGER.warning("Cartopy GSHHS download failed; downloading GSHHG from %s", url)
+    with urlopen(url, timeout=60) as response:
+        archive = BytesIO(response.read())
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    prefix = Path("GSHHS_shp") / scale / f"GSHHS_{scale}_L{level}"
+    with ZipFile(archive) as zfh:
+        for suffix in (".shp", ".dbf", ".shx", ".prj"):
+            member_name = str(prefix.with_suffix(suffix))
+            with zfh.open(member_name) as source:
+                (target_dir / f"GSHHS_{scale}_L{level}{suffix}").write_bytes(source.read())
+    return target
+
+
 def _add_cartopy_coastlines(
     ax: Any,
     *,
     extent: tuple[float, float, float, float],
+    source: str,
     resolution: str,
     allow_download: bool,
 ) -> None:
@@ -642,6 +669,57 @@ def _add_cartopy_coastlines(
         )
         ax.add_feature(feature, zorder=zorder)
 
+    def add_gshhs() -> bool:
+        scale = {"10m": "full", "50m": "intermediate", "110m": "low"}[resolution]
+        scale_key = scale[0]
+        filename = f"GSHHS_{scale_key}_L1.shp"
+        installed = False
+        for config_key in ("pre_existing_data_dir", "data_dir"):
+            root = cartopy.config.get(config_key)
+            if not root:
+                continue
+            path = Path(root) / "shapefiles" / "gshhs" / scale_key / filename
+            if path.exists():
+                installed = True
+                break
+        if not installed and not allow_download:
+            LOGGER.warning(
+                "Cartopy GSHHS %s coastlines are not installed locally; "
+                "pass --allow-cartopy-download to fetch them",
+                scale,
+            )
+            return False
+        try:
+            try:
+                path = shpreader.gshhs(scale=scale_key, level=1)
+            except Exception:
+                if not allow_download:
+                    raise
+                path = _download_soest_gshhs(cartopy.config, scale_key, level=1)
+            reader = shpreader.Reader(path)
+            feature = cfeature.ShapelyFeature(
+                reader.geometries(),
+                ccrs.PlateCarree(),
+                edgecolor="0.08",
+                facecolor="none",
+                linewidth=0.75,
+            )
+        except Exception as exc:
+            LOGGER.warning(
+                "Cartopy GSHHS %s coastlines are unavailable (%s); "
+                "install local GSHHS data or pass --allow-cartopy-download",
+                scale,
+                exc,
+            )
+            return False
+        ax.add_feature(feature, zorder=5)
+        return True
+
+    if source == "gshhs":
+        if add_gshhs():
+            return
+        LOGGER.warning("falling back to Natural Earth coastlines")
+
     add_natural_earth("physical", "ocean", zorder=0, edgecolor="none", facecolor="0.985", linewidth=0.0)
     add_natural_earth("physical", "land", zorder=0, edgecolor="none", facecolor="0.94", linewidth=0.0)
     add_natural_earth("physical", "coastline", zorder=5, edgecolor="0.08", facecolor="none", linewidth=0.65)
@@ -670,6 +748,7 @@ def plot_map(
     vector_stride: int,
     vector_density: int | None,
     vector_scale: float | None,
+    coastline_source: str = "naturalearth",
 ) -> Path:
     try:
         import matplotlib
@@ -764,6 +843,7 @@ def plot_map(
         _add_cartopy_coastlines(
             ax,
             extent=(west, east, south, north),
+            source=coastline_source,
             resolution=coastline_resolution,
             allow_download=allow_cartopy_download,
         )
@@ -819,7 +899,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--coastline-resolution",
         choices=("10m", "50m", "110m"),
         default="10m",
-        help="Natural Earth coastline resolution used by Cartopy",
+        help="coastline resolution used by Cartopy",
+    )
+    parser.add_argument(
+        "--coastline-source",
+        choices=("naturalearth", "gshhs"),
+        default="naturalearth",
+        help="Cartopy coastline source; use gshhs for finer harbor-scale coastlines",
     )
     parser.add_argument(
         "--allow-cartopy-download",
@@ -854,6 +940,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             title=args.title,
             dpi=args.dpi,
             cmap=args.cmap,
+            coastline_source=args.coastline_source,
             coastline_resolution=args.coastline_resolution,
             allow_cartopy_download=args.allow_cartopy_download,
             figure_size=(args.width, args.height),

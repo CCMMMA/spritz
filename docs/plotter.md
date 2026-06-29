@@ -91,8 +91,11 @@ MPLBACKEND=Agg python tools/plotter.py \
 
 When Cartopy is installed and local Natural Earth data are available, the plotter
 draws high-resolution Natural Earth `10m` coastlines, borders, land, and ocean
-context over geographic plots by default. The tool does not allow Cartopy
-network downloads unless explicitly requested:
+context over geographic plots by default. Select the coastline source with
+`--coastline-source naturalearth` or `--coastline-source gshhs`. GSHHS is useful
+for small coastal and harbor-scale domains where Natural Earth may be too
+generalized. The tool does not allow Cartopy network downloads unless explicitly
+requested:
 
 ```bash
 MPLBACKEND=Agg python tools/plotter.py \
@@ -102,7 +105,23 @@ MPLBACKEND=Agg python tools/plotter.py \
   --allow-cartopy-download
 ```
 
-Use `--coastline-resolution 50m` or `110m` for faster overview figures.
+For harbor-scale wind maps, use GSHHS with `10m` resolution:
+
+```bash
+MPLBACKEND=Agg python tools/plotter.py \
+  data/output/wrf_100m_wind_bbox.nc \
+  --variable wind_speed \
+  --output data/output/wrf_100m_wind_bbox.png \
+  --coastline-source gshhs \
+  --coastline-resolution 10m \
+  --allow-cartopy-download
+```
+
+Use `--coastline-resolution 50m` or `110m` for faster overview figures. With
+GSHHS, these map to Cartopy's `intermediate` and `low` GSHHS scales.
+If Cartopy's NOAA GSHHS downloader fails after `--allow-cartopy-download`, the
+plotter tries the maintained SOEST GSHHG shapefile archive and installs the
+requested scale into Cartopy's normal data directory.
 
 ## Use cases
 

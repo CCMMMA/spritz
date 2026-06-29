@@ -71,6 +71,7 @@ def plot_netcdf_if_available(
             title=title,
             dpi=dpi,
             cmap="viridis",
+            coastline_source="naturalearth",
             coastline_resolution="10m",
             allow_cartopy_download=False,
             figure_size=(7.2, 5.4),

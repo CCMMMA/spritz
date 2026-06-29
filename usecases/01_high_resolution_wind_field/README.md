@@ -194,7 +194,22 @@ For a bounding-box product, use the matching NetCDF path:
 ```bash
 python tools/plotter.py data/output/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
+  --time-index 12 \
+  --level-index 0 \
   --output data/output/wrf_100m_wind_bbox.png
+```
+
+For finer harbor-scale coastline detail, request GSHHS coastlines explicitly:
+
+```bash
+python tools/plotter.py data/output/wrf_100m_wind_bbox.nc \
+  --variable wind_speed \
+  --time-index 12 \
+  --level-index 0 \
+  --output data/output/wrf_100m_wind_bbox.png \
+  --coastline-source gshhs \
+  --coastline-resolution 10m \
+  --allow-cartopy-download
 ```
 
 ## Classroom/demo run without WRF data

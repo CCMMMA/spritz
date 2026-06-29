@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import sys
+import types
 from importlib.machinery import SourceFileLoader
 from datetime import datetime
 from pathlib import Path
@@ -403,3 +404,166 @@ def test_plotter_main_reports_missing_variable(tmp_path: Path, caplog: pytest.Lo
 
     assert result == 1
     assert "variable 'missing' is not present" in caplog.text
+
+
+def test_plotter_parser_accepts_gshhs_coastline_source() -> None:
+    plotter = load_plotter_tool()
+
+    args = plotter.build_parser().parse_args(
+        [
+            "input.nc",
+            "--output",
+            "map.png",
+            "--coastline-source",
+            "gshhs",
+            "--coastline-resolution",
+            "10m",
+        ]
+    )
+
+    assert args.coastline_source == "gshhs"
+    assert args.coastline_resolution == "10m"
+
+
+def test_add_cartopy_coastlines_uses_gshhs_feature(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plotter = load_plotter_tool()
+    gshhs_path = tmp_path / "shapefiles" / "gshhs" / "f" / "GSHHS_f_L1.shp"
+    gshhs_path.parent.mkdir(parents=True)
+    gshhs_path.touch()
+    added: list[tuple[object, int]] = []
+    created: list[dict[str, object]] = []
+
+    class FakeAxes:
+        def set_extent(self, extent, *, crs):
+            self.extent = extent
+
+        def add_feature(self, feature, zorder):
+            added.append((feature, zorder))
+
+    class FakePlateCarree:
+        pass
+
+    class FakeReader:
+        def __init__(self, path):
+            self.path = path
+
+        def geometries(self):
+            return ("geometry",)
+
+    def fake_gshhs(**kwargs):
+        created.append({"gshhs": kwargs})
+        return str(gshhs_path)
+
+    def fake_shapely_feature(*args, **kwargs):
+        created.append(kwargs)
+        return ("gshhs", args, kwargs)
+
+    cartopy = types.ModuleType("cartopy")
+    cartopy.config = {"pre_existing_data_dir": str(tmp_path), "data_dir": ""}
+    ccrs = types.ModuleType("cartopy.crs")
+    ccrs.PlateCarree = FakePlateCarree
+    cfeature = types.ModuleType("cartopy.feature")
+    cfeature.ShapelyFeature = fake_shapely_feature
+    cartopy_io = types.ModuleType("cartopy.io")
+    shpreader = types.ModuleType("cartopy.io.shapereader")
+    shpreader.gshhs = fake_gshhs
+    shpreader.Reader = FakeReader
+    monkeypatch.setitem(sys.modules, "cartopy", cartopy)
+    monkeypatch.setitem(sys.modules, "cartopy.crs", ccrs)
+    monkeypatch.setitem(sys.modules, "cartopy.feature", cfeature)
+    monkeypatch.setitem(sys.modules, "cartopy.io", cartopy_io)
+    monkeypatch.setitem(sys.modules, "cartopy.io.shapereader", shpreader)
+
+    plotter._add_cartopy_coastlines(
+        FakeAxes(),
+        extent=(14.0, 14.1, 40.0, 40.1),
+        source="gshhs",
+        resolution="10m",
+        allow_download=False,
+    )
+
+    assert created == [
+        {"gshhs": {"scale": "f", "level": 1}},
+        {
+            "edgecolor": "0.08",
+            "facecolor": "none",
+            "linewidth": 0.75,
+        }
+    ]
+    assert len(added) == 1
+    feature, zorder = added[0]
+    assert zorder == 5
+    assert feature[0] == "gshhs"
+    assert feature[1][0] == ("geometry",)
+    assert isinstance(feature[1][1], FakePlateCarree)
+    assert feature[2] == created[1]
+
+
+def test_add_cartopy_coastlines_falls_back_to_soest_gshhs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plotter = load_plotter_tool()
+    gshhs_path = tmp_path / "shapefiles" / "gshhs" / "f" / "GSHHS_f_L1.shp"
+    added: list[tuple[object, int]] = []
+    downloads: list[tuple[str, int]] = []
+
+    class FakeAxes:
+        def set_extent(self, extent, *, crs):
+            self.extent = extent
+
+        def add_feature(self, feature, zorder):
+            added.append((feature, zorder))
+
+    class FakePlateCarree:
+        pass
+
+    class FakeReader:
+        def __init__(self, path):
+            self.path = path
+
+        def geometries(self):
+            return ("geometry",)
+
+    def broken_gshhs(**kwargs):
+        raise OSError("missing upstream archive")
+
+    def fake_download(config, scale, level):
+        downloads.append((scale, level))
+        gshhs_path.parent.mkdir(parents=True)
+        gshhs_path.touch()
+        return gshhs_path
+
+    def fake_shapely_feature(*args, **kwargs):
+        return ("gshhs", args, kwargs)
+
+    cartopy = types.ModuleType("cartopy")
+    cartopy.config = {"pre_existing_data_dir": "", "data_dir": str(tmp_path)}
+    ccrs = types.ModuleType("cartopy.crs")
+    ccrs.PlateCarree = FakePlateCarree
+    cfeature = types.ModuleType("cartopy.feature")
+    cfeature.ShapelyFeature = fake_shapely_feature
+    cartopy_io = types.ModuleType("cartopy.io")
+    shpreader = types.ModuleType("cartopy.io.shapereader")
+    shpreader.gshhs = broken_gshhs
+    shpreader.Reader = FakeReader
+    monkeypatch.setitem(sys.modules, "cartopy", cartopy)
+    monkeypatch.setitem(sys.modules, "cartopy.crs", ccrs)
+    monkeypatch.setitem(sys.modules, "cartopy.feature", cfeature)
+    monkeypatch.setitem(sys.modules, "cartopy.io", cartopy_io)
+    monkeypatch.setitem(sys.modules, "cartopy.io.shapereader", shpreader)
+    monkeypatch.setattr(plotter, "_download_soest_gshhs", fake_download)
+
+    plotter._add_cartopy_coastlines(
+        FakeAxes(),
+        extent=(14.0, 14.1, 40.0, 40.1),
+        source="gshhs",
+        resolution="10m",
+        allow_download=True,
+    )
+
+    assert downloads == [("f", 1)]
+    assert len(added) == 1

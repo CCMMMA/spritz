@@ -86,8 +86,10 @@ Expected products:
 ## Plotter notes
 
 The repository does not download map tiles implicitly. Cartopy coastlines are
-drawn only when local Natural Earth data are available, unless the user
-explicitly enables Cartopy downloads in `tools/plotter.py`.
+drawn only when local Natural Earth or GSHHS data are available, unless the
+user explicitly enables Cartopy downloads in `tools/plotter.py`. Use
+`--coastline-source gshhs` for small coastal domains that need finer coastline
+detail.
 
 ## Scientific caution
 
