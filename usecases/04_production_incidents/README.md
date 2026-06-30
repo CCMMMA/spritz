@@ -35,9 +35,10 @@ python3 tools/copernicus-lc100-download.py \
 ```
 
 Use `tools/meteouniparthenope-wrf-download.py` with the event start hour and
-duration. Use the COP30 GeoTIFF as the local DEM and the LC100 GeoTIFF as the
-local land-cover source for `sprtz-terrain fetch` when terrain/GEO products are
-part of the incident package.
+duration. When creating WRF-derived SpritzMet meteorology, pass the COP30
+GeoTIFF as `--dem` and the LC100 GeoTIFF as `--land-cover`; use the same rasters
+with `sprtz-terrain fetch` when terrain/GEO products are part of the incident
+package.
 
 ## Step 1: Build the configured incident
 

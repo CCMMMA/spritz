@@ -147,7 +147,7 @@ provider raises an explicit dependency error.
 
 For reliable alignment, download a DEM that is centered on and larger than the
 Sprtz domain, and keep the configuration domain identical between terrain
-generation, SpritzMet interpolation, and dispersion. Terrain, meteorology, and
+generation, SpritzMet downscaling, and dispersion. Terrain, meteorology, and
 dispersion grids must share dimensions, spacing, and projection choices.
 
 For GeoTIFF/COG inputs, Sprtz reads the raster CRS and pixel-center coordinates

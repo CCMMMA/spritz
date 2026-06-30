@@ -1,7 +1,10 @@
 import csv
+from pathlib import Path
+
+import numpy as np
 
 from sprtz.config import from_mapping, load_config
-from sprtz.models import spritzmet, spritzpost, spritz, ctgproc
+from sprtz.models import spritzmet, spritzpost, spritz, ctgproc, spritzwrf
 from sprtz.io.jsonio import read_json
 from sprtz.io.netcdf_cf import available as netcdf_available, read_cf_concentration
 
@@ -122,3 +125,156 @@ def test_ctgproc():
     raster = ctgproc.read_ascii_grid("examples/landuse.asc")
     result = ctgproc.aggregate_categories(raster)
     assert result["categories"]["2"]["count"] == 4
+
+
+def _small_wrf() -> spritzwrf.WRFWindField:
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    return spritzwrf.WRFWindField(
+        latitude=lat,
+        longitude=lon,
+        u=np.full((2, 2, 2, 2), 3.0),
+        v=np.full((2, 2, 2, 2), 1.0),
+        source_path=Path("synthetic_wrf.nc"),
+        precipitation_rate=np.full((2, 2, 2), 0.5),
+    )
+
+
+def test_spritzmet_downscales_wind_as_4d_and_precipitation_as_3d() -> None:
+    met = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+    )
+    assert met.wind_4d[0].shape == (2, 2, 3, 3)
+    assert met.wind_4d[1].shape == (2, 2, 3, 3)
+    assert met.precipitation_3d.shape == (2, 3, 3)
+    assert met.downscaling_metadata["downscaling_mode"] == "deterministic"
+    assert met.downscaling_metadata["wind_dimensions"] == "time,z,y,x"
+    assert met.downscaling_metadata["precipitation_dimensions"] == "time,y,x"
+
+
+def test_spritzmet_ai_and_diffusion_downscaling_hooks_are_optional() -> None:
+    def model(payload):
+        return {
+            "u": payload["u"] + 2.0,
+            "v": payload["v"],
+            "precipitation_rate": payload["precipitation_rate"] + 0.25,
+        }
+
+    dem = np.asarray([[0.0, 20.0, 40.0], [10.0, 45.0, 80.0], [0.0, 15.0, 30.0]])
+    land_cover = np.asarray([[50, 50, 30], [50, 30, 30], [80, 80, 30]])
+    baseline = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+        downscaling_mode="ai",
+        dem_elevation_m=dem,
+        land_cover=land_cover,
+    )
+    diffusion_builtin = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+        downscaling_mode="diffusion",
+        dem_elevation_m=dem,
+        land_cover=land_cover,
+    )
+    assert baseline.downscaling_metadata["model_status"] == "applied_builtin"
+    assert baseline.downscaling_metadata["model_family"] == "clean_room_feature_residual_ai"
+    assert diffusion_builtin.downscaling_metadata["model_status"] == "applied_builtin"
+    assert diffusion_builtin.downscaling_metadata["model_family"] == "clean_room_anisotropic_diffusion"
+    assert not np.allclose(baseline.wind_4d[0], diffusion_builtin.wind_4d[0])
+
+    ai = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+        downscaling_mode="ai",
+        ai_model=model,
+    )
+    diffusion = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+        downscaling_mode="diffusion",
+        diffusion_model=model,
+    )
+    callback_base = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+    )
+    assert ai.downscaling_metadata["model_status"] == "applied"
+    assert diffusion.downscaling_metadata["downscaling_mode"] == "diffusion"
+    assert float(np.mean(ai.wind_4d[0] - callback_base.wind_4d[0])) == 2.0
+
+
+def test_spritzmet_station_measurements_can_improve_any_downscaling_mode() -> None:
+    plain = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+    )
+    improved = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+        station_measurements=[{"x": 0.0, "y": 0.0, "wind_speed": 8.0, "wind_dir": 270.0, "precipitation_rate": 2.0}],
+    )
+    assert improved.downscaling_metadata["station_measurement_improvement"] is True
+    assert not np.allclose(improved.wind_4d[0], plain.wind_4d[0])
+    assert not np.allclose(improved.precipitation_3d, plain.precipitation_3d)
+
+
+def test_spritzmet_reads_station_measurements_csv(tmp_path: Path) -> None:
+    local_csv = tmp_path / "stations_local.csv"
+    local_csv.write_text(
+        "id,x,y,wind_speed,wind_dir,precipitation_rate\nS1,0,100,6,270,1.5\n",
+        encoding="utf-8",
+    )
+    local = spritzmet.read_station_measurements_csv(local_csv)
+    assert local == [{"x": 0.0, "y": 100.0, "id": "S1", "wind_speed": 6.0, "wind_dir": 270.0, "precipitation_rate": 1.5}]
+
+    geo_csv = tmp_path / "stations_geo.csv"
+    geo_csv.write_text(
+        "station_id,latitude,longitude,wind_speed_m_s,wind_direction\nG1,40.005,14.005,5,180\n",
+        encoding="utf-8",
+    )
+    geo = spritzmet.read_station_measurements_csv(geo_csv, center_lat=40.005, center_lon=14.005)
+    assert geo[0]["id"] == "G1"
+    assert geo[0]["wind_speed"] == 5.0
+    assert abs(float(geo[0]["x"])) < 1.0e-6
+    assert abs(float(geo[0]["y"])) < 1.0e-6

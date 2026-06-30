@@ -24,7 +24,7 @@ METEO_UNIPARTHENOPE_HISTORY_BASE = "https://data.meteo.uniparthenope.it/files/wr
 
 @dataclass(frozen=True)
 class WRFWindField:
-    """Near-surface wind and precipitation field extracted from WRF or WRF-like NetCDF."""
+    """Near-surface meteorology extracted from WRF or WRF-like NetCDF."""
 
     latitude: np.ndarray
     longitude: np.ndarray
@@ -34,6 +34,10 @@ class WRFWindField:
     time_index: int = 0
     metadata: dict[str, Any] | None = None
     precipitation_rate: np.ndarray | None = None
+    u10m: np.ndarray | None = None
+    v10m: np.ndarray | None = None
+    temperature_2m_c: np.ndarray | None = None
+    relative_humidity_2m: np.ndarray | None = None
 
     @property
     def wind_speed(self) -> np.ndarray:
@@ -220,6 +224,23 @@ def _select_wrf_spatial_2d(variable: Any, *, time_index: int | None, level_index
     return _select_wrf_spatial_2d_from_array(arr, dims, name, time_index=time_index, level_index=level_index, path=path)
 
 
+def _has_level_dimension(variable: Any) -> bool:
+    return any(_dimension_kind(str(dim)) == "level" for dim in getattr(variable, "dimensions", ()))
+
+
+def _destagger_wrf_component(values: np.ndarray, variable: Any) -> np.ndarray:
+    """Average WRF staggered U/V grids onto the mass grid after time/level selection."""
+    arr = np.asarray(values, dtype=float)
+    dims = tuple(str(dim) for dim in getattr(variable, "dimensions", ()))
+    if any(dim.lower() == "west_east_stag" for dim in dims):
+        arr = 0.5 * (arr[..., :-1] + arr[..., 1:])
+    if any(dim.lower() == "south_north_stag" for dim in dims):
+        if arr.ndim < 2:
+            raise ValueError(f"variable {getattr(variable, 'name', 'unknown')} has staggered y dimension but no y axis")
+        arr = 0.5 * (arr[..., :-1, :] + arr[..., 1:, :])
+    return np.asarray(arr, dtype=float)
+
+
 def _select_precipitation_rate(ds: Any, time_index: int | None, level_index: int | None, path: Path) -> np.ndarray | None:
     """Return a WRF precipitation-rate proxy in mm h-1 when variables exist."""
 
@@ -320,6 +341,82 @@ def _select_precipitation_rate(ds: Any, time_index: int | None, level_index: int
         path=path,
     )
     return np.maximum(current - previous, 0.0)
+
+
+def _select_optional_2d(
+    ds: Any,
+    names: tuple[str, ...],
+    *,
+    time_index: int | None,
+    level_index: int | None,
+    path: Path,
+) -> np.ndarray | None:
+    for name in names:
+        if name in ds.variables:
+            return _select_wrf_spatial_2d(
+                ds.variables[name],
+                time_index=time_index,
+                level_index=level_index,
+                path=path,
+            )
+    return None
+
+
+def _select_temperature_2m_c(ds: Any, time_index: int | None, path: Path) -> np.ndarray | None:
+    temperature = _select_optional_2d(
+        ds,
+        ("T2", "TEMP2", "temperature_2m", "air_temperature_2m", "air_temperature"),
+        time_index=time_index,
+        level_index=0,
+        path=path,
+    )
+    if temperature is None:
+        return None
+    units = ""
+    for name in ("T2", "TEMP2", "temperature_2m", "air_temperature_2m", "air_temperature"):
+        if name in ds.variables:
+            units = str(getattr(ds.variables[name], "units", "")).strip().lower()
+            break
+    arr = np.asarray(temperature, dtype=float)
+    if units in {"c", "degc", "degree_celsius", "degrees_celsius", "celsius"}:
+        return arr
+    if units in {"k", "kelvin"} or float(np.nanmean(arr)) > 150.0:
+        return arr - 273.15
+    return arr
+
+
+def _relative_humidity_from_q2(q2: np.ndarray, psfc_pa: np.ndarray, temperature_2m_c: np.ndarray) -> np.ndarray:
+    q = np.maximum(np.asarray(q2, dtype=float), 0.0)
+    pressure = np.maximum(np.asarray(psfc_pa, dtype=float), 1.0)
+    tc = np.asarray(temperature_2m_c, dtype=float)
+    vapor_pressure = q * pressure / np.maximum(0.622 + 0.378 * q, 1.0e-12)
+    saturation = 611.2 * np.exp((17.67 * tc) / np.maximum(tc + 243.5, 1.0e-6))
+    return np.clip(vapor_pressure / np.maximum(saturation, 1.0e-12), 0.0, 1.0)
+
+
+def _select_relative_humidity_2m(
+    ds: Any,
+    time_index: int | None,
+    path: Path,
+    temperature_2m_c: np.ndarray | None,
+) -> np.ndarray | None:
+    rh = _select_optional_2d(
+        ds,
+        ("RH2", "relative_humidity_2m", "relative_humidity"),
+        time_index=time_index,
+        level_index=0,
+        path=path,
+    )
+    if rh is not None:
+        arr = np.asarray(rh, dtype=float)
+        return np.clip(arr / 100.0 if float(np.nanmax(arr)) > 1.5 else arr, 0.0, 1.0)
+    if temperature_2m_c is None:
+        return None
+    q2 = _select_optional_2d(ds, ("Q2", "specific_humidity_2m", "specific_humidity"), time_index=time_index, level_index=0, path=path)
+    psfc = _select_optional_2d(ds, ("PSFC", "surface_pressure", "pressure"), time_index=time_index, level_index=0, path=path)
+    if q2 is None or psfc is None:
+        return None
+    return _relative_humidity_from_q2(q2, psfc, temperature_2m_c)
 
 
 def _decode_wrf_time(value: Any) -> str:
@@ -480,6 +577,19 @@ def load_near_surface_wind(
                     )
             raise KeyError(f"none of variables {names} found in WRF file {p}")
 
+        def read_wind_component(names: tuple[str, ...]) -> np.ndarray:
+            for name in names:
+                if name in ds.variables:
+                    variable = ds.variables[name]
+                    selected = _select_wrf_spatial_2d(
+                        variable,
+                        time_index=time_index,
+                        level_index=level_index,
+                        path=p,
+                    )
+                    return _destagger_wrf_component(selected, variable)
+            raise KeyError(f"none of variables {names} found in WRF file {p}")
+
         def read_coordinate(names: tuple[str, ...]) -> np.ndarray:
             for name in names:
                 if name in ds.variables:
@@ -494,21 +604,40 @@ def load_near_surface_wind(
         lat = read_coordinate(("XLAT", "XLAT_M", "lat", "latitude"))
         lon = read_coordinate(("XLONG", "XLONG_M", "lon", "longitude"))
         diagnostic_height_m: float | None = None
+        u10m: np.ndarray | None = None
+        v10m: np.ndarray | None = None
         if "U10" in ds.variables and "V10" in ds.variables:
-            u = read2d(("U10",))
-            v = read2d(("V10",))
-            diagnostic_height_m = 10.0
+            u10m = read2d(("U10",))
+            v10m = read2d(("V10",))
         elif "WSPD10" in ds.variables and "WDIR10" in ds.variables:
-            wspd = read2d(("WSPD10",))
-            wdir = read2d(("WDIR10",))
-            theta = np.deg2rad(270.0 - wdir)
-            u = wspd * np.cos(theta)
-            v = wspd * np.sin(theta)
+            wspd10 = read2d(("WSPD10",))
+            wdir10 = read2d(("WDIR10",))
+            theta10 = np.deg2rad(270.0 - wdir10)
+            u10m = wspd10 * np.cos(theta10)
+            v10m = wspd10 * np.sin(theta10)
+        has_model_level_wind = (
+            any(
+                name in ds.variables and _has_level_dimension(ds.variables[name])
+                for name in ("eastward_wind", "u", "U")
+            )
+            and any(
+                name in ds.variables and _has_level_dimension(ds.variables[name])
+                for name in ("northward_wind", "v", "V")
+            )
+        )
+        if level_index is None and has_model_level_wind:
+            u = read_wind_component(("eastward_wind", "u", "U"))
+            v = read_wind_component(("northward_wind", "v", "V"))
+        elif u10m is not None and v10m is not None:
+            u = u10m
+            v = v10m
             diagnostic_height_m = 10.0
         else:
-            u = read2d(("eastward_wind", "u", "U"))
-            v = read2d(("northward_wind", "v", "V"))
+            u = read_wind_component(("eastward_wind", "u", "U"))
+            v = read_wind_component(("northward_wind", "v", "V"))
         precipitation_rate = _select_precipitation_rate(ds, time_index, level_index, p)
+        temperature_2m_c = _select_temperature_2m_c(ds, time_index, p)
+        relative_humidity_2m = _select_relative_humidity_2m(ds, time_index, p, temperature_2m_c)
         attrs = {name: str(getattr(ds, name)) for name in ds.ncattrs()}
         if time_index is None:
             selected_datetimes = _selected_wrf_datetimes(ds)
@@ -535,6 +664,10 @@ def load_near_surface_wind(
         time_index=0 if time_index is None else time_index,
         metadata=attrs,
         precipitation_rate=precipitation_rate,
+        u10m=u10m,
+        v10m=v10m,
+        temperature_2m_c=temperature_2m_c,
+        relative_humidity_2m=relative_humidity_2m,
     )
 
 

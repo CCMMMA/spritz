@@ -101,7 +101,9 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --nx 101 \
   --ny 101 \
   --dx 100 \
-  --dy 100
+  --dy 100 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
 ```
 
 The resulting NetCDF contains one product with 24 time slices
@@ -122,7 +124,9 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --west 13.80 \
   --east 14.80 \
   --dx 100 \
-  --dy 100
+  --dy 100 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
 ```
 
 Main output:
@@ -155,7 +159,9 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --nx 101 \
   --ny 101 \
   --dx 100 \
-  --dy 100
+  --dy 100 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
 ```
 
 ## 4. Run a smoke test without external data
@@ -195,7 +201,9 @@ python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --nx 101 \
-  --ny 101
+  --ny 101 \
+  --dem data/dem/cop30_naples.tif \
+  --land-cover data/landcover/lc100_naples.tif
 ```
 
 Build the fire configuration:

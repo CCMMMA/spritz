@@ -215,7 +215,7 @@ def resample_dem(raster: RasterData, grid: TargetGrid) -> np.ndarray:
     """Resample continuous elevation to the model grid.
 
     DEM/DTM/DSM elevations are continuous scalar fields, so bilinear
-    interpolation is appropriate for deterministic grid alignment. This must not
+    resampling is appropriate for deterministic grid alignment. This must not
     be reused for categorical land-cover classes.
     """
     source = raster.validated()
@@ -229,7 +229,7 @@ def resample_dem(raster: RasterData, grid: TargetGrid) -> np.ndarray:
 def resample_land_cover(raster: RasterData, grid: TargetGrid) -> np.ndarray:
     """Nearest-neighbor resampling for categorical land-cover classes.
 
-    Land-cover values are labels, not magnitudes. Bilinear interpolation would
+    Land-cover values are labels, not magnitudes. Bilinear resampling would
     invent non-existent classes such as 35 between grassland (30) and cropland
     (40), so the deterministic nearest source cell is selected for each target
     cell. Majority aggregation can be added later for coarsening workflows.

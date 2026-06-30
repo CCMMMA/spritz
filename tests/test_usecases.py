@@ -601,6 +601,90 @@ def test_spritzmet_logs_time_datetime_and_level_meters(caplog: pytest.LogCapture
     assert "level_index=1 level_m=80.000" in messages
 
 
+def test_wrf_all_levels_prefers_model_wind_over_diagnostic_10m(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wrf5_d03_20260527Z0000.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("Time", 1)
+        ds.createDimension("DateStrLen", 19)
+        ds.createDimension("bottom_top", 2)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        times = ds.createVariable("Times", "S1", ("Time", "DateStrLen"))
+        times[0, :] = np.asarray(list("2026-05-27_00:00:00"), dtype="S1")
+        lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]]])
+        lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]]])
+        for name, values in [
+            ("XLAT", lat_values),
+            ("XLONG", lon_values),
+            ("U10", np.full((1, 2, 2), -10.0)),
+            ("V10", np.full((1, 2, 2), -20.0)),
+        ]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+        u = ds.createVariable("U", "f8", ("Time", "bottom_top", "south_north", "west_east"))
+        v = ds.createVariable("V", "f8", ("Time", "bottom_top", "south_north", "west_east"))
+        u[0, 0, :, :] = 3.0
+        u[0, 1, :, :] = 13.0
+        v[0, 0, :, :] = 4.0
+        v[0, 1, :, :] = 14.0
+
+    wrf = spritzwrf.load_near_surface_wind(path, time_index=None, level_index=None)
+
+    assert wrf.u.shape == (1, 2, 2, 2)
+    np.testing.assert_allclose(wrf.u[0, 0], 3.0)
+    np.testing.assert_allclose(wrf.u[0, 1], 13.0)
+    assert wrf.u10m is not None
+    assert wrf.v10m is not None
+    np.testing.assert_allclose(wrf.u10m, -10.0)
+    np.testing.assert_allclose(wrf.v10m, -20.0)
+    assert wrf.metadata is not None
+    assert wrf.metadata["level_index"] == "all"
+    assert wrf.metadata.get("level_meters_source") != "diagnostic_10m_wind"
+
+
+def test_wrf_all_levels_destaggers_standard_u_v_components(tmp_path: Path) -> None:
+    if not netcdf_available():
+        return
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wrf5_d03_20260527Z0000.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("Time", 1)
+        ds.createDimension("DateStrLen", 19)
+        ds.createDimension("bottom_top", 1)
+        ds.createDimension("south_north", 2)
+        ds.createDimension("west_east", 2)
+        ds.createDimension("south_north_stag", 3)
+        ds.createDimension("west_east_stag", 3)
+        times = ds.createVariable("Times", "S1", ("Time", "DateStrLen"))
+        times[0, :] = np.asarray(list("2026-05-27_00:00:00"), dtype="S1")
+        lat_values = np.asarray([[[40.0, 40.0], [40.01, 40.01]]])
+        lon_values = np.asarray([[[14.0, 14.01], [14.0, 14.01]]])
+        for name, values in [
+            ("XLAT", lat_values),
+            ("XLONG", lon_values),
+            ("U10", np.full((1, 2, 2), -10.0)),
+            ("V10", np.full((1, 2, 2), -20.0)),
+        ]:
+            var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+            var[:, :, :] = values
+        u = ds.createVariable("U", "f8", ("Time", "bottom_top", "south_north", "west_east_stag"))
+        v = ds.createVariable("V", "f8", ("Time", "bottom_top", "south_north_stag", "west_east"))
+        u[0, 0, :, :] = np.asarray([[0.0, 2.0, 6.0], [10.0, 12.0, 16.0]])
+        v[0, 0, :, :] = np.asarray([[0.0, 10.0], [2.0, 12.0], [6.0, 16.0]])
+
+    wrf = spritzwrf.load_near_surface_wind(path, time_index=None, level_index=None)
+
+    assert wrf.u.shape == (1, 1, 2, 2)
+    assert wrf.v.shape == (1, 1, 2, 2)
+    np.testing.assert_allclose(wrf.u[0, 0], [[1.0, 4.0], [11.0, 14.0]])
+    np.testing.assert_allclose(wrf.v[0, 0], [[1.0, 11.0], [4.0, 14.0]])
+
+
 def test_high_resolution_wind_entrypoint_without_indices_downscales_all_times_and_levels(tmp_path: Path) -> None:
     if not netcdf_available():
         return
@@ -704,6 +788,216 @@ def test_high_resolution_wind_vertical_levels_expand_single_level_wrf() -> None:
     np.testing.assert_allclose(expanded.u[0, 1], wrf.u)
 
 
+def test_high_resolution_wind_vertical_levels_anchor_10m_to_diagnostic_wind() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    u = np.full((2, 2), 1.0, dtype=float)
+    v = np.full((2, 2), 2.0, dtype=float)
+    u10m = np.full((2, 2), 3.0, dtype=float)
+    v10m = np.full((2, 2), 4.0, dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        lat,
+        lon,
+        u,
+        v,
+        Path("wrf_10m.nc"),
+        u10m=u10m,
+        v10m=v10m,
+    )
+
+    expanded = module._with_vertical_level_metadata(wrf, [10.0, 20.0])
+    met = spritzmet.downscale_wrf_to_local_grid(
+        expanded,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=2,
+        ny=2,
+        dx_m=100.0,
+        dy_m=100.0,
+        neighbours=1,
+        land_cover=np.asarray([[80, 50], [80, 50]], dtype=float),
+    )
+    water = np.asarray([[True, False], [True, False]])
+    land = ~water
+
+    np.testing.assert_allclose(expanded.u[0, 0], u)
+    np.testing.assert_allclose(expanded.v[0, 0], v)
+    np.testing.assert_allclose(met.u[:, 0, water], met.u10m[:, water])
+    np.testing.assert_allclose(met.v[:, 0, water], met.v10m[:, water])
+    np.testing.assert_allclose(met.wind_speed[:, 0, water], met.wind_speed_10m[:, water])
+    assert not np.allclose(met.u[:, 0, land], met.u10m[:, land])
+    assert not np.allclose(met.v[:, 0, land], met.v10m[:, land])
+    np.testing.assert_allclose(expanded.u[0, 1], u)
+    np.testing.assert_allclose(expanded.v[0, 1], v)
+    assert met.downscaling_metadata["vertical_level_10m_reference"] == "U10M/V10M"
+    assert met.downscaling_metadata["vertical_level_10m_reference_domain"] == "water_land_cover_cells_only"
+    assert met.downscaling_metadata["vertical_level_10m_reference_cell_count"] == 2
+    assert met.downscaling_metadata["vertical_level_10m_reference_assumption"] == "sea_surface_height_approximately_mean_sea_level"
+
+
+def test_spritzmet_anchors_10m_diagnostic_to_dem_plus_10m_asl() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    u = np.full((2, 2), 1.0, dtype=float)
+    v = np.full((2, 2), 2.0, dtype=float)
+    u10m = np.full((2, 2), 3.0, dtype=float)
+    v10m = np.full((2, 2), 4.0, dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        lat,
+        lon,
+        u,
+        v,
+        Path("wrf_10m_dem.nc"),
+        u10m=u10m,
+        v10m=v10m,
+    )
+    expanded = module._with_vertical_level_metadata(wrf, [100.0, 110.0, 150.0])
+
+    met = spritzmet.downscale_wrf_to_local_grid(
+        expanded,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=2,
+        ny=2,
+        dx_m=100.0,
+        dy_m=100.0,
+        neighbours=1,
+        dem_elevation_m=np.full((2, 2), 100.0, dtype=float),
+    )
+
+    np.testing.assert_allclose(met.u[:, 1], met.u10m)
+    np.testing.assert_allclose(met.v[:, 1], met.v10m)
+    np.testing.assert_allclose(met.wind_speed[:, 1], met.wind_speed_10m)
+    assert met.downscaling_metadata["vertical_level_10m_reference_domain"] == "all_cells_dem_plus_10m_asl"
+    assert met.downscaling_metadata["vertical_level_10m_reference_cell_count"] == 4
+    assert met.downscaling_metadata["vertical_level_10m_reference_exact_level_indexes"] == [1]
+    assert "DEM elevation plus 10 m" in met.downscaling_metadata["vertical_level_10m_reference_assumption"]
+
+
+def test_spritzmet_reuses_projected_idw_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        lat,
+        lon,
+        np.full((2, 2), 1.0, dtype=float),
+        np.full((2, 2), 2.0, dtype=float),
+        Path("wrf_plan.nc"),
+        precipitation_rate=np.full((2, 2), 0.5, dtype=float),
+        u10m=np.full((2, 2), 3.0, dtype=float),
+        v10m=np.full((2, 2), 4.0, dtype=float),
+    )
+    calls = 0
+    original = spritzmet._idw_neighbour_plan_from_points
+
+    def counted_plan(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(spritzmet, "_idw_neighbour_plan_from_points", counted_plan)
+
+    met = spritzmet.downscale_wrf_to_local_grid(
+        wrf,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+    )
+
+    assert calls == 1
+    assert met.downscaling_metadata["spatial_interpolation_coordinates"] == "local_projected_meters"
+    assert met.downscaling_metadata["spatial_interpolation_plan_reused"] is True
+
+
+def test_spritzmet_refines_10m_diagnostic_before_anchor() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        lat,
+        lon,
+        np.full((2, 2), 1.0, dtype=float),
+        np.full((2, 2), 2.0, dtype=float),
+        Path("wrf_10m_terrain.nc"),
+        u10m=np.full((2, 2), 3.0, dtype=float),
+        v10m=np.full((2, 2), 4.0, dtype=float),
+    )
+    expanded = module._with_vertical_level_metadata(wrf, [100.0, 110.0])
+
+    met = spritzmet.downscale_wrf_to_local_grid(
+        expanded,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=2,
+        ny=2,
+        dx_m=100.0,
+        dy_m=100.0,
+        neighbours=1,
+        dem_elevation_m=np.asarray([[100.0, 120.0], [140.0, 160.0]], dtype=float),
+        land_cover=np.asarray([[80, 50], [311, 311]], dtype=float),
+    )
+
+    assert met.downscaling_metadata["diagnostic_10m_max_wind_factor"] != pytest.approx(1.0)
+    assert not np.allclose(met.u10m, 3.0)
+    np.testing.assert_allclose(met.u[:, 1, 0, 0], met.u10m[:, 0, 0])
+    np.testing.assert_allclose(met.v[:, 1, 0, 0], met.v10m[:, 0, 0])
+
+
+def test_high_resolution_wind_vertical_levels_remap_multilevel_wrf() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    u = np.zeros((1, 3, 2, 2), dtype=float)
+    v = np.zeros((1, 3, 2, 2), dtype=float)
+    u[0, 0, :, :] = 10.0
+    u[0, 1, :, :] = 20.0
+    u[0, 2, :, :] = 40.0
+    v[0, 0, :, :] = 1.0
+    v[0, 1, :, :] = 2.0
+    v[0, 2, :, :] = 4.0
+    wrf = spritzwrf.WRFWindField(
+        lat,
+        lon,
+        u,
+        v,
+        Path("wrf_4d.nc"),
+        metadata={
+            "time_index": "all",
+            "level_index": "all",
+            "level_meters": [100.0, 200.0, 400.0],
+            "level_meters_kind": "height_above_sea_level",
+        },
+    )
+
+    remapped = module._with_vertical_level_metadata(wrf, [150.0, 300.0])
+
+    assert remapped.u.shape == (1, 2, 2, 2)
+    assert remapped.v.shape == (1, 2, 2, 2)
+    np.testing.assert_allclose(remapped.u[0, 0], 15.0)
+    np.testing.assert_allclose(remapped.u[0, 1], 30.0)
+    np.testing.assert_allclose(remapped.v[0, 0], 1.5)
+    np.testing.assert_allclose(remapped.v[0, 1], 3.0)
+    assert remapped.metadata is not None
+    assert remapped.metadata["level_meters"] == [150.0, 300.0]
+    assert remapped.metadata["vertical_level_remapping"] == "linear_interpolation_from_wrf_levels"
+    met = spritzmet.downscale_wrf_to_local_grid(
+        remapped,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=2,
+        ny=2,
+        dx_m=100.0,
+        dy_m=100.0,
+    )
+    assert met.downscaling_metadata is not None
+    assert met.downscaling_metadata["vertical_level_remapping"] == "linear_interpolation_from_wrf_levels"
+
+
 def test_high_resolution_wind_entrypoint_date_hours_writes_one_multitime_file(tmp_path: Path) -> None:
     if not netcdf_available():
         return
@@ -735,6 +1029,14 @@ def test_high_resolution_wind_entrypoint_date_hours_writes_one_multitime_file(tm
             for name, values in [("U", u_values), ("V", v_values)]:
                 var = ds.createVariable(name, "f8", ("Time", "bottom_top", "south_north", "west_east"))
                 var[:, :, :, :] = values
+            for name, values in [
+                ("U10", np.full((1, 2, 2), 10.0 + hour)),
+                ("V10", np.full((1, 2, 2), 20.0 + hour)),
+                ("T2", np.full((1, 2, 2), 293.15 + hour)),
+                ("RH2", np.full((1, 2, 2), 60.0 + hour)),
+            ]:
+                var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
+                var[:, :, :] = values
             rain = ds.createVariable("RAINRATE", "f8", ("Time", "south_north", "west_east"))
             rain[:, :, :] = np.full((1, 2, 2), float(hour + 1))
 
@@ -773,6 +1075,20 @@ def test_high_resolution_wind_entrypoint_date_hours_writes_one_multitime_file(tm
         assert ds.variables["northward_wind"].shape == (2, 2, 3, 3)
         assert ds.variables["precipitation_rate"].dimensions == ("time", "y", "x")
         assert ds.variables["precipitation_rate"].shape == (2, 3, 3)
+        assert ds.variables["U10M"].dimensions == ("time", "y", "x")
+        assert ds.variables["U10M"].shape == (2, 3, 3)
+        assert ds.variables["V10M"].dimensions == ("time", "y", "x")
+        assert ds.variables["wind_speed_10m"].dimensions == ("time", "y", "x")
+        assert ds.variables["temperature_2m_c"].dimensions == ("time", "y", "x")
+        assert ds.variables["relative_humidity_2m"].dimensions == ("time", "y", "x")
+        np.testing.assert_allclose(ds.variables["U10M"][0], 10.0)
+        np.testing.assert_allclose(ds.variables["U10M"][1], 11.0)
+        np.testing.assert_allclose(ds.variables["V10M"][0], 20.0)
+        np.testing.assert_allclose(ds.variables["V10M"][1], 21.0)
+        np.testing.assert_allclose(ds.variables["temperature_2m_c"][0], 20.0)
+        np.testing.assert_allclose(ds.variables["temperature_2m_c"][1], 21.0)
+        np.testing.assert_allclose(ds.variables["relative_humidity_2m"][0], 0.60)
+        np.testing.assert_allclose(ds.variables["relative_humidity_2m"][1], 0.61)
         assert ds.variables["time"].shape == (2,)
         assert str(ds.variables["time_datetime"][0]) == "2026-05-27T00:00:00Z"
         assert str(ds.variables["time_datetime"][1]) == "2026-05-27T01:00:00Z"
@@ -798,6 +1114,8 @@ def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> No
             ("XLONG", lon_values),
             ("U10", np.full((1, 2, 2), 3.0)),
             ("V10", np.zeros((1, 2, 2))),
+            ("T2", np.full((1, 2, 2), 293.15)),
+            ("RH2", np.full((1, 2, 2), 50.0)),
         ]:
             var = ds.createVariable(name, "f8", ("Time", "south_north", "west_east"))
             var[:, :, :] = values
@@ -805,6 +1123,8 @@ def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> No
     wrf = spritzwrf.load_near_surface_wind(path, time_index=0)
     assert wrf.metadata is not None
     assert wrf.metadata["time_datetime"] == "2026-05-27T00:00:00Z"
+    np.testing.assert_allclose(wrf.temperature_2m_c, 20.0)
+    np.testing.assert_allclose(wrf.relative_humidity_2m, 0.5)
     met = spritzmet.downscale_wrf_to_local_grid(
         wrf,
         center_lat=40.005,
@@ -824,6 +1144,17 @@ def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> No
         assert ds.variables["northward_wind"].shape == (1, 1, 3, 3)
         assert ds.variables["precipitation_rate"].dimensions == ("time", "y", "x")
         assert ds.variables["precipitation_rate"].shape == (1, 3, 3)
+        assert ds.variables["U10M"].dimensions == ("time", "y", "x")
+        assert ds.variables["V10M"].dimensions == ("time", "y", "x")
+        assert ds.variables["wind_speed_10m"].dimensions == ("time", "y", "x")
+        assert ds.variables["temperature_2m_c"].dimensions == ("time", "y", "x")
+        assert ds.variables["temperature_2m_c"].units == "degree_Celsius"
+        assert ds.variables["relative_humidity_2m"].dimensions == ("time", "y", "x")
+        assert ds.variables["relative_humidity_2m"].units == "1"
+        np.testing.assert_allclose(ds.variables["U10M"][:], 3.0)
+        np.testing.assert_allclose(ds.variables["V10M"][:], 0.0)
+        np.testing.assert_allclose(ds.variables["temperature_2m_c"][:], 20.0)
+        np.testing.assert_allclose(ds.variables["relative_humidity_2m"][:], 0.5)
         assert ds.variables["time"].standard_name == "time"
         assert ds.variables["time"].units == "seconds since 2026-05-27 00:00:00 UTC"
         assert ds.variables["time"][0] == pytest.approx(0.0)
@@ -886,6 +1217,37 @@ def test_spritzmet_uses_dem_and_land_cover_for_wind_and_precipitation() -> None:
             dem_elevation_m=np.zeros((2, 2)),
             land_cover=np.zeros((3, 3)),
         )
+
+
+def test_spritzmet_downscales_temperature_and_relative_humidity_with_dem() -> None:
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        latitude=lat,
+        longitude=lon,
+        u=np.full((2, 2), 4.0),
+        v=np.zeros((2, 2)),
+        source_path=Path("synthetic_wrf.nc"),
+        temperature_2m_c=np.full((2, 2), 20.0),
+        relative_humidity_2m=np.full((2, 2), 0.50),
+    )
+    met = spritzmet.downscale_wrf_to_local_grid(
+        wrf,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=2,
+        ny=2,
+        dx_m=100.0,
+        dy_m=100.0,
+        dem_elevation_m=np.asarray([[0.0, 100.0], [200.0, 300.0]], dtype=float),
+    )
+
+    assert met.temperature_2m_3d is not None
+    assert met.relative_humidity_2m_3d is not None
+    assert met.downscaling_metadata["temperature_2m_uses_dem_elevation_m"] is True
+    assert met.downscaling_metadata["relative_humidity_2m_adjusted_for_temperature_lapse"] is True
+    assert float(met.temperature_2m_3d[0, 0, 0]) > float(met.temperature_2m_3d[0, -1, -1])
+    assert np.all((met.relative_humidity_2m_3d >= 0.0) & (met.relative_humidity_2m_3d <= 1.0))
 
 
 def test_resolve_wrf_input_prefers_local_path(tmp_path: Path) -> None:

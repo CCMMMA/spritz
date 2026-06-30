@@ -6,7 +6,7 @@ from sprtz.io.jsonio import read_json
 from sprtz.models import terrain
 
 
-def test_terrain_interpolates_terrain_to_local_grid() -> None:
+def test_terrain_resamples_terrain_to_local_grid() -> None:
     terrain_values = np.arange(25, dtype=float).reshape(5, 5)
     product = terrain.terrain_to_local_grid(
         terrain_values,

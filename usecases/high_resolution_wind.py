@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import logging
 
 from dataclasses import dataclass
@@ -8,14 +9,42 @@ from typing import Any
 
 import numpy as np
 
-from sprtz.models import spritzmet, spritzwrf
-from sprtz.logging import configure_logging
 from sprtz.config import config_defaults
+from sprtz.logging import configure_logging
+from sprtz.models import spritzmet, spritzwrf
 from datetime_args import script_datetime_to_date_and_hour
 from plotting import plot_netcdf_if_available
 
 
 LOGGER = logging.getLogger(__name__)
+RASTERIO_SUFFIXES = {".tif", ".tiff", ".cog"}
+NETCDF_SUFFIXES = {".nc", ".nc4", ".cdf", ".netcdf"}
+
+
+class UseCaseDependencyError(RuntimeError):
+    """Raised when selected high-resolution wind inputs need optional packages."""
+
+
+def check_local_raster_dependencies(*paths: str | Path | None) -> None:
+    missing: dict[str, list[str]] = {}
+    for raw_path in paths:
+        if raw_path is None:
+            continue
+        path = Path(raw_path)
+        suffix = path.suffix.lower()
+        if suffix in RASTERIO_SUFFIXES and importlib.util.find_spec("rasterio") is None:
+            missing.setdefault("rasterio", []).append(str(path))
+        if suffix in NETCDF_SUFFIXES and importlib.util.find_spec("netCDF4") is None:
+            missing.setdefault("netCDF4", []).append(str(path))
+    if not missing:
+        return
+    details = "; ".join(
+        f"{module} is required for {', '.join(values)}" for module, values in missing.items()
+    )
+    raise UseCaseDependencyError(
+        f"{details}. Install optional geospatial dependencies with: "
+        "python -m pip install -e '.[geo,netcdf]'"
+    )
 
 @dataclass(frozen=True)
 class WindDownscalingResult:
@@ -124,6 +153,8 @@ def downscale_wrf_to_100m(
     download_timeout_s: float = 120.0,
     dem_path: str | Path | None = None,
     land_cover_path: str | Path | None = None,
+    downscaling_mode: str = "deterministic",
+    station_measurements_path: str | Path | None = None,
 ) -> WindDownscalingResult:
     """Downscale 1 km WRF wind to a 100 m local grid using SpritzWRF then SpritzMet.
 
@@ -139,6 +170,7 @@ def downscale_wrf_to_100m(
     """
     if download_time is not None:
         download_date, download_cycle_hour = script_datetime_to_date_and_hour(download_time)
+    check_local_raster_dependencies(dem_path, land_cover_path)
     resolved = resolve_wrf_input(
         wrf_path,
         download_date=download_date,
@@ -167,6 +199,15 @@ def downscale_wrf_to_100m(
         dem_path=dem_path,
         land_cover_path=land_cover_path,
     )
+    station_measurements = (
+        spritzmet.read_station_measurements_csv(
+            station_measurements_path,
+            center_lat=center_lat,
+            center_lon=center_lon,
+        )
+        if station_measurements_path is not None
+        else None
+    )
     met = spritzmet.downscale_wrf_to_local_grid(
         wrf,
         center_lat=center_lat,
@@ -178,6 +219,8 @@ def downscale_wrf_to_100m(
         dem_elevation_m=dem_elevation_m,
         land_cover=land_cover,
         terrain_input_metadata=terrain_metadata,
+        downscaling_mode=downscaling_mode,
+        station_measurements=station_measurements,
     )
     fmt = spritzmet.write_local_meteorology(output_path, met, prefer_netcdf=prefer_netcdf)
     plot_path = plot_netcdf_if_available(
@@ -189,10 +232,6 @@ def downscale_wrf_to_100m(
         center_lon=center_lon,
     )
     return WindDownscalingResult(Path(output_path), nx, ny, dx_m, dy_m, center_lat, center_lon, met.source, fmt, plot_path=plot_path)
-
-
-WindInterpolationResult = WindDownscalingResult
-interpolate_wrf_to_100m = downscale_wrf_to_100m
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -217,6 +256,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--level-index", type=int, default=None, help="vertical level index to extract; omit to downscale all WRF levels")
     parser.add_argument("--dem", default=None, help="Optional DEM raster, e.g. data/dem/cop30_naples.tif")
     parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster, e.g. data/landcover/lc100_naples.tif")
+    parser.add_argument("--downscaling-mode", choices=["deterministic", "ai", "diffusion"], default="deterministic")
+    parser.add_argument(
+        "--station-measurements",
+        default=None,
+        help="Optional CSV weather-station residual observations with x,y or latitude,longitude plus wind_speed/wind_dir and/or precipitation_rate",
+    )
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--allow-synthetic", action="store_true")
     config_parser = argparse.ArgumentParser(add_help=False)
@@ -239,27 +284,32 @@ def main(argv: list[str] | None = None) -> int:
         configure_logging(False)
         LOGGER.info("%s", spritzwrf.meteo_uniparthenope_wrf_url(download_date, download_cycle_hour))
         return 0
-    result = downscale_wrf_to_100m(
-        args.wrf,
-        args.output,
-        center_lat=args.center_lat,
-        center_lon=args.center_lon,
-        nx=args.nx,
-        ny=args.ny,
-        dx_m=args.dx,
-        dy_m=args.dy,
-        time_index=args.time_index,
-        level_index=args.level_index,
-        prefer_netcdf=not args.json,
-        allow_synthetic=args.allow_synthetic,
-        download_date=download_date,
-        download_cycle_hour=download_cycle_hour,
-        download_dir=args.download_dir,
-        force_download=args.force_download,
-        download_timeout_s=args.download_timeout_s,
-        dem_path=args.dem,
-        land_cover_path=args.land_cover,
-    )
+    try:
+        result = downscale_wrf_to_100m(
+            args.wrf,
+            args.output,
+            center_lat=args.center_lat,
+            center_lon=args.center_lon,
+            nx=args.nx,
+            ny=args.ny,
+            dx_m=args.dx,
+            dy_m=args.dy,
+            time_index=args.time_index,
+            level_index=args.level_index,
+            prefer_netcdf=not args.json,
+            allow_synthetic=args.allow_synthetic,
+            download_date=download_date,
+            download_cycle_hour=download_cycle_hour,
+            download_dir=args.download_dir,
+            force_download=args.force_download,
+            download_timeout_s=args.download_timeout_s,
+            dem_path=args.dem,
+            land_cover_path=args.land_cover,
+            downscaling_mode=args.downscaling_mode,
+            station_measurements_path=args.station_measurements,
+        )
+    except UseCaseDependencyError as exc:
+        parser.error(str(exc))
     configure_logging(False)
     LOGGER.info("%s", result.as_dict())
     return 0

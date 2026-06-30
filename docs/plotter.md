@@ -23,7 +23,7 @@ MPLBACKEND=Agg python tools/plotter.py \
 ```
 
 When the NetCDF contains wind components (`eastward_wind`/`northward_wind`,
-`U10`/`V10`) or wind speed plus meteorological direction
+`U10`/`V10`, `U10M`/`V10M`) or wind speed plus meteorological direction
 (`wind_speed`/`wind_from_direction`, `WSPD10`/`WDIR10`), the plotter overlays
 wind vectors automatically. Control arrow density by target vector count,
 control exact stride, or disable vectors with:
@@ -51,8 +51,10 @@ MPLBACKEND=Agg python tools/plotter.py \
 If a NetCDF contains multiple times, select one time step by zero-based index.
 For four-dimensional wind products such as `eastward_wind(time,z,y,x)` or WRF
 `U(Time,bottom_top,south_north,west_east)`, select the vertical slice with
-`--level-index`. Surface precipitation products are read as
-`precipitation_rate(time,y,x)`. Sprtz NetCDF products with a time axis must
+`--level-index`. Surface diagnostic products such as `U10M(time,y,x)`,
+`V10M(time,y,x)`, `wind_speed_10m(time,y,x)`, and
+`precipitation_rate(time,y,x)` use only `--time-index`. Sprtz NetCDF products
+with a time axis must
 provide a CF `time(time)` coordinate with units such as
 `seconds since 2026-05-27 00:00:00 UTC`; products may also include
 `time_datetime(time)` as an ISO-8601 convenience coordinate. The plot title

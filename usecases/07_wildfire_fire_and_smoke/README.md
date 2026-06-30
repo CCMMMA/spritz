@@ -23,8 +23,10 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_fire_smoke_area.tif
 ```
 
-The WRF files feed SpritzWRF/SpritzMet. The DEM and LC100 land cover feed
-`sprtz-terrain fetch` and must cover the coupled fire and smoke grid.
+The WRF files feed SpritzWRF/SpritzMet. Pass the DEM and LC100 land cover into
+the SpritzMet downscaling step with `--dem` and `--land-cover`; use the same
+rasters with `sprtz-terrain fetch` and make sure they cover the coupled fire and
+smoke grid.
 
 ```bash
 sprtz run examples/wildfire_minimal.json --backend fire+puff --output-dir output_fire_smoke --interchange netcdf

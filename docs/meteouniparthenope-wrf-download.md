@@ -1,7 +1,7 @@
 # meteo@uniparthenope WRF downloader
 
-`tools/meteouniparthenope-wrf-download` downloads WRF5 history NetCDF files from
-the meteo@uniparthenope archive into the repository data tree. It is a
+`tools/meteouniparthenope-wrf-download` downloads WRF5 `history` NetCDF files from
+meteo@uniparthenope into the repository data tree. It is a
 miscellaneous developer/operator tool, not an installed `sprtz` console command.
 
 The script uses only the Python standard library, logs operational messages with
@@ -10,7 +10,8 @@ non-empty files unless `--force` is supplied.
 
 ## URL pattern
 
-The downloader builds one URL per requested hour:
+The downloader builds one URL per requested hour, always under the `history`
+directory:
 
 ```text
 https://data.meteo.uniparthenope.it/files/wrf5/<domain>/history/YYYY/MM/DD/wrf5_<domain>_YYYYMMDDZhhmm.nc

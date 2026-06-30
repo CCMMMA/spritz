@@ -39,7 +39,7 @@ lightweight deployments deterministic.
 
 Terrain now has two layers:
 
-- `sprtz.models.terrain` keeps the existing local ASCII-grid interpolation API
+- `sprtz.models.terrain` keeps the existing local ASCII-grid resampling API
   and `terrain` CLI for backward compatibility.
 - `sprtz.terrain` provides production-style acquisition concepts: local and
   online provider interfaces, deterministic cache metadata, AOI/domain handling,

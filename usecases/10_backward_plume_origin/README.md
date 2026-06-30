@@ -23,8 +23,9 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_backward_plume_area.tif
 ```
 
-Backward outputs should be reviewed against the archived WRF cycle, the derived
-SpritzMet field, COP30 terrain, LC100 land cover, and independent observations.
+Backward outputs should be reviewed against the archived WRF cycle, the
+DEM/LC-aware derived SpritzMet field, COP30 terrain, LC100 land cover, and
+independent observations.
 
 ```bash
 python usecases/10_backward_plume_origin/step_01_prepare_meteorology.py

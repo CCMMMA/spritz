@@ -1,12 +1,12 @@
 # Use case 01 - High-resolution wind-field downscaling
 
-Goal: obtain a local 100 m wind and precipitation-rate field centered on a user-supplied latitude and longitude, starting from a 1 km WRF5 d03 file.
+Goal: obtain a local 100 m wind, precipitation-rate, 2 m temperature, and 2 m relative-humidity field centered on a user-supplied latitude and longitude, starting from a 1 km WRF5 d03 file.
 
 This didactic workflow is deliberately explicit, and
 `step_01_downscale_wind.py` invokes the production modules in this order:
 
 1. **Input step.** Use a local WRF NetCDF file or call `spritzwrf.download_meteo_uniparthenope_wrf` for the meteo@uniparthenope archive.
-2. **SpritzWRF extraction step.** Call `spritzwrf.load_near_surface_wind` to extract latitude, longitude, near-surface wind components, and precipitation when available.
+2. **SpritzWRF extraction step.** Call `spritzwrf.load_near_surface_wind` to extract latitude, longitude, near-surface wind components, precipitation, 2 m temperature, and 2 m relative humidity when available.
 3. **SpritzMet downscaling step.** Call `spritzmet.downscale_wrf_to_local_grid` to build the local azimuthal-equidistant grid and downscale SpritzWRF fields onto the 100 m grid.
 4. **Output step.** Call `spritzmet.write_local_meteorology` to write NetCDF-CF by default, or JSON for lightweight runs.
 
@@ -78,7 +78,9 @@ python3 tools/copernicus-lc100-download.py \
 
 The WRF file feeds SpritzWRF/SpritzMet directly. Pass the COP30 GeoTIFF as
 `--dem` and the LC100 GeoTIFF as `--land-cover` so SpritzMet uses both rasters
-for wind and precipitation downscaling. The same files can feed
+for wind and precipitation downscaling. DEM elevation is also used for the 2 m
+temperature lapse-rate correction and the corresponding relative-humidity
+update when WRF thermodynamic fields are available. The same files can feed
 `sprtz-terrain fetch` when standalone terrain/GEO output is needed; install
 `sprtz[geo]` for GeoTIFF support. See
 `docs/copernicus-cop30-dem-download.md` and
@@ -99,7 +101,8 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --config usecases/01_high_resolution_wind_field/config.json \
   --dem data/dem/cop30_naples.tif \
   --land-cover data/landcover/lc100_naples.tif \
-  --station-measurements data/stations/weather_observations.csv
+  --station-measurements data/stations/weather_observations.csv \
+  --parallel auto
 ```
 
 This mode uses hourly WRF files from `data/wrf` for the interval
@@ -115,6 +118,11 @@ selected SpritzMet downscaling mode. The CSV header may use local projected
 Provide `wind_speed` and `wind_dir` together for wind correction and/or
 `precipitation_rate` for precipitation correction.
 
+`--parallel auto` enables the generic SpritzMet MPI path when the script is
+launched with `mpiexec` and `mpi4py` is installed; otherwise it falls back to
+serial execution. Use `--parallel mpi` in batch jobs that should fail fast when
+MPI is unavailable.
+
 ## Run with a bounding box "The Bay of Naples"
 
 ```bash
@@ -127,7 +135,8 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --dx 100 --dy 100 \
   --config usecases/01_high_resolution_wind_field/config.json \
   --dem data/dem/cop30_naples.tif \
-  --land-cover data/landcover/lc100_naples.tif
+  --land-cover data/landcover/lc100_naples.tif \
+  --parallel auto
 ```
 
 In bounding-box mode, `--dx` and `--dy` are never changed. The workflow derives
@@ -160,8 +169,9 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
 
 This downscales all WRF times and all wind levels into
 `eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, and
-`precipitation_rate(time,y,x)`. To extract only one WRF slice, pass explicit
-indices:
+`precipitation_rate(time,y,x)`, plus `temperature_2m_c(time,y,x)` and
+`relative_humidity_2m(time,y,x)` when the WRF file provides the required
+thermodynamic variables. To extract only one WRF slice, pass explicit indices:
 
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
@@ -187,6 +197,18 @@ python tools/plotter.py data/output/wrf_100m_wind.nc \
   --time-index 12 \
   --level-index 0 \
   --output data/output/wrf_100m_wind.png
+```
+
+To plot the diagnostic 10 m wind as a vector field, shade `wind_speed_10m`.
+The plotter converts the shaded speed to knots and overlays vectors from
+`U10M`/`V10M` automatically:
+
+```bash
+python tools/plotter.py data/output/wrf_100m_wind.nc \
+  --variable wind_speed_10m \
+  --time-index 12 \
+  --vector-density 20 \
+  --output data/output/wrf_100m_wind_10m.png
 ```
 
 For a bounding-box product, use the matching NetCDF path:
@@ -228,7 +250,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
 
 - `wrf_100m_wind.nc` or `.json`
 - `wrf_100m_wind.png` when NetCDF output is selected and plotting dependencies are available
-- variables/fields: `latitude`, `longitude`, `z` height above mean sea level when `--vertical-levels-m` is supplied, `eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, `wind_speed(time,z,y,x)`, `wind_from_direction(time,z,y,x)`, `precipitation_rate(time,y,x)`
+- variables/fields: `latitude`, `longitude`, `z` height above mean sea level when `--vertical-levels-m` is supplied, `eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, `wind_speed(time,z,y,x)`, `wind_from_direction(time,z,y,x)`, diagnostic `U10M(time,y,x)`, diagnostic `V10M(time,y,x)`, `wind_speed_10m(time,y,x)`, `wind_from_direction_10m(time,y,x)`, `precipitation_rate(time,y,x)`, optional `temperature_2m_c(time,y,x)`, optional `relative_humidity_2m(time,y,x)`
 
 ## Teaching notes
 

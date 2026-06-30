@@ -2,7 +2,7 @@
 
 Spritz uses clean-room module names for the WRF-to-meteorology part of the workflow:
 
-- **SpritzWRF** (`sprtz.models.spritzwrf`) reads WRF/WRF-like NetCDF data, extracts near-surface wind and precipitation, and can download WRF5 d03 history files from the meteo@uniparthenope archive.
+- **SpritzWRF** (`sprtz.models.spritzwrf`) reads WRF/WRF-like NetCDF data, extracts near-surface wind, precipitation, 2 m temperature, and 2 m relative humidity, and can download WRF5 d03 history files from the meteo@uniparthenope archive.
 - **SpritzMet** (`sprtz.models.spritzmet`) creates local projected grids, builds diagnostic meteorology, and writes NetCDF-CF meteorological fields consumed by Spritz dispersion modules.
 
 These modules are clean-room Python APIs that implement a compatible workflow and prefer NetCDF-CF interchange.
@@ -52,6 +52,7 @@ met = spritzmet.downscale_wrf_to_local_grid(
     ny=101,
     dx_m=100,
     dy_m=100,
+    parallel="auto",
 )
 spritzmet.write_local_meteorology("output/wrf_100m_wind.nc", met)
 ```
@@ -64,6 +65,13 @@ elevation wind adjustment, land-cover roughness exposure adjustment, and
 orographic plus land-cover precipitation factors. The implementation is not a
 copy, port, or regulatory-equivalent CALMET release; its coefficients are named
 in `sprtz.models.spritzmet` and bounded for deterministic screening workflows.
+When WRF provides `T2`, SpritzMet writes 2 m temperature in Celsius and applies
+a DEM lapse-rate correction if `dem_elevation_m` is supplied. When WRF provides
+`RH2`, it is written as a unitless 0-1 relative-humidity rate; if only `Q2`,
+surface pressure, and `T2` are present, SpritzWRF derives the rate from those
+fields. DEM temperature corrections preserve vapor pressure and recompute the
+humidity rate. Land cover is used for wind roughness and precipitation
+adjustments, while the thermodynamic scalar correction is DEM based.
 Without these optional arrays, the pipeline preserves the original
 WRF-to-local-grid downscaling behavior.
 
@@ -97,7 +105,8 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --dem data/dem/cop30_naples.tif \
   --land-cover data/landcover/lc100_naples.tif \
   --station-measurements data/stations/weather_observations.csv \
-  --downscaling-mode deterministic
+  --downscaling-mode deterministic \
+  --parallel auto
 ```
 
 SpritzWRF handles WRF/CF dimensions explicitly. Four-dimensional wind variables
@@ -112,6 +121,12 @@ precipitation rate variables named `RAINRATE`, `PRECIP_RATE`, `precipitation_rat
 as a millimeters-per-hour screening rate, or all increments when all times are
 preserved. SpritzMet downscales the precipitation field using the same
 local-grid transform as the wind field.
+
+SpritzWRF reads 2 m thermodynamic fields when available. `T2`/`TEMP2` are
+converted to Celsius when stored in Kelvin. `RH2` values larger than 1.5 are
+interpreted as percent and converted to a 0-1 rate. If `RH2` is missing but
+`Q2`, surface pressure, and `T2` exist, relative humidity is computed from
+specific humidity and saturation vapor pressure.
 
 Use case 01 can set the output vertical coordinate explicitly with
 `--vertical-levels-m` or through
@@ -132,10 +147,14 @@ that selected UTC datetime to the local NetCDF-CF `time(time)` coordinate.
 
 SpritzMet writes a strict NetCDF-CF product containing local x/y, vertical
 level `z`, latitude/longitude, eastward/northward wind, wind speed,
-meteorological wind direction, and `precipitation_rate` in `mm h-1`. Wind
+meteorological wind direction, `precipitation_rate` in `mm h-1`, optional
+`temperature_2m_c` in Celsius, and optional `relative_humidity_2m` as a
+unitless 0-1 rate. Wind
 variables are stored as `eastward_wind(time,z,y,x)` and
 `northward_wind(time,z,y,x)`. Surface precipitation is stored as
-`precipitation_rate(time,y,x)`. Products with a physical valid time include a
+`precipitation_rate(time,y,x)`. Diagnostic 2 m scalar fields are stored as
+`temperature_2m_c(time,y,x)` and `relative_humidity_2m(time,y,x)`. Products
+with a physical valid time include a
 CF `time(time)` coordinate with absolute UTC units. JSON fallback uses the same
 logical dimensionality for WRF-derived local products. When physical
 `level_meters` metadata is available, `z` is written as metres above local

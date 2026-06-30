@@ -137,6 +137,13 @@ values from `run.default_u`, `run.default_v`, `run.default_temperature`, and
 is used by precipitation washout when enabled. If no stations are supplied,
 `run.default_precipitation_rate` provides a uniform precipitation field.
 
+WRF-driven SpritzWRF -> SpritzMet downscaling can also use weather-station
+measurements from CSV as an optional residual correction after deterministic,
+AI, or diffusion downscaling. Use `--station-measurements stations.csv` in use
+case 01. CSV rows may provide local `x,y` coordinates in meters or
+`latitude,longitude`; observation columns are `wind_speed` with `wind_dir`,
+and/or `precipitation_rate`.
+
 ### Sources
 
 Sources define emission points or finite source geometries.
@@ -235,7 +242,9 @@ rate. Four-dimensional WRF wind variables are sliced as `time, level, y, x`
 with independent `time_index` and `level_index` selections. SpritzMet
 downscales the selected wind and precipitation fields to the local grid and
 writes wind as `eastward_wind(time,z,y,x)` / `northward_wind(time,z,y,x)` and
-surface precipitation as `precipitation_rate(time,y,x)`. When washout is
+diagnostic 10 m wind, when available, as `U10M(time,y,x)` /
+`V10M(time,y,x)`. Surface precipitation is written as
+`precipitation_rate(time,y,x)`. When washout is
 enabled, Spritz adds `coefficient * mean_precipitation_rate` to each source wet
 scavenging rate.
 
@@ -443,7 +452,7 @@ from `concentration_field`.
 
 Spritz has two Terrain surfaces:
 
-- `terrain`: lightweight local ASCII-raster interpolation.
+- `terrain`: lightweight local ASCII-raster resampling.
 - `sprtz-terrain fetch`: provider-style DEM and land-cover acquisition,
   caching, regridding, land-use remapping, surface parameters, and GEO output.
 
@@ -463,7 +472,7 @@ sprtz-terrain fetch --config examples/highres_terrain_auto.json --allow-network
 Terrain outputs should preserve provenance such as DEM source, dataset,
 resolution, access date, land-cover source/year, source and target CRS,
 resampling methods, cache key, and software version. Never bilinearly
-interpolate categorical land-cover classes.
+resample categorical land-cover classes with continuous methods.
 
 ## NetCDF-CF And Fallbacks
 

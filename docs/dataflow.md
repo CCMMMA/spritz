@@ -22,10 +22,10 @@ reproducible, and tied to provenance metadata.
    regridding interface. Offline examples use centered local rasters, while
    production adapters can add STAC/COG mosaicking.
 6. **DEM resampling and terrain derivatives** treat elevation as a continuous
-   scalar field. Bilinear interpolation is deterministic and suitable for
+   scalar field. Bilinear resampling is deterministic and suitable for
    aligning a DEM/DTM/DSM to the model grid.
 7. **Land-cover categorical resampling** uses nearest-neighbor selection because
-   class labels are not numeric magnitudes. Bilinear interpolation would invent
+   class labels are not numeric magnitudes. Bilinear resampling would invent
    invalid land-cover classes.
 8. **Land-cover to Spritz land-use remapping** converts ESA WorldCover-style
    classes to internal Spritz land-use categories.

@@ -23,8 +23,10 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_fire_area.tif
 ```
 
-Use the DEM and LC100 land cover as local `sprtz-terrain fetch` inputs before
-coupling terrain-aware fire spread or smoke workflows.
+Use the DEM and LC100 land cover as SpritzMet `--dem`/`--land-cover` inputs
+when preparing WRF-derived wind and precipitation, and as local
+`sprtz-terrain fetch` inputs before coupling terrain-aware fire spread or smoke
+workflows.
 
 ```bash
 sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire --interchange netcdf

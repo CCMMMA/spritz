@@ -16,8 +16,8 @@ It provides shared configuration, legacy-control parsing, NetCDF-CF interoperabi
 | Command | Module | Role |
 | --- | --- | --- |
 | `spritzwrf` | `sprtz.models.spritzwrf` | Legacy-compatible WRF/NetCDF metadata adapter. |
-| SpritzWRF API | `sprtz.models.spritzwrf` | Clean-room WRF extraction and downloader. |
-| SpritzMet API | `sprtz.models.spritzmet` | Clean-room diagnostic meteorology and WRF downscaling. |
+| SpritzWRF API | `sprtz.models.spritzwrf` | Clean-room WRF extraction for wind, precipitation, 2 m temperature, humidity, and downloader. |
+| SpritzMet API | `sprtz.models.spritzmet` | Clean-room diagnostic meteorology, terrain-aware WRF downscaling, and MPI row decomposition. |
 | `terrain` | `sprtz.models.terrain` | Clean-room terrain resampling and preprocessing. |
 | `ctgproc` | `sprtz.models.ctgproc` | Land-use category aggregation. |
 | `makegeo` | `sprtz.models.makegeo` | Terrain/land-use GEO table builder. |
@@ -93,6 +93,13 @@ Set up a production wind-field improvement from WRF:
 3. `docs/dataflow.md`
 4. `docs/production_readiness.md`
 5. `docs/hpc.md`
+
+WRF-to-SpritzMet downscaling now preserves diagnostic `U10M`/`V10M`, writes
+2 m temperature in Celsius as `temperature_2m_c(time,y,x)`, writes
+2 m relative humidity as the unitless rate `relative_humidity_2m(time,y,x)`,
+uses DEM and land-cover inputs for deterministic terrain-aware refinement, and
+can partition the local grid by MPI rows with `parallel="auto"` or
+`--parallel auto`.
 
 Simulate a plume for wildfire, arson, or industrial smoke:
 
@@ -218,7 +225,7 @@ spritzpost --input output/concentration.csv --output output/post.json
 
 ## Input/output policy
 
-MPI parallel execution is available through the optional `mpi4py` extra for the Gaussian and particle backends. See `docs/parallelization.md` for the detailed schema and `docs/parallel_mpi.md` for command examples.
+MPI parallel execution is available through the optional `mpi4py` extra for SpritzMet diagnostic grids, WRF-to-local-grid downscaling, and the Gaussian and particle backends. See `docs/parallelization.md` for the detailed schema and `docs/parallel_mpi.md` for command examples.
 
 The suite accepts a shared JSON configuration model and tolerant Fortran-style `.inp` control files. New module interoperability prefers NetCDF-CF. CSV and legacy text outputs are retained for migration and comparison workflows. See `docs/io_compatibility.md` and `docs/spritzwrf_spritzmet.md`.
 

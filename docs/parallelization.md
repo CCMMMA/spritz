@@ -135,7 +135,7 @@ Spritz uses different parallelization units for different numerical kernels:
 
 | Stage | MPI unit | GPU unit | Reason |
 |---|---|---|---|
-| SpritzMet | spatial grid rows, extendable to 2-D tiles with halos | local grid-array operations | meteorology is cell-wise gridded interpolation. |
+| SpritzMet | spatial grid rows, including WRF-to-local-grid downscaling | local grid-array operations | meteorology is cell-wise gridded downscaling. |
 | Spritz Gaussian | receptors | source/receptor vector geometry | receptor rows are independent after meteorology is known. |
 | Spritz particles | sources | particles for each local source | source RNG streams stay deterministic across MPI sizes. |
 | SpritzFire | stochastic realizations | CA arrays per rank | ensemble realizations are independent; one GPU per rank avoids communication. |
@@ -274,6 +274,15 @@ rank 0 broadcasts the final workflow summary
 
 This avoids concurrent writes for shared meteorology and post-processing products while still using MPI for the expensive concentration step.
 
+For WRF-driven SpritzMet downscaling, `downscale_wrf_to_local_grid(...,
+parallel="auto"|"mpi")` partitions the target local grid by row, builds each
+rank's projected inverse-distance neighbour plan only for its rows, applies DEM
+and land-cover corrections on the same row slice, then allgathers the completed
+wind, precipitation, diagnostic 10 m wind, 2 m temperature, and 2 m relative
+humidity arrays. Use case 01 exposes this as `--parallel auto` or
+`--parallel mpi`; output writing remains rank-0/serial through
+`write_local_meteorology`.
+
 ## File I/O rules
 
 The I/O contract is intentionally conservative.
@@ -293,7 +302,7 @@ Rank 0 only writing is deliberate. It avoids multi-writer NetCDF corruption and 
 Spritz prefers NetCDF-CF for module interoperability. In a parallel workflow, NetCDF-CF is used as a shared exchange format rather than a parallel write target:
 
 1. SpritzWRF converts/extracts WRF-derived meteorology.
-2. SpritzMet interpolates or regularizes meteorology onto the modeling grid.
+2. SpritzMet downscales or regularizes meteorology onto the modeling grid.
 3. Terrain provides terrain fields where required.
 4. Spritz Gaussian or particle backend reads the meteorology product on all ranks.
 5. Rank 0 writes the concentration NetCDF-CF product.

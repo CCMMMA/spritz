@@ -23,9 +23,10 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_gpu_fire_area.tif
 ```
 
-Use the DEM and LC100 land cover through `sprtz-terrain fetch`; GPU backend
-detection remains lazy and falls back to CPU if optional libraries are
-unavailable.
+Use the DEM and LC100 land cover as SpritzMet `--dem`/`--land-cover` inputs
+when preparing WRF-derived wind and precipitation, and through
+`sprtz-terrain fetch` for fire-spread terrain products. GPU backend detection
+remains lazy and falls back to CPU if optional libraries are unavailable.
 
 ```bash
 sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire_gpu --interchange netcdf

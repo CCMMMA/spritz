@@ -22,9 +22,10 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_backward_fire_area.tif
 ```
 
-Use the COP30 and LC100 GeoTIFFs through `sprtz-terrain fetch` with matching
-domain settings when terrain or land cover affects ignition plausibility or
-spread interpretation.
+Use the COP30 and LC100 GeoTIFFs as SpritzMet `--dem`/`--land-cover` inputs
+when preparing WRF-derived wind and precipitation, and through
+`sprtz-terrain fetch` with matching domain settings when terrain or land cover
+affects ignition plausibility or spread interpretation.
 
 ```bash
 python usecases/11_backward_fire_origin/step_01_estimate_ignition.py

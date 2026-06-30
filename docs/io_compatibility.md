@@ -19,7 +19,9 @@ This is not a byte-for-byte parser for every historical Fortran control record. 
 New module-to-module exchange prefers NetCDF-CF:
 
 - SpritzMet writes `meteo.nc` with `eastward_wind(time,z,y,x)`,
-  `northward_wind(time,z,y,x)`, `air_temperature(time,y,x)`,
+  `northward_wind(time,z,y,x)`, optional diagnostic `U10M(time,y,x)` /
+  `V10M(time,y,x)`, WRF-derived `temperature_2m_c(time,y,x)`,
+  `relative_humidity_2m(time,y,x)`, station-derived `air_temperature(time,y,x)`,
   `atmosphere_boundary_layer_thickness(time,y,x)`, and
   `precipitation_rate(time,y,x)`.
 - Spritz reads `meteo.nc` and writes `concentration.nc`; JSON `run.backend`
@@ -67,10 +69,12 @@ with independent `time_index` and `level_index` choices. SpritzWRF reads valid
 time only from WRF/CF time metadata, not from the downloaded filename. It also
 extracts precipitation from common rate variables (`RAINRATE`, `PRECIP_RATE`,
 `precipitation_rate`, `precip_rate`) or accumulated WRF rain variables (`RAINC`,
-`RAINNC`, `RAINSH`) when present. SpritzMet converts those fields into the
-NetCDF-CF local product used by the rest of Spritz.
+`RAINNC`, `RAINSH`) when present. `T2` is converted to Celsius, `RH2` is
+converted to a 0-1 rate, and relative humidity can be derived from `Q2`,
+surface pressure, and `T2` when direct `RH2` is absent. SpritzMet converts
+those fields into the NetCDF-CF local product used by the rest of Spritz.
 
 
 ## Terrain Preprocessing
 
-Terrain is included as `sprtz.models.terrain` and the `terrain` CLI. It provides clean-room terrain interpolation and NetCDF-CF/JSON terrain outputs for SpritzMet, MakeGeo, and dispersion workflows.
+Terrain is included as `sprtz.models.terrain` and the `terrain` CLI. It provides clean-room terrain resampling and NetCDF-CF/JSON terrain outputs for SpritzMet, MakeGeo, and dispersion workflows.

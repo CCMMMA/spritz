@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-"""Terrain: clean-room terrain extraction and interpolation for Spritz.
+"""Terrain: clean-room terrain extraction and resampling for Spritz.
 
-Terrain reads terrain rasters, interpolates them to a local modeling grid,
+Terrain reads terrain rasters, resamples them to a local modeling grid,
 assigns terrain heights to model cells/receptors, and writes a NetCDF-CF terrain
 product for SpritzMet, MakeGeo, and Spritz dispersion workflows.
 """
@@ -66,7 +66,7 @@ def _axis_for_source(size: int, spacing_m: float) -> np.ndarray:
 
 
 def _bilinear_regular_grid(values: np.ndarray, src_x: np.ndarray, src_y: np.ndarray, dst_x: np.ndarray, dst_y: np.ndarray) -> np.ndarray:
-    """Bilinearly interpolate a regular terrain raster to arbitrary points."""
+    """Bilinearly resample a regular terrain raster to arbitrary points."""
     z = np.asarray(values, dtype=float)
     if z.ndim != 2:
         raise ValueError("terrain raster must be two-dimensional")
@@ -113,7 +113,7 @@ def terrain_to_local_grid(
     source_dy_m: float | None = None,
     source: str = "in-memory terrain",
 ) -> TerrainProduct:
-    """Interpolate a terrain raster to a Spritz local modeling grid."""
+    """Resample a terrain raster to a Spritz local modeling grid."""
     if nx < 2 or ny < 2:
         raise ValueError("nx and ny must be at least 2")
     if dx_m <= 0 or dy_m <= 0:
@@ -190,7 +190,7 @@ def run(
     source_dy_m: float | None = None,
     prefer_netcdf: bool = True,
 ) -> dict[str, Any]:
-    """Read terrain, interpolate it, write a Terrain product, and return metadata."""
+    """Read terrain, resample it, write a Terrain product, and return metadata."""
     p = Path(terrain_path)
     terrain = read_ascii_grid(p)
     product = terrain_to_local_grid(

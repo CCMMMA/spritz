@@ -32,6 +32,8 @@ DEFAULT_USE_CASE_BOUNDS = {
 }
 RASTERIO_SUFFIXES = {".tif", ".tiff", ".cog"}
 NETCDF_SUFFIXES = {".nc", ".nc4", ".cdf", ".netcdf"}
+
+
 class UseCaseDependencyError(RuntimeError):
     """Raised when the selected use-case inputs need optional dependencies."""
 
@@ -254,13 +256,13 @@ def _with_vertical_level_metadata(
     if vertical_levels_m is None:
         return wrf
     metadata = dict(wrf.metadata or {})
-    u = _expand_single_level_wind(wrf.u, vertical_levels_m, "u", metadata)
-    v = _expand_single_level_wind(wrf.v, vertical_levels_m, "v", metadata)
+    u = _expand_or_remap_wind(wrf.u, vertical_levels_m, "u", metadata)
+    v = _expand_or_remap_wind(wrf.v, vertical_levels_m, "v", metadata)
     metadata["level_meters"] = [float(level) for level in vertical_levels_m]
     metadata["level_meters_source"] = "usecase01_command_line"
     metadata["level_meters_kind"] = "height_above_sea_level"
     if np.asarray(wrf.u).shape != np.asarray(u).shape:
-        metadata["vertical_level_expansion"] = "single_near_surface_level_repeated"
+        metadata.setdefault("vertical_level_expansion", "single_near_surface_level_repeated")
     return spritzwrf.WRFWindField(
         wrf.latitude,
         wrf.longitude,
@@ -270,16 +272,71 @@ def _with_vertical_level_metadata(
         time_index=wrf.time_index,
         metadata=metadata,
         precipitation_rate=wrf.precipitation_rate,
+        u10m=wrf.u10m,
+        v10m=wrf.v10m,
+        temperature_2m_c=wrf.temperature_2m_c,
+        relative_humidity_2m=wrf.relative_humidity_2m,
     )
 
 
-def _expand_single_level_wind(
+def _metadata_float_list(metadata: dict[str, Any], key: str) -> list[float]:
+    value = metadata.get(key)
+    if isinstance(value, (list, tuple)):
+        return [float(item) for item in value]
+    return []
+
+
+def _linear_vertical_remap(
+    values: np.ndarray,
+    source_levels_m: list[float],
+    target_levels_m: list[float],
+    *,
+    field_name: str,
+) -> np.ndarray:
+    arr = np.asarray(values, dtype=float)
+    source = np.asarray(source_levels_m, dtype=float)
+    target = np.asarray(target_levels_m, dtype=float)
+    if arr.ndim not in {3, 4}:
+        raise ValueError(f"{field_name} must be shaped as level,y,x or time,level,y,x for vertical remapping")
+    if source.size != arr.shape[-3]:
+        raise ValueError(
+            f"level_meters contains {source.size} source heights, but {field_name} has {arr.shape[-3]} vertical levels"
+        )
+    order = np.argsort(source)
+    source = source[order]
+    sorted_arr = np.take(arr, order, axis=-3)
+    if np.any(np.diff(source) <= 0.0):
+        raise ValueError("WRF level_meters must be distinct for vertical remapping")
+    if source.size == 1:
+        return np.broadcast_to(sorted_arr, (*sorted_arr.shape[:-3], target.size, *sorted_arr.shape[-2:])).copy()
+
+    # Each requested didactic height is evaluated independently.  Values below
+    # the first WRF mass level or above the top level use the nearest two WRF
+    # levels as a transparent linear extrapolation instead of silently repeating
+    # a diagnostic surface field.
+    out = np.empty((*sorted_arr.shape[:-3], target.size, *sorted_arr.shape[-2:]), dtype=float)
+    for target_i, target_level in enumerate(target):
+        upper = int(np.searchsorted(source, target_level, side="right"))
+        if upper <= 0:
+            lower, upper = 0, 1
+        elif upper >= source.size:
+            lower, upper = source.size - 2, source.size - 1
+        else:
+            lower = upper - 1
+        fraction = (float(target_level) - float(source[lower])) / (float(source[upper]) - float(source[lower]))
+        out[..., target_i, :, :] = sorted_arr[..., lower, :, :] + fraction * (
+            sorted_arr[..., upper, :, :] - sorted_arr[..., lower, :, :]
+        )
+    return out
+
+
+def _expand_or_remap_wind(
     values: np.ndarray,
     vertical_levels_m: list[float],
     field_name: str,
     metadata: dict[str, Any],
 ) -> np.ndarray:
-    """Repeat one diagnostic near-surface level onto the didactic height grid."""
+    """Fit WRF wind levels to the didactic height grid."""
     arr = np.asarray(values, dtype=float)
     nz = len(vertical_levels_m)
     if arr.ndim == 2:
@@ -299,9 +356,17 @@ def _expand_single_level_wind(
             return np.broadcast_to(arr, (arr.shape[0], nz, *arr.shape[-2:])).copy()
         if arr.shape[1] == nz:
             return arr
+        source_levels = _metadata_float_list(metadata, "level_meters")
+        if source_levels and len(source_levels) == arr.shape[1]:
+            metadata["vertical_level_remapping"] = "linear_interpolation_from_wrf_levels"
+            source_min = min(source_levels)
+            source_max = max(source_levels)
+            if vertical_levels_m[0] < source_min or vertical_levels_m[-1] > source_max:
+                metadata["vertical_level_extrapolation"] = "linear_boundary_extrapolation"
+            return _linear_vertical_remap(arr, source_levels, vertical_levels_m, field_name=field_name)
     raise ValueError(
         f"--vertical-levels-m contains {nz} heights, but {field_name} has shape {arr.shape}; "
-        "use matching WRF levels or load a single near-surface level for didactic expansion"
+        "use matching WRF levels, WRF level_meters metadata, or load a single near-surface level"
     )
 
 
@@ -312,6 +377,8 @@ def _synthetic_wrf(center_lat: float, center_lon: float, nx: int = 7, ny: int = 
     lon, lat = np.meshgrid(lon_axis, lat_axis)
     u = 3.5 + 0.4 * np.sin(np.deg2rad((lat - center_lat) * 100.0))
     v = 1.2 + 0.3 * np.cos(np.deg2rad((lon - center_lon) * 100.0))
+    temperature_2m_c = 18.0 - 0.03 * (lat - center_lat) * 100.0 + 0.02 * (lon - center_lon) * 100.0
+    relative_humidity_2m = np.clip(0.62 + 0.04 * np.sin(np.deg2rad((lon - center_lon) * 120.0)), 0.0, 1.0)
     return spritzwrf.WRFWindField(
         lat,
         lon,
@@ -319,6 +386,8 @@ def _synthetic_wrf(center_lat: float, center_lon: float, nx: int = 7, ny: int = 
         v,
         Path("synthetic-wrf5-d03"),
         metadata={"synthetic": True, "time_index": "0", "level_index": "0"},
+        temperature_2m_c=temperature_2m_c,
+        relative_humidity_2m=relative_humidity_2m,
     )
 
 
@@ -428,6 +497,20 @@ def _combine_local_meteorology(items: list[spritzmet.LocalMeteorology]) -> sprit
     u = np.concatenate([item.wind_4d[0] for item in items], axis=0)
     v = np.concatenate([item.wind_4d[1] for item in items], axis=0)
     precipitation = np.concatenate([item.precipitation_3d for item in items], axis=0)
+    wind_10m_items = [item.wind_10m_3d for item in items]
+    u10m = None
+    v10m = None
+    if all(wind_10m is not None for wind_10m in wind_10m_items):
+        u10m = np.concatenate([wind_10m[0] for wind_10m in wind_10m_items if wind_10m is not None], axis=0)
+        v10m = np.concatenate([wind_10m[1] for wind_10m in wind_10m_items if wind_10m is not None], axis=0)
+    temperature_items = [item.temperature_2m_3d for item in items]
+    temperature_2m_c = None
+    if all(values is not None for values in temperature_items):
+        temperature_2m_c = np.concatenate([values for values in temperature_items if values is not None], axis=0)
+    humidity_items = [item.relative_humidity_2m_3d for item in items]
+    relative_humidity_2m = None
+    if all(values is not None for values in humidity_items):
+        relative_humidity_2m = np.concatenate([values for values in humidity_items if values is not None], axis=0)
     datetimes: list[str] = []
     for item in items:
         if item.valid_datetimes_utc:
@@ -450,6 +533,10 @@ def _combine_local_meteorology(items: list[spritzmet.LocalMeteorology]) -> sprit
         valid_datetime_utc=datetimes[0] if datetimes else first.valid_datetime_utc,
         valid_datetimes_utc=datetimes or None,
         downscaling_metadata=first.downscaling_metadata,
+        u10m=u10m,
+        v10m=v10m,
+        temperature_2m_c=temperature_2m_c,
+        relative_humidity_2m=relative_humidity_2m,
     )
 
 
@@ -502,7 +589,7 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
     vertical_levels_m = _parse_vertical_levels_m(args.vertical_levels_m)
     if vertical_levels_m is not None:
         _teach(
-            "vertical levels are set on the command line as metres above ground; first=%.3f m, count=%s",
+            "vertical levels are set on the command line as metres above sea level; first=%.3f m, count=%s",
             vertical_levels_m[0],
             len(vertical_levels_m),
         )
@@ -585,6 +672,7 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
             terrain_input_metadata=terrain_metadata,
             downscaling_mode=args.downscaling_mode,
             station_measurements=station_measurements,
+            parallel=args.parallel,
         )
         for wrf in wrf_fields
     ]
@@ -674,6 +762,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dem", default=None, help="Optional DEM raster for terrain-aware SpritzMet downscaling, e.g. data/dem/cop30_naples.tif")
     parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster, e.g. data/landcover/lc100_naples.tif")
     parser.add_argument("--downscaling-mode", choices=["deterministic", "ai", "diffusion"], default="deterministic")
+    parser.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial", help="parallel execution mode for SpritzMet WRF downscaling")
     parser.add_argument(
         "--station-measurements",
         default=None,

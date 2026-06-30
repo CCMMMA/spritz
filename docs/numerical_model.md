@@ -106,6 +106,35 @@ WRF-driven workflows, SpritzWRF extracts common WRF rate fields or accumulated
 rain increments and SpritzMet downscales them onto the local grid. If no
 precipitation field is present, the rate is zero and the option has no effect.
 
+## SpritzMet WRF Downscaling
+
+SpritzMet interpolates WRF-derived fields to the local grid with inverse-distance
+weighting in the local azimuthal-equidistant projection, not raw latitude and
+longitude degrees. The same neighbour plan is reused for wind, precipitation,
+diagnostic 10 m fields, 2 m temperature, and 2 m relative humidity so all
+WRF-derived variables use identical horizontal sampling geometry.
+
+When WRF diagnostic `U10M`/`V10M` fields are available, SpritzMet keeps them as
+explicit `time,y,x` diagnostics and may use them to anchor the vertical wind
+profile. `U10M`/`V10M` are treated as wind at 10 m above local ground. For
+height-above-ground vertical grids, the reference height is 10 m. For
+height-above-sea-level grids with a DEM, the reference height is DEM elevation
+plus 10 m at each cell. If no DEM is available for an above-sea-level grid,
+SpritzMet only applies the equality on land-cover cells classified as water,
+where sea surface height is assumed approximately equal to mean sea level. The
+anchoring is recorded in output metadata and does not imply regulatory
+validation.
+
+SpritzWRF extracts WRF `T2` as Celsius and `RH2` as a unitless rate. When
+`RH2` is unavailable, SpritzWRF can derive the rate from `Q2`, surface pressure,
+and `T2`. SpritzMet downscales these 2 m fields onto the same local grid. If a
+DEM is supplied, 2 m temperature receives a transparent environmental
+lapse-rate correction relative to the local-grid mean elevation, and relative
+humidity is recomputed by preserving vapor pressure through that temperature
+change. This thermodynamic scalar correction uses DEM elevation; land cover
+continues to enter the deterministic WRF downscaling through roughness-driven
+wind and precipitation adjustments.
+
 `concentration_output` controls where concentrations are sampled:
 
 - `receptors` uses the named receptor list, or the model grid at `z=0` when no

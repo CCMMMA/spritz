@@ -32,9 +32,11 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_naples.tif
 ```
 
-The WRF file supports SpritzWRF/SpritzMet forcing. The DEM is used by
-`sprtz-terrain fetch` with the LC100 land-cover raster when the evaluated
-scenario includes terrain.
+The WRF file supports SpritzWRF/SpritzMet forcing. When preparing high-resolution
+meteorology, pass the DEM as `--dem` and LC100 as `--land-cover` so SpritzMet
+uses both terrain and land cover for wind and precipitation downscaling. The
+same rasters can also feed `sprtz-terrain fetch` when the evaluated scenario
+includes standalone terrain/GEO products.
 
 ## Create a tiny demo mask
 

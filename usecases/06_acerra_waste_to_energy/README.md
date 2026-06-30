@@ -32,9 +32,9 @@ python3 tools/copernicus-lc100-download.py \
 ```
 
 The default use case remains self-contained. Replace the placeholder
-meteorology with WRF-derived SpritzMet products and use the DEM through
-`sprtz-terrain fetch` with the LC100 land-cover raster when operational terrain
-is required.
+meteorology with WRF-derived SpritzMet products prepared with both `--dem` and
+`--land-cover`, and use the same DEM/LC100 pair through `sprtz-terrain fetch`
+when standalone operational terrain/GEO products are required.
 
 ## Step 1: Build the configuration
 

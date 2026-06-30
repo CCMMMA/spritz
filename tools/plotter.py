@@ -24,10 +24,17 @@ LATITUDE_NAMES = ("latitude", "lat", "XLAT", "XLAT_M")
 LONGITUDE_NAMES = ("longitude", "lon", "long", "lng", "XLONG", "XLONG_M")
 X_NAMES = ("x", "field_x", "west_east")
 Y_NAMES = ("y", "field_y", "south_north")
-U_WIND_NAMES = ("eastward_wind", "u", "U", "U10")
-V_WIND_NAMES = ("northward_wind", "v", "V", "V10")
-WIND_SPEED_NAMES = ("wind_speed", "WSPD10", "wspd10", "speed")
-WIND_FROM_DIRECTION_NAMES = ("wind_from_direction", "WDIR10", "wdir10", "wind_dir", "wind_direction")
+U_WIND_NAMES = ("eastward_wind", "u", "U", "U10", "U10M")
+V_WIND_NAMES = ("northward_wind", "v", "V", "V10", "V10M")
+WIND_SPEED_NAMES = ("wind_speed", "wind_speed_10m", "WSPD10", "wspd10", "speed")
+WIND_FROM_DIRECTION_NAMES = (
+    "wind_from_direction",
+    "wind_from_direction_10m",
+    "WDIR10",
+    "wdir10",
+    "wind_dir",
+    "wind_direction",
+)
 SKIP_VARIABLES = {
     "time",
     "time_datetime",

@@ -6,7 +6,7 @@ land-use classes, and surface parameters on the Spritz modeling grid.
 ## Two Compatible APIs
 
 The existing `terrain` CLI and `sprtz.models.terrain` API remain available for
-small local ASCII DEM interpolation:
+small local ASCII DEM resampling:
 
 ```bash
 terrain \
@@ -129,9 +129,9 @@ replaceable:
 - Bowen ratio;
 - vegetation fraction.
 
-Continuous terrain is bilinearly interpolated. Categorical land-cover rasters are
+Continuous terrain is bilinearly resampled. Categorical land-cover rasters are
 nearest-neighbor resampled because class labels are not scalar measurements;
-bilinear interpolation would invent invalid classes.
+bilinear resampling would invent invalid classes.
 
 ## Provenance
 

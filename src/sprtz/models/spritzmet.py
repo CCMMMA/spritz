@@ -26,6 +26,9 @@ from sprtz.parallel import get_gpu_context, get_mpi_context
 
 
 LOGGER = logging.getLogger(__name__)
+DIAGNOSTIC_WIND_10M_REFERENCE_M = 10.0
+DIAGNOSTIC_WIND_10M_LEVEL_TOLERANCE_M = 1.0e-6
+WATER_LAND_COVER_CLASSES = frozenset({80, 200, 511, 512, 521, 522, 523})
 
 LAND_COVER_ROUGHNESS_M = {
     10: 0.30,
@@ -93,6 +96,7 @@ UPSLOPE_WIND_FACTOR = 0.35
 OROGRAPHIC_PRECIP_SCALE_M = 3000.0
 OROGRAPHIC_UPSLOPE_FACTOR = 0.25
 LAND_PRECIP_FACTOR = 0.03
+TEMPERATURE_LAPSE_RATE_C_PER_M = 0.0065
 AI_DETAIL_GAIN = 0.18
 AI_TERRAIN_GAIN = 0.06
 AI_MAX_RELATIVE_ADJUSTMENT = 0.20
@@ -379,6 +383,10 @@ class LocalMeteorology:
     valid_datetime_utc: str | None = None
     valid_datetimes_utc: list[str] | None = None
     downscaling_metadata: dict[str, Any] | None = None
+    u10m: np.ndarray | None = None
+    v10m: np.ndarray | None = None
+    temperature_2m_c: np.ndarray | None = None
+    relative_humidity_2m: np.ndarray | None = None
 
     @property
     def wind_4d(self) -> tuple[np.ndarray, np.ndarray]:
@@ -402,6 +410,54 @@ class LocalMeteorology:
         if precipitation.ndim == 3:
             return precipitation
         raise ValueError("precipitation_rate must be shaped as y,x or time,y,x")
+
+    def _surface_scalar_3d(self, name: str, values: np.ndarray | None) -> np.ndarray | None:
+        if values is None:
+            return None
+        arr = np.asarray(values, dtype=float)
+        if arr.ndim == 2:
+            arr = arr[np.newaxis, :, :]
+        if arr.ndim != 3:
+            raise ValueError(f"{name} must be shaped as y,x or time,y,x")
+        return arr
+
+    @property
+    def temperature_2m_3d(self) -> np.ndarray | None:
+        return self._surface_scalar_3d("temperature_2m_c", self.temperature_2m_c)
+
+    @property
+    def relative_humidity_2m_3d(self) -> np.ndarray | None:
+        return self._surface_scalar_3d("relative_humidity_2m", self.relative_humidity_2m)
+
+    @property
+    def wind_10m_3d(self) -> tuple[np.ndarray, np.ndarray] | None:
+        if self.u10m is None or self.v10m is None:
+            return None
+        u10m = np.asarray(self.u10m, dtype=float)
+        v10m = np.asarray(self.v10m, dtype=float)
+        if u10m.shape != v10m.shape:
+            raise ValueError(f"u10m/v10m shape mismatch: {u10m.shape} vs {v10m.shape}")
+        if u10m.ndim == 2:
+            return u10m[np.newaxis, :, :], v10m[np.newaxis, :, :]
+        if u10m.ndim == 3:
+            return u10m, v10m
+        raise ValueError("u10m/v10m must be shaped as y,x or time,y,x")
+
+    @property
+    def wind_speed_10m(self) -> np.ndarray | None:
+        wind_10m = self.wind_10m_3d
+        if wind_10m is None:
+            return None
+        u10m, v10m = wind_10m
+        return np.hypot(u10m, v10m)
+
+    @property
+    def wind_from_direction_10m(self) -> np.ndarray | None:
+        wind_10m = self.wind_10m_3d
+        if wind_10m is None:
+            return None
+        u10m, v10m = wind_10m
+        return (270.0 - np.rad2deg(np.arctan2(v10m, u10m))) % 360.0
 
     @property
     def surface_u(self) -> np.ndarray:
@@ -440,7 +496,7 @@ class LocalMeteorology:
             time_datetimes = [time_datetime]
         u4, v4 = self.wind_4d
         precipitation3 = self.precipitation_3d
-        return {
+        payload = {
             "component": "spritzmet.local_meteorology",
             "center_lat": self.center_lat,
             "center_lon": self.center_lon,
@@ -475,6 +531,20 @@ class LocalMeteorology:
                 **({"valid_datetimes_utc": time_datetimes} if time_datetimes else {}),
             },
         }
+        wind_10m = self.wind_10m_3d
+        if wind_10m is not None:
+            u10m, v10m = wind_10m
+            payload["U10M"] = u10m.tolist()
+            payload["V10M"] = v10m.tolist()
+            payload["wind_speed_10m"] = self.wind_speed_10m.tolist()
+            payload["wind_from_direction_10m"] = self.wind_from_direction_10m.tolist()
+        temperature_2m = self.temperature_2m_3d
+        if temperature_2m is not None:
+            payload["temperature_2m_c"] = temperature_2m.tolist()
+        relative_humidity_2m = self.relative_humidity_2m_3d
+        if relative_humidity_2m is not None:
+            payload["relative_humidity_2m"] = relative_humidity_2m.tolist()
+        return payload
 
 
 def local_crs(center_lat: float, center_lon: float) -> CRS:
@@ -511,24 +581,104 @@ def _idw_downscale(
     power: float = 2.0,
     k: int = 8,
 ) -> np.ndarray:
+    nearest, weights, exact = _idw_neighbour_plan(src_lat, src_lon, dst_lat, dst_lon, power=power, k=k)
+    return _apply_idw_plan(src_value, dst_lat.shape, nearest, weights, exact)
+
+
+def _idw_neighbour_plan(
+    src_lat: np.ndarray,
+    src_lon: np.ndarray,
+    dst_lat: np.ndarray,
+    dst_lon: np.ndarray,
+    *,
+    power: float = 2.0,
+    k: int = 8,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if power <= 0:
         raise ValueError("power must be positive")
     if k <= 0:
         raise ValueError("k must be positive")
     src_points = np.column_stack([src_lat.ravel(), src_lon.ravel()])
-    src_values = src_value.ravel()
     dst_points = np.column_stack([dst_lat.ravel(), dst_lon.ravel()])
-    out = np.empty(dst_points.shape[0], dtype=float)
+    return _idw_neighbour_plan_from_points(src_points, dst_points, power=power, k=k)
+
+
+def _idw_neighbour_plan_from_points(
+    src_points: np.ndarray,
+    dst_points: np.ndarray,
+    *,
+    power: float = 2.0,
+    k: int = 8,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if power <= 0:
+        raise ValueError("power must be positive")
+    if k <= 0:
+        raise ValueError("k must be positive")
+    src_points = np.asarray(src_points, dtype=float)
+    dst_points = np.asarray(dst_points, dtype=float)
+    if src_points.ndim != 2 or dst_points.ndim != 2 or src_points.shape[1] != dst_points.shape[1]:
+        raise ValueError("source and destination points must be two-dimensional arrays with matching coordinate dimensions")
+    if src_points.shape[0] == 0 or dst_points.shape[0] == 0:
+        raise ValueError("source and destination point arrays must not be empty")
     k_eff = min(k, src_points.shape[0])
-    for i, point in enumerate(dst_points):
-        d2 = np.sum((src_points - point) ** 2, axis=1)
-        nearest = np.argpartition(d2, k_eff - 1)[:k_eff]
-        if np.any(d2[nearest] == 0):
-            out[i] = float(src_values[nearest[np.argmin(d2[nearest])]])
-            continue
-        weights = 1.0 / np.maximum(d2[nearest], 1.0e-20) ** (power / 2.0)
-        out[i] = float(np.sum(weights * src_values[nearest]) / np.sum(weights))
-    return out.reshape(dst_lat.shape)
+    nearest_all = np.empty((dst_points.shape[0], k_eff), dtype=int)
+    weights_all = np.empty((dst_points.shape[0], k_eff), dtype=float)
+    exact_all = np.full(dst_points.shape[0], -1, dtype=int)
+    chunk_size = max(1, min(128, max(1, 5_000_000 // max(src_points.shape[0], 1))))
+    for start in range(0, dst_points.shape[0], chunk_size):
+        stop = min(start + chunk_size, dst_points.shape[0])
+        delta = src_points[np.newaxis, :, :] - dst_points[start:stop, np.newaxis, :]
+        d2 = np.sum(delta * delta, axis=2)
+        nearest = np.argpartition(d2, k_eff - 1, axis=1)[:, :k_eff]
+        nearest_d2 = np.take_along_axis(d2, nearest, axis=1)
+        exact = nearest_d2 == 0.0
+        has_exact = np.any(exact, axis=1)
+        weights = 1.0 / np.maximum(nearest_d2, 1.0e-20) ** (power / 2.0)
+        weights /= np.sum(weights, axis=1, keepdims=True)
+        if np.any(has_exact):
+            exact_rows = np.where(has_exact)[0]
+            exact_cols = np.argmax(exact[has_exact], axis=1)
+            exact_all[start + exact_rows] = nearest[exact_rows, exact_cols]
+        nearest_all[start:stop, :] = nearest
+        weights_all[start:stop, :] = weights
+    return nearest_all, weights_all, exact_all
+
+
+def _apply_idw_plan(
+    src_value: np.ndarray,
+    dst_shape: tuple[int, int],
+    nearest: np.ndarray,
+    weights: np.ndarray,
+    exact: np.ndarray,
+) -> np.ndarray:
+    src_values = np.asarray(src_value, dtype=float).ravel()
+    out = np.sum(weights * src_values[nearest], axis=1)
+    exact_rows = exact >= 0
+    if np.any(exact_rows):
+        out[exact_rows] = src_values[exact[exact_rows]]
+    return out.reshape(dst_shape)
+
+
+def _local_projected_idw_plan(
+    src_lat: np.ndarray,
+    src_lon: np.ndarray,
+    dst_x: np.ndarray,
+    dst_y: np.ndarray,
+    *,
+    center_lat: float,
+    center_lon: float,
+    power: float,
+    neighbours: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    src_lat_arr = np.asarray(src_lat, dtype=float)
+    src_lon_arr = np.asarray(src_lon, dtype=float)
+    if src_lat_arr.shape != src_lon_arr.shape:
+        raise ValueError(f"source latitude/longitude shape mismatch: {src_lat_arr.shape} vs {src_lon_arr.shape}")
+    transformer = Transformer.from_crs(CRS.from_epsg(4326), local_crs(center_lat, center_lon), always_xy=True)
+    src_x, src_y = transformer.transform(src_lon_arr, src_lat_arr)
+    src_points = np.column_stack([np.asarray(src_x, dtype=float).ravel(), np.asarray(src_y, dtype=float).ravel()])
+    dst_points = np.column_stack([np.asarray(dst_x, dtype=float).ravel(), np.asarray(dst_y, dtype=float).ravel()])
+    return _idw_neighbour_plan_from_points(src_points, dst_points, power=power, k=neighbours)
 
 
 def _metadata_list(metadata: dict[str, Any] | None, key: str) -> list[Any]:
@@ -547,6 +697,109 @@ def _validated_level_meters(metadata: dict[str, Any] | None, nz: int) -> list[fl
             f"level_meters contains {len(levels)} heights, but downscaled wind has {nz} vertical levels"
         )
     return [float(level) for level in levels]
+
+
+def _anchor_10m_level_to_diagnostic_wind(
+    u: np.ndarray,
+    v: np.ndarray,
+    u10m: np.ndarray | None,
+    v10m: np.ndarray | None,
+    level_meters: list[float] | None,
+    reference_height_m: np.ndarray | None,
+    anchor_mask: np.ndarray | None,
+    *,
+    domain: str,
+    assumption: str,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    if u10m is None or v10m is None or level_meters is None or reference_height_m is None or anchor_mask is None:
+        return u, v, {}
+    if not np.any(anchor_mask):
+        return u, v, {}
+    u4 = np.asarray(u, dtype=float).copy()
+    v4 = np.asarray(v, dtype=float).copy()
+    u10 = np.asarray(u10m, dtype=float)
+    v10 = np.asarray(v10m, dtype=float)
+    levels = np.asarray(level_meters, dtype=float)
+    if u4.ndim != 4 or v4.ndim != 4:
+        raise ValueError("wind must be shaped as time,z,y,x before 10 m diagnostic anchoring")
+    if levels.size != u4.shape[1]:
+        raise ValueError(f"level_meters contains {levels.size} heights, but wind has {u4.shape[1]} vertical levels")
+    if np.any(np.diff(levels) <= 0.0):
+        raise ValueError("level_meters must be strictly increasing for 10 m diagnostic anchoring")
+    if u10.shape != (u4.shape[0], *u4.shape[-2:]) or v10.shape != (v4.shape[0], *v4.shape[-2:]):
+        raise ValueError(f"U10M/V10M shape {u10.shape}/{v10.shape} does not match wind grid {(u4.shape[0], *u4.shape[-2:])}")
+    if reference_height_m.shape != u4.shape[-2:] or anchor_mask.shape != u4.shape[-2:]:
+        raise ValueError(
+            f"10 m reference height/mask shape {reference_height_m.shape}/{anchor_mask.shape} "
+            f"does not match wind grid {u4.shape[-2:]}"
+        )
+    exact_level_indexes: set[int] = set()
+    bracketing_cells = 0
+    nearest_cells = 0
+    anchored_cells = 0
+    remaining_mask = np.asarray(anchor_mask, dtype=bool).copy()
+    for level_index, level in enumerate(levels):
+        exact_mask = remaining_mask & (np.abs(reference_height_m - float(level)) <= DIAGNOSTIC_WIND_10M_LEVEL_TOLERANCE_M)
+        if not np.any(exact_mask):
+            continue
+        u4[:, level_index, exact_mask] = u10[:, exact_mask]
+        v4[:, level_index, exact_mask] = v10[:, exact_mask]
+        exact_level_indexes.add(int(level_index))
+        anchored_cells += int(np.count_nonzero(exact_mask))
+        remaining_mask[exact_mask] = False
+    for y, x in np.argwhere(remaining_mask):
+        reference_height = float(reference_height_m[y, x])
+        if not np.isfinite(reference_height):
+            continue
+        exact = np.where(np.abs(levels - reference_height) <= DIAGNOSTIC_WIND_10M_LEVEL_TOLERANCE_M)[0]
+        if exact.size:
+            level_index = int(exact[0])
+            u4[:, level_index, y, x] = u10[:, y, x]
+            v4[:, level_index, y, x] = v10[:, y, x]
+            exact_level_indexes.add(level_index)
+            anchored_cells += 1
+            continue
+        if reference_height <= levels[0]:
+            current_u = u4[:, 0, y, x]
+            current_v = v4[:, 0, y, x]
+            u4[:, 0, y, x] += u10[:, y, x] - current_u
+            v4[:, 0, y, x] += v10[:, y, x] - current_v
+            nearest_cells += 1
+            anchored_cells += 1
+            continue
+        if reference_height >= levels[-1]:
+            current_u = u4[:, -1, y, x]
+            current_v = v4[:, -1, y, x]
+            u4[:, -1, y, x] += u10[:, y, x] - current_u
+            v4[:, -1, y, x] += v10[:, y, x] - current_v
+            nearest_cells += 1
+            anchored_cells += 1
+            continue
+        upper = int(np.searchsorted(levels, reference_height, side="right"))
+        lower = upper - 1
+        fraction = (reference_height - float(levels[lower])) / (float(levels[upper]) - float(levels[lower]))
+        current_u = u4[:, lower, y, x] + fraction * (u4[:, upper, y, x] - u4[:, lower, y, x])
+        current_v = v4[:, lower, y, x] + fraction * (v4[:, upper, y, x] - v4[:, lower, y, x])
+        delta_u = u10[:, y, x] - current_u
+        delta_v = v10[:, y, x] - current_v
+        u4[:, lower, y, x] += delta_u
+        u4[:, upper, y, x] += delta_u
+        v4[:, lower, y, x] += delta_v
+        v4[:, upper, y, x] += delta_v
+        bracketing_cells += 1
+        anchored_cells += 1
+    metadata: dict[str, Any] = {
+        "vertical_level_10m_reference": "U10M/V10M",
+        "vertical_level_10m_reference_height_m": DIAGNOSTIC_WIND_10M_REFERENCE_M,
+        "vertical_level_10m_reference_domain": domain,
+        "vertical_level_10m_reference_cell_count": anchored_cells,
+        "vertical_level_10m_reference_exact_level_indexes": sorted(exact_level_indexes),
+        "vertical_level_10m_reference_bracketing_cell_count": bracketing_cells,
+        "vertical_level_10m_reference_nearest_level_cell_count": nearest_cells,
+        "vertical_level_10m_reference_method": "exact_or_bracketing_level_bias_correction",
+        "vertical_level_10m_reference_assumption": assumption,
+    }
+    return u4, v4, metadata
 
 
 def _metadata_index(metadata: dict[str, Any] | None, key: str) -> str | None:
@@ -618,18 +871,24 @@ def _downscale_spatial_stack(
     neighbours: int,
     field_name: str,
     metadata: dict[str, Any] | None = None,
+    idw_plan: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
 ) -> np.ndarray:
     values = np.asarray(src_value, dtype=float)
+    nearest, weights, exact = (
+        idw_plan
+        if idw_plan is not None
+        else _idw_neighbour_plan(src_lat, src_lon, dst_lat, dst_lon, power=power, k=neighbours)
+    )
     if values.ndim == 2:
         _log_downscaling_slice(field_name, None, metadata)
-        return _idw_downscale(src_lat, src_lon, values, dst_lat, dst_lon, power=power, k=neighbours)
+        return _apply_idw_plan(values, dst_lat.shape, nearest, weights, exact)
     if values.ndim not in {3, 4}:
         raise ValueError("WRF field must be shaped as y,x; time,y,x; or time,z,y,x")
     leading_shape = values.shape[:-2]
     downscaled = np.empty((*leading_shape, *dst_lat.shape), dtype=float)
     for index in np.ndindex(leading_shape):
         _log_downscaling_slice(field_name, index, metadata)
-        downscaled[index] = _idw_downscale(src_lat, src_lon, values[index], dst_lat, dst_lon, power=power, k=neighbours)
+        downscaled[index] = _apply_idw_plan(values[index], dst_lat.shape, nearest, weights, exact)
     return downscaled
 
 
@@ -668,6 +927,23 @@ def _as_precipitation_3d(values: np.ndarray, ntime: int, shape: tuple[int, int])
     return arr
 
 
+def _as_surface_scalar_3d(name: str, values: np.ndarray | None, ntime: int, shape: tuple[int, int]) -> np.ndarray | None:
+    if values is None:
+        return None
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 2:
+        arr = np.broadcast_to(arr[np.newaxis, :, :], (ntime, *shape)).copy()
+    if arr.ndim != 3:
+        raise ValueError(f"{name} must be shaped as y,x or time,y,x")
+    if arr.shape[-2:] != shape:
+        raise ValueError(f"{name} grid shape {arr.shape[-2:]} must match wind grid shape {shape}")
+    if arr.shape[0] == 1 and ntime != 1:
+        arr = np.broadcast_to(arr, (ntime, *shape)).copy()
+    if arr.shape[0] != ntime:
+        raise ValueError(f"{name} time dimension {arr.shape[0]} must match wind time dimension {ntime}")
+    return arr
+
+
 def _require_grid_field(name: str, values: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     field = np.asarray(values, dtype=float)
     if field.shape != shape:
@@ -683,6 +959,46 @@ def _land_cover_roughness(land_cover: np.ndarray) -> np.ndarray:
     for code, value in LAND_COVER_ROUGHNESS_M.items():
         roughness[classes == code] = value
     return roughness
+
+
+def _water_land_cover_mask(land_cover: np.ndarray | None, shape: tuple[int, int]) -> np.ndarray | None:
+    if land_cover is None:
+        return None
+    classes = np.asarray(np.rint(_require_grid_field("land_cover", land_cover, shape)), dtype=int)
+    return np.isin(classes, list(WATER_LAND_COVER_CLASSES))
+
+
+def _diagnostic_10m_reference_height(
+    *,
+    level_kind: str,
+    dem_elevation_m: np.ndarray | None,
+    land_cover: np.ndarray | None,
+    shape: tuple[int, int],
+) -> tuple[np.ndarray | None, np.ndarray | None, str, str]:
+    if level_kind == "height_above_ground":
+        return (
+            np.full(shape, DIAGNOSTIC_WIND_10M_REFERENCE_M, dtype=float),
+            np.ones(shape, dtype=bool),
+            "all_cells_height_above_ground",
+            "U10M/V10M represents 10 m above local ground",
+        )
+    if dem_elevation_m is not None:
+        dem = _require_grid_field("dem_elevation_m", dem_elevation_m, shape)
+        return (
+            dem + DIAGNOSTIC_WIND_10M_REFERENCE_M,
+            np.ones(shape, dtype=bool),
+            "all_cells_dem_plus_10m_asl",
+            "U10M/V10M represents 10 m above local ground; ASL reference height is DEM elevation plus 10 m",
+        )
+    water_mask = _water_land_cover_mask(land_cover, shape)
+    if water_mask is not None:
+        return (
+            np.full(shape, DIAGNOSTIC_WIND_10M_REFERENCE_M, dtype=float),
+            water_mask,
+            "water_land_cover_cells_only",
+            "sea_surface_height_approximately_mean_sea_level",
+        )
+    return None, None, "not_applied", "requires height_above_ground levels, DEM elevation, or water land-cover cells"
 
 
 def _expand_to_field(field: np.ndarray, target_ndim: int) -> np.ndarray:
@@ -848,6 +1164,87 @@ def _apply_surface_downscaling(
         }
     )
     return corrected_u, corrected_v, corrected_precipitation, metadata
+
+
+def _apply_surface_wind_downscaling(
+    u: np.ndarray | None,
+    v: np.ndarray | None,
+    *,
+    dem_elevation_m: np.ndarray | None,
+    land_cover: np.ndarray | None,
+    dx_m: float,
+    dy_m: float,
+    shape: tuple[int, int],
+) -> tuple[np.ndarray | None, np.ndarray | None, dict[str, Any]]:
+    if u is None or v is None:
+        return u, v, {}
+    if dem_elevation_m is None and land_cover is None:
+        return u, v, {}
+    elevation = (
+        _require_grid_field("dem_elevation_m", dem_elevation_m, shape)
+        if dem_elevation_m is not None
+        else np.zeros(shape, dtype=float)
+    )
+    roughness = (
+        _land_cover_roughness(_require_grid_field("land_cover", land_cover, shape))
+        if land_cover is not None
+        else np.full(shape, REFERENCE_ROUGHNESS_M, dtype=float)
+    )
+    corrected_u, corrected_v, metadata = _diagnostic_wind_adjustment(
+        u,
+        v,
+        elevation,
+        roughness,
+        dx_m=dx_m,
+        dy_m=dy_m,
+    )
+    return corrected_u, corrected_v, {f"diagnostic_10m_{key}": value for key, value in metadata.items()}
+
+
+def _saturation_vapor_pressure_pa(temperature_c: np.ndarray) -> np.ndarray:
+    tc = np.asarray(temperature_c, dtype=float)
+    return 611.2 * np.exp((17.67 * tc) / np.maximum(tc + 243.5, 1.0e-6))
+
+
+def _apply_thermodynamic_downscaling(
+    temperature_2m_c: np.ndarray | None,
+    relative_humidity_2m: np.ndarray | None,
+    *,
+    dem_elevation_m: np.ndarray | None,
+    shape: tuple[int, int],
+) -> tuple[np.ndarray | None, np.ndarray | None, dict[str, Any]]:
+    metadata: dict[str, Any] = {
+        "temperature_2m_downscaling": temperature_2m_c is not None,
+        "relative_humidity_2m_downscaling": relative_humidity_2m is not None,
+    }
+    if temperature_2m_c is None:
+        return temperature_2m_c, relative_humidity_2m, metadata
+    temp = np.asarray(temperature_2m_c, dtype=float)
+    rh = None if relative_humidity_2m is None else np.clip(np.asarray(relative_humidity_2m, dtype=float), 0.0, 1.0)
+    if dem_elevation_m is None:
+        if rh is not None:
+            rh = np.clip(rh, 0.0, 1.0)
+        metadata["temperature_2m_uses_dem_elevation_m"] = False
+        return temp, rh, metadata
+
+    elevation = _require_grid_field("dem_elevation_m", dem_elevation_m, shape)
+    elevation_delta = elevation - float(np.nanmean(elevation))
+    correction = _expand_to_field(-TEMPERATURE_LAPSE_RATE_C_PER_M * elevation_delta, temp.ndim)
+    corrected_temp = temp + correction
+    metadata.update(
+        {
+            "temperature_2m_uses_dem_elevation_m": True,
+            "temperature_2m_lapse_rate_c_per_m": TEMPERATURE_LAPSE_RATE_C_PER_M,
+            "temperature_2m_max_abs_dem_correction_c": float(np.nanmax(np.abs(correction))),
+        }
+    )
+    if rh is None:
+        return corrected_temp, rh, metadata
+
+    vapor_pressure = rh * _saturation_vapor_pressure_pa(temp)
+    corrected_rh = np.clip(vapor_pressure / np.maximum(_saturation_vapor_pressure_pa(corrected_temp), 1.0e-12), 0.0, 1.0)
+    metadata["relative_humidity_2m_adjusted_for_temperature_lapse"] = True
+    return corrected_temp, corrected_rh, metadata
 
 
 def _station_value(station: Any, name: str) -> float | None:
@@ -1219,6 +1616,7 @@ def downscale_wrf_to_local_grid(
     station_measurements: list[Any] | None = None,
     ai_model: DownscalingModel | None = None,
     diffusion_model: DownscalingModel | None = None,
+    parallel: str = "serial",
 ) -> LocalMeteorology:
     """Downscale SpritzWRF near-surface fields to a local SpritzMet grid.
 
@@ -1236,73 +1634,170 @@ def downscale_wrf_to_local_grid(
         raise ValueError("nx and ny must be at least 2")
     if dx_m <= 0 or dy_m <= 0:
         raise ValueError("dx_m and dy_m must be positive")
+    ctx = get_mpi_context(parallel)
     LOGGER.info(
-        "SpritzMet: downscaling WRF source=%s mode=%s target_grid=%sx%s spacing=%.3fx%.3f m",
+        "SpritzMet: downscaling WRF source=%s mode=%s target_grid=%sx%s spacing=%.3fx%.3f m parallel=%s",
         wrf.source_path,
         mode,
         nx,
         ny,
         dx_m,
         dy_m,
+        "mpi" if ctx.enabled else "serial",
     )
     xx, yy, dst_lat, dst_lon = local_grid_latlon(center_lat, center_lon, nx, ny, dx_m, dy_m)
+    row_range = ctx.partition(ny) if ctx.enabled else range(ny)
+    row_start = row_range.start
+    row_stop = row_range.stop
+    local_xx = xx[row_start:row_stop, :]
+    local_yy = yy[row_start:row_stop, :]
+    local_dst_lat = dst_lat[row_start:row_stop, :]
+    local_dst_lon = dst_lon[row_start:row_stop, :]
+    local_dem = dem_elevation_m[row_start:row_stop, :] if dem_elevation_m is not None else None
+    local_land_cover = land_cover[row_start:row_stop, :] if land_cover is not None else None
     LOGGER.info("SpritzMet: local latitude/longitude grid ready")
+    idw_plan = _local_projected_idw_plan(
+        wrf.latitude,
+        wrf.longitude,
+        local_xx,
+        local_yy,
+        center_lat=center_lat,
+        center_lon=center_lon,
+        power=power,
+        neighbours=neighbours,
+    )
     LOGGER.info("SpritzMet: downscaling eastward wind shape=%s", np.asarray(wrf.u).shape)
     u = _downscale_spatial_stack(
         wrf.latitude,
         wrf.longitude,
         wrf.u,
-        dst_lat,
-        dst_lon,
+        local_dst_lat,
+        local_dst_lon,
         power=power,
         neighbours=neighbours,
         field_name="eastward_wind",
         metadata=wrf.metadata,
+        idw_plan=idw_plan,
     )
     LOGGER.info("SpritzMet: downscaling northward wind shape=%s", np.asarray(wrf.v).shape)
     v = _downscale_spatial_stack(
         wrf.latitude,
         wrf.longitude,
         wrf.v,
-        dst_lat,
-        dst_lon,
+        local_dst_lat,
+        local_dst_lon,
         power=power,
         neighbours=neighbours,
         field_name="northward_wind",
         metadata=wrf.metadata,
+        idw_plan=idw_plan,
     )
     if wrf.precipitation_rate is None:
         LOGGER.info("SpritzMet: WRF precipitation unavailable; using zero precipitation field")
-        precipitation_rate = np.zeros((_wind_time_count(u), *dst_lat.shape), dtype=float)
+        precipitation_rate = np.zeros((_wind_time_count(u), *local_dst_lat.shape), dtype=float)
     else:
         LOGGER.info("SpritzMet: downscaling precipitation shape=%s", np.asarray(wrf.precipitation_rate).shape)
         precipitation_rate = _downscale_spatial_stack(
             wrf.latitude,
             wrf.longitude,
             wrf.precipitation_rate,
-            dst_lat,
-            dst_lon,
+            local_dst_lat,
+            local_dst_lon,
             power=power,
             neighbours=neighbours,
             field_name="precipitation_rate",
             metadata=wrf.metadata,
+            idw_plan=idw_plan,
+        )
+    u10m = None
+    v10m = None
+    if wrf.u10m is not None and wrf.v10m is not None:
+        LOGGER.info("SpritzMet: downscaling diagnostic 10 m wind shape=%s", np.asarray(wrf.u10m).shape)
+        u10m = _downscale_spatial_stack(
+            wrf.latitude,
+            wrf.longitude,
+            wrf.u10m,
+            local_dst_lat,
+            local_dst_lon,
+            power=power,
+            neighbours=neighbours,
+            field_name="U10M",
+            metadata=wrf.metadata,
+            idw_plan=idw_plan,
+        )
+        v10m = _downscale_spatial_stack(
+            wrf.latitude,
+            wrf.longitude,
+            wrf.v10m,
+            local_dst_lat,
+            local_dst_lon,
+            power=power,
+            neighbours=neighbours,
+            field_name="V10M",
+            metadata=wrf.metadata,
+            idw_plan=idw_plan,
+        )
+    temperature_2m_c = None
+    if wrf.temperature_2m_c is not None:
+        LOGGER.info("SpritzMet: downscaling 2 m temperature shape=%s", np.asarray(wrf.temperature_2m_c).shape)
+        temperature_2m_c = _downscale_spatial_stack(
+            wrf.latitude,
+            wrf.longitude,
+            wrf.temperature_2m_c,
+            local_dst_lat,
+            local_dst_lon,
+            power=power,
+            neighbours=neighbours,
+            field_name="temperature_2m_c",
+            metadata=wrf.metadata,
+            idw_plan=idw_plan,
+        )
+    relative_humidity_2m = None
+    if wrf.relative_humidity_2m is not None:
+        LOGGER.info("SpritzMet: downscaling 2 m relative humidity shape=%s", np.asarray(wrf.relative_humidity_2m).shape)
+        relative_humidity_2m = _downscale_spatial_stack(
+            wrf.latitude,
+            wrf.longitude,
+            wrf.relative_humidity_2m,
+            local_dst_lat,
+            local_dst_lon,
+            power=power,
+            neighbours=neighbours,
+            field_name="relative_humidity_2m",
+            metadata=wrf.metadata,
+            idw_plan=idw_plan,
         )
     u, v, precipitation_rate, downscaling_metadata = _apply_surface_downscaling(
         u,
         v,
         precipitation_rate,
-        dem_elevation_m=dem_elevation_m,
-        land_cover=land_cover,
+        dem_elevation_m=local_dem,
+        land_cover=local_land_cover,
         dx_m=dx_m,
         dy_m=dy_m,
+    )
+    u10m, v10m, diagnostic_10m_surface_metadata = _apply_surface_wind_downscaling(
+        u10m,
+        v10m,
+        dem_elevation_m=local_dem,
+        land_cover=local_land_cover,
+        dx_m=dx_m,
+        dy_m=dy_m,
+        shape=local_dst_lat.shape,
+    )
+    temperature_2m_c, relative_humidity_2m, thermodynamic_metadata = _apply_thermodynamic_downscaling(
+        temperature_2m_c,
+        relative_humidity_2m,
+        dem_elevation_m=local_dem,
+        shape=local_dst_lat.shape,
     )
     u, v, precipitation_rate, optional_metadata = _apply_optional_model_downscaling(
         mode,
         u,
         v,
         precipitation_rate,
-        dem_elevation_m=dem_elevation_m,
-        land_cover=land_cover,
+        dem_elevation_m=local_dem,
+        land_cover=local_land_cover,
         ai_model=ai_model,
         diffusion_model=diffusion_model,
     )
@@ -1312,8 +1807,8 @@ def downscale_wrf_to_local_grid(
         v,
         precipitation_rate,
         stations=station_measurements,
-        dst_x=xx,
-        dst_y=yy,
+        dst_x=local_xx,
+        dst_y=local_yy,
         power=power,
     )
     u = _as_wind_4d("u", u)
@@ -1321,24 +1816,107 @@ def downscale_wrf_to_local_grid(
     if v.shape != u.shape:
         raise ValueError(f"v shape {v.shape} must match u shape {u.shape}")
     precipitation_rate = _as_precipitation_3d(precipitation_rate, u.shape[0], u.shape[-2:])
+    if u10m is not None and v10m is not None:
+        u10m = _as_precipitation_3d(u10m, u.shape[0], u.shape[-2:])
+        v10m = _as_precipitation_3d(v10m, u.shape[0], u.shape[-2:])
+    temperature_2m_c = _as_surface_scalar_3d("temperature_2m_c", temperature_2m_c, u.shape[0], u.shape[-2:])
+    relative_humidity_2m = _as_surface_scalar_3d("relative_humidity_2m", relative_humidity_2m, u.shape[0], u.shape[-2:])
     level_meters = _validated_level_meters(wrf.metadata, u.shape[1])
+    level_kind = str((wrf.metadata or {}).get("level_meters_kind", "height_above_ground"))
+    reference_height_m, anchor_mask, reference_domain, reference_assumption = _diagnostic_10m_reference_height(
+        level_kind=level_kind,
+        dem_elevation_m=local_dem,
+        land_cover=local_land_cover,
+        shape=u.shape[-2:],
+    )
+    u, v, diagnostic_reference_metadata = _anchor_10m_level_to_diagnostic_wind(
+        u,
+        v,
+        u10m,
+        v10m,
+        level_meters,
+        reference_height_m,
+        anchor_mask,
+        domain=reference_domain,
+        assumption=reference_assumption,
+    )
     downscaling_metadata = {
         **downscaling_metadata,
         **optional_metadata,
         **station_metadata,
+        **diagnostic_reference_metadata,
+        **diagnostic_10m_surface_metadata,
+        **thermodynamic_metadata,
         "wind_dimensions": "time,z,y,x",
         "precipitation_dimensions": "time,y,x",
+        "spatial_interpolation": "inverse_distance_weighting",
+        "spatial_interpolation_coordinates": "local_projected_meters",
+        "spatial_interpolation_plan_reused": True,
+        "spatial_interpolation_neighbours": int(min(neighbours, np.asarray(wrf.latitude).size)),
+        "spatial_interpolation_power": float(power),
+        **({"diagnostic_10m_wind_dimensions": "time,y,x"} if u10m is not None and v10m is not None else {}),
+        **({"temperature_2m_dimensions": "time,y,x"} if temperature_2m_c is not None else {}),
+        **({"relative_humidity_2m_dimensions": "time,y,x", "relative_humidity_2m_units": "1"} if relative_humidity_2m is not None else {}),
+        "parallel": "mpi-domain" if ctx.enabled else "serial",
+        "parallel_row_start": row_start,
+        "parallel_row_stop": row_stop,
     }
     if level_meters is not None:
         downscaling_metadata["level_meters"] = level_meters
-        downscaling_metadata["level_meters_kind"] = (
-            wrf.metadata or {}
-        ).get("level_meters_kind", "height_above_ground")
+        downscaling_metadata["level_meters_kind"] = level_kind
         downscaling_metadata["level_meters_source"] = (
             wrf.metadata or {}
         ).get("level_meters_source", "spritzwrf")
+        for key in ("vertical_level_remapping", "vertical_level_extrapolation"):
+            if wrf.metadata and key in wrf.metadata:
+                downscaling_metadata[key] = wrf.metadata[key]
     if terrain_input_metadata:
         downscaling_metadata = {**downscaling_metadata, **terrain_input_metadata}
+    if ctx.enabled:
+        LOGGER.debug("SpritzMet: rank %s gathering WRF downscaling rows [%s:%s)", ctx.rank, row_start, row_stop)
+        pieces = ctx.allgather(
+            (
+                row_start,
+                row_stop,
+                u,
+                v,
+                precipitation_rate,
+                u10m,
+                v10m,
+                temperature_2m_c,
+                relative_humidity_2m,
+            )
+        )
+        full_shape = (u.shape[0], u.shape[1], ny, nx)
+        full_surface_shape = (u.shape[0], ny, nx)
+        full_u = np.zeros(full_shape, dtype=float)
+        full_v = np.zeros(full_shape, dtype=float)
+        full_precipitation = np.zeros(full_surface_shape, dtype=float)
+        full_u10m = np.zeros(full_surface_shape, dtype=float) if u10m is not None else None
+        full_v10m = np.zeros(full_surface_shape, dtype=float) if v10m is not None else None
+        full_temperature_2m_c = np.zeros(full_surface_shape, dtype=float) if temperature_2m_c is not None else None
+        full_relative_humidity_2m = np.zeros(full_surface_shape, dtype=float) if relative_humidity_2m is not None else None
+        for start, stop, uu, vv, pp, uu10, vv10, tt2, rh2 in pieces:
+            full_u[:, :, start:stop, :] = uu
+            full_v[:, :, start:stop, :] = vv
+            full_precipitation[:, start:stop, :] = pp
+            if full_u10m is not None and uu10 is not None:
+                full_u10m[:, start:stop, :] = uu10
+            if full_v10m is not None and vv10 is not None:
+                full_v10m[:, start:stop, :] = vv10
+            if full_temperature_2m_c is not None and tt2 is not None:
+                full_temperature_2m_c[:, start:stop, :] = tt2
+            if full_relative_humidity_2m is not None and rh2 is not None:
+                full_relative_humidity_2m[:, start:stop, :] = rh2
+        u = full_u
+        v = full_v
+        precipitation_rate = full_precipitation
+        u10m = full_u10m
+        v10m = full_v10m
+        temperature_2m_c = full_temperature_2m_c
+        relative_humidity_2m = full_relative_humidity_2m
+        downscaling_metadata["parallel_row_start"] = 0
+        downscaling_metadata["parallel_row_stop"] = ny
     LOGGER.info(
         "SpritzMet: downscaling complete wind_shape=%s precipitation_shape=%s",
         u.shape,
@@ -1367,6 +1945,10 @@ def downscale_wrf_to_local_grid(
         valid_datetime_utc=valid_datetime,
         valid_datetimes_utc=valid_datetimes,
         downscaling_metadata=downscaling_metadata,
+        u10m=u10m,
+        v10m=v10m,
+        temperature_2m_c=temperature_2m_c,
+        relative_humidity_2m=relative_humidity_2m,
     )
 
 
@@ -1383,6 +1965,9 @@ def write_local_meteorology(
         with Dataset(out, "w") as ds:
             u4, v4 = met.wind_4d
             precipitation3 = met.precipitation_3d
+            wind_10m = met.wind_10m_3d
+            temperature_2m = met.temperature_2m_3d
+            relative_humidity_2m = met.relative_humidity_2m_3d
             ntime, nz, ny, nx = u4.shape
             LOGGER.info(
                 "SpritzMet: writing NetCDF-CF local meteorology path=%s wind_shape=%s precipitation_shape=%s",
@@ -1453,6 +2038,48 @@ def write_local_meteorology(
                     "wind direction from which blowing",
                 ),
             ]
+            if wind_10m is not None:
+                u10m, v10m = wind_10m
+                variables.extend(
+                    [
+                        ("U10M", u10m, ("time", "y", "x"), "m s-1", "diagnostic 10 m eastward wind"),
+                        ("V10M", v10m, ("time", "y", "x"), "m s-1", "diagnostic 10 m northward wind"),
+                        (
+                            "wind_speed_10m",
+                            met.wind_speed_10m,
+                            ("time", "y", "x"),
+                            "m s-1",
+                            "diagnostic 10 m wind speed",
+                        ),
+                        (
+                            "wind_from_direction_10m",
+                            met.wind_from_direction_10m,
+                            ("time", "y", "x"),
+                            "degree",
+                            "diagnostic 10 m wind direction from which blowing",
+                        ),
+                    ]
+                )
+            if temperature_2m is not None:
+                variables.append(
+                    (
+                        "temperature_2m_c",
+                        temperature_2m,
+                        ("time", "y", "x"),
+                        "degree_Celsius",
+                        "2 m air temperature",
+                    )
+                )
+            if relative_humidity_2m is not None:
+                variables.append(
+                    (
+                        "relative_humidity_2m",
+                        np.clip(relative_humidity_2m, 0.0, 1.0),
+                        ("time", "y", "x"),
+                        "1",
+                        "2 m relative humidity rate",
+                    )
+                )
             for name, values, dims, units, long_name in variables:
                 var = ds.createVariable(name, "f8", dims, zlib=True)
                 var.units = units

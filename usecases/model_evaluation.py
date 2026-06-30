@@ -61,7 +61,7 @@ def concentration_to_probability(rows: list[dict[str, Any]], shape: tuple[int, i
         return padded.reshape(n, n)
     expected = int(shape[0] * shape[1])
     if expected != probabilities.size:
-        # Interpolate along index space for pragmatic comparison when satellite
+        # Resample along index space for pragmatic comparison when satellite
         # pixels and model receptors have different counts.
         src = np.linspace(0.0, 1.0, probabilities.size)
         dst = np.linspace(0.0, 1.0, expected)

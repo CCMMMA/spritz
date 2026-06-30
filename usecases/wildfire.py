@@ -386,6 +386,8 @@ def run_wildfire_event(
     download_cycle_hour: int = 0,
     download_dir: str | Path = "data/wrf",
     force_download: bool = False,
+    dem_path: str | Path | None = None,
+    land_cover_path: str | Path | None = None,
 ) -> WildfireRunResult:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -402,6 +404,8 @@ def run_wildfire_event(
         download_cycle_hour=download_cycle_hour,
         download_dir=download_dir,
         force_download=force_download,
+        dem_path=dem_path,
+        land_cover_path=land_cover_path,
     )
     plots: dict[str, str] = {}
     wind_plot = plot_netcdf_if_available(
@@ -488,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--download-time", default=None, help="Download WRF5 d03 data from meteo@uniparthenope for UTC YYYYMMDDZhhmm")
     parser.add_argument("--download-dir", default="data/wrf")
     parser.add_argument("--force-download", action="store_true")
+    parser.add_argument("--dem", default=None, help="Optional DEM raster for terrain-aware SpritzMet wind/precipitation downscaling")
+    parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster for terrain-aware SpritzMet downscaling")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--center-lat", type=float, required=True)
     parser.add_argument("--center-lon", type=float, required=True)
@@ -535,6 +541,8 @@ def main(argv: list[str] | None = None) -> int:
         download_time=args.download_time,
         download_dir=args.download_dir,
         force_download=args.force_download,
+        dem_path=args.dem,
+        land_cover_path=args.land_cover,
     )
     configure_logging(False)
     LOGGER.info("%s", result.as_dict())

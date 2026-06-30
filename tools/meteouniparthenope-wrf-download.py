@@ -12,7 +12,8 @@ from urllib.request import urlopen
 
 LOGGER = logging.getLogger("meteouniparthenope-wrf-download.py")
 
-BASE_URL = "https://data.meteo.uniparthenope.it/files/wrf5"
+WRF5_FILES_BASE_URL = "https://data.meteo.uniparthenope.it/files/wrf5"
+WRF5_HISTORY_SEGMENT = "history"
 DATE_FORMAT = "%Y%m%dZ%H%M"
 VALID_DOMAINS = ("d01", "d02", "d03")
 
@@ -44,7 +45,7 @@ def wrf_history_url(timestamp: datetime, domain: str) -> str:
     """Return the public WRF5 history URL for a timestamp and domain."""
     stamp = timestamp.strftime(DATE_FORMAT)
     return (
-        f"{BASE_URL}/{domain}/history/{timestamp:%Y/%m/%d}/"
+        f"{WRF5_FILES_BASE_URL}/{domain}/{WRF5_HISTORY_SEGMENT}/{timestamp:%Y/%m/%d}/"
         f"wrf5_{domain}_{stamp}.nc"
     )
 

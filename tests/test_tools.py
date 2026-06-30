@@ -47,6 +47,8 @@ def test_wrf_history_url_uses_domain_and_timestamp_path() -> None:
         "https://data.meteo.uniparthenope.it/files/wrf5/d02/history/2026/05/27/"
         "wrf5_d02_20260527Z0630.nc"
     )
+    assert "/history/" in url
+    assert "/archive/" not in url
 
 
 def test_plan_downloads_expands_hourly_duration_under_data_root() -> None:
@@ -64,6 +66,7 @@ def test_plan_downloads_expands_hourly_duration_under_data_root() -> None:
         datetime(2026, 5, 28, 0, 0),
         datetime(2026, 5, 28, 1, 0),
     ]
+    assert all("/history/" in item.url and "/archive/" not in item.url for item in downloads)
     assert downloads[-1].path == Path("data/wrf/d03/wrf5_d03_20260528Z0100.nc")
 
 
@@ -222,6 +225,116 @@ def test_plotter_derives_vectors_from_speed_and_direction(tmp_path: Path) -> Non
     assert field.vectors.v[0, 0] == pytest.approx(0.0)
 
 
+def test_plotter_shades_10m_speed_in_knots_with_10m_vectors(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wind_10m.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("y", 2)
+        ds.createDimension("x", 2)
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0, 40.1]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0, 14.1]
+        u10m = ds.createVariable("U10M", "f8", ("time", "y", "x"))
+        v10m = ds.createVariable("V10M", "f8", ("time", "y", "x"))
+        speed = ds.createVariable("wind_speed_10m", "f8", ("time", "y", "x"))
+        u10m.units = "m s-1"
+        v10m.units = "m s-1"
+        speed.units = "m s-1"
+        u10m[:, :, :] = [[[3.0, 3.0], [3.0, 3.0]]]
+        v10m[:, :, :] = [[[4.0, 4.0], [4.0, 4.0]]]
+        speed[:, :, :] = [[[5.0, 5.0], [5.0, 5.0]]]
+
+    plotter = load_plotter_tool()
+    field = plotter.read_map_field(
+        path,
+        variable_name="wind_speed_10m",
+        time_index=0,
+        level_index=0,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    np.testing.assert_allclose(field.values, np.full((2, 2), 5.0 * plotter.MPS_TO_KNOTS))
+    assert field.label == "Wind speed [kt]"
+    assert field.color_levels == tuple(float(level) for level in plotter.WIND_SPEED_KNOT_LEVELS)
+    assert field.vectors is not None
+    np.testing.assert_allclose(field.vectors.u, np.full((2, 2), 3.0))
+    np.testing.assert_allclose(field.vectors.v, np.full((2, 2), 4.0))
+
+
+def test_plotter_converts_wind_speed_to_knots_and_uses_palette(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wind_speed_knots.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("z", 2)
+        ds.createDimension("y", 1)
+        ds.createDimension("x", 2)
+        height = ds.createVariable("z", "f8", ("z",))
+        height.units = "m"
+        height[:] = [10.0, 25.0]
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0, 14.1]
+        speed = ds.createVariable("wind_speed", "f8", ("time", "z", "y", "x"))
+        speed.units = "m s-1"
+        speed.long_name = "Wind speed"
+        speed[:, :, :, :] = [[[[1.0, 2.0]], [[3.0, 4.0]]]]
+
+    plotter = load_plotter_tool()
+    field = plotter.read_map_field(
+        path,
+        variable_name="wind_speed",
+        time_index=0,
+        level_index=1,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    np.testing.assert_allclose(field.values, np.asarray([[3.0, 4.0]]) * plotter.MPS_TO_KNOTS)
+    assert field.label == "Wind speed [kt]"
+    assert field.level_label == "Level index: 1 (25 m)"
+    assert field.color_levels == tuple(float(level) for level in plotter.WIND_SPEED_KNOT_LEVELS)
+    assert field.color_palette == plotter.WIND_SPEED_KNOT_COLORS
+
+
+def test_plotter_reads_level_meters_from_global_metadata(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wind_speed_level_metadata.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("z", 2)
+        ds.createDimension("y", 1)
+        ds.createDimension("x", 1)
+        ds.spritzmet_level_meters = [10.0, 80.0]
+        z = ds.createVariable("z", "f8", ("z",))
+        z.units = "1"
+        z.long_name = "vertical level index"
+        z[:] = [0.0, 1.0]
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0]
+        speed = ds.createVariable("wind_speed", "f8", ("time", "z", "y", "x"))
+        speed.units = "m s-1"
+        speed[:, :, :, :] = [[[[1.0]], [[2.0]]]]
+
+    plotter = load_plotter_tool()
+    field = plotter.read_map_field(
+        path,
+        variable_name="wind_speed",
+        time_index=0,
+        level_index=1,
+        center_lat=None,
+        center_lon=None,
+    )
+
+    assert field.level_label == "Level index: 1 (80 m)"
+
+
 def test_plotter_reads_4d_wind_and_3d_precipitation(tmp_path: Path) -> None:
     pytest.importorskip("netCDF4")
     from netCDF4 import Dataset  # type: ignore
@@ -297,7 +410,7 @@ def test_plotter_uses_time_index_and_utc_label(tmp_path: Path) -> None:
         center_lon=None,
     )
 
-    assert field.values[0, 0] == pytest.approx(3.0)
+    assert field.values[0, 0] == pytest.approx(3.0 * plotter.MPS_TO_KNOTS)
     assert field.time_label is not None
     assert "2026-06-01T06:00:00" in field.time_label
 
