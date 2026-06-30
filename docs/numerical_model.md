@@ -118,12 +118,21 @@ When WRF diagnostic `U10M`/`V10M` fields are available, SpritzMet keeps them as
 explicit `time,y,x` diagnostics and may use them to anchor the vertical wind
 profile. `U10M`/`V10M` are treated as wind at 10 m above local ground. For
 height-above-ground vertical grids, the reference height is 10 m. For
-height-above-sea-level grids with a DEM, the reference height is DEM elevation
-plus 10 m at each cell. If no DEM is available for an above-sea-level grid,
-SpritzMet only applies the equality on land-cover cells classified as water,
-where sea surface height is assumed approximately equal to mean sea level. The
-anchoring is recorded in output metadata and does not imply regulatory
-validation.
+height-above-sea-level grids with a DEM, land cells use DEM elevation plus
+10 m, while land-cover cells classified as water use 10 m above mean sea level.
+If no DEM is available for an above-sea-level grid, SpritzMet only applies the
+equality on water cells, where sea surface height is assumed approximately
+equal to mean sea level. The anchoring is recorded in output metadata and does
+not imply regulatory validation.
+
+After horizontal WRF interpolation, SpritzMet applies a bounded neutral log-law
+vertical wind-profile constraint when physical levels are known. The constraint
+uses height above local terrain, DEM elevation, and land-cover roughness length
+to shape wind shear, while blending with the WRF model profile so source-model
+vertical structure is not discarded. Diagnostic `U10M`/`V10M` supplies the
+preferred 10 m reference vector when available; otherwise the first valid
+above-ground model level is used. For above-sea-level products, wind levels
+below DEM elevation are masked as `NaN` before NetCDF/JSON output.
 
 SpritzWRF extracts WRF `T2` as Celsius and `RH2` as a unitless rate. When
 `RH2` is unavailable, SpritzWRF can derive the rate from `Q2`, surface pressure,

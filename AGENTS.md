@@ -136,6 +136,12 @@ When changing WRF ingestion or local-grid downscaling:
   ground/sea surface reference coincide. Over generic terrain, `U10M`/`V10M`
   are 10 m above local ground and should anchor the vertical profile at
   `ground elevation + 10 m` when the grid is above sea level.
+- Avoid simple linear-only vertical interpolation for WRF wind downscaling.
+  When physical levels are known, constrain vertical profiles with a documented
+  wind-shear formulation using height above terrain, DEM elevation, and
+  land-cover roughness. Keep the constraint bounded, preserve useful WRF model
+  shear through blending, and mask above-sea-level wind levels below DEM as
+  `NaN` before output.
 - Extract WRF `T2`/equivalent fields as `temperature_2m_c` in Celsius. Extract
   `RH2`/equivalent fields as `relative_humidity_2m` as a unitless `0..1` rate.
   If direct RH is absent, deriving RH from `Q2`, surface pressure, and `T2` is

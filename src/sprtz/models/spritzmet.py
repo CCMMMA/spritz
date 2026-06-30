@@ -97,6 +97,11 @@ OROGRAPHIC_PRECIP_SCALE_M = 3000.0
 OROGRAPHIC_UPSLOPE_FACTOR = 0.25
 LAND_PRECIP_FACTOR = 0.03
 TEMPERATURE_LAPSE_RATE_C_PER_M = 0.0065
+WIND_PROFILE_MIN_AGL_M = 0.5
+WIND_PROFILE_REFERENCE_AGL_M = 10.0
+WIND_PROFILE_MAX_FACTOR = 3.0
+WIND_PROFILE_MIN_FACTOR = 0.15
+WIND_PROFILE_MODEL_BLEND = 0.35
 AI_DETAIL_GAIN = 0.18
 AI_TERRAIN_GAIN = 0.06
 AI_MAX_RELATIVE_ADJUSTMENT = 0.20
@@ -984,6 +989,16 @@ def _diagnostic_10m_reference_height(
         )
     if dem_elevation_m is not None:
         dem = _require_grid_field("dem_elevation_m", dem_elevation_m, shape)
+        water_mask = _water_land_cover_mask(land_cover, shape)
+        if water_mask is not None and np.any(water_mask):
+            reference_height = dem + DIAGNOSTIC_WIND_10M_REFERENCE_M
+            reference_height = np.where(water_mask, DIAGNOSTIC_WIND_10M_REFERENCE_M, reference_height)
+            domain = "water_10m_asl_land_dem_plus_10m_asl" if np.any(~water_mask) else "water_land_cover_cells_10m_asl"
+            assumption = (
+                "U10M/V10M represents 10 m above local ground; water land-cover cells use 10 m above mean sea level, "
+                "land cells use DEM elevation plus 10 m"
+            )
+            return reference_height, np.ones(shape, dtype=bool), domain, assumption
         return (
             dem + DIAGNOSTIC_WIND_10M_REFERENCE_M,
             np.ones(shape, dtype=bool),
@@ -999,6 +1014,144 @@ def _diagnostic_10m_reference_height(
             "sea_surface_height_approximately_mean_sea_level",
         )
     return None, None, "not_applied", "requires height_above_ground levels, DEM elevation, or water land-cover cells"
+
+
+def _mask_wind_below_ground(
+    u: np.ndarray,
+    v: np.ndarray,
+    *,
+    level_meters: list[float] | None,
+    level_kind: str,
+    dem_elevation_m: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    if level_kind != "height_above_sea_level" or level_meters is None or dem_elevation_m is None:
+        return u, v, {"below_ground_wind_mask": False}
+    u4 = np.asarray(u, dtype=float).copy()
+    v4 = np.asarray(v, dtype=float).copy()
+    if u4.ndim != 4 or v4.ndim != 4:
+        raise ValueError("wind must be shaped as time,z,y,x before below-ground masking")
+    dem = _require_grid_field("dem_elevation_m", dem_elevation_m, u4.shape[-2:])
+    levels = np.asarray(level_meters, dtype=float)
+    if levels.size != u4.shape[1]:
+        raise ValueError(f"level_meters contains {levels.size} heights, but wind has {u4.shape[1]} vertical levels")
+    mask = levels[:, np.newaxis, np.newaxis] < dem[np.newaxis, :, :]
+    if not np.any(mask):
+        return u4, v4, {"below_ground_wind_mask": True, "below_ground_wind_masked_cell_count": 0}
+    expanded_mask = np.broadcast_to(mask[np.newaxis, :, :, :], u4.shape)
+    u4[expanded_mask] = np.nan
+    v4[expanded_mask] = np.nan
+    return (
+        u4,
+        v4,
+        {
+            "below_ground_wind_mask": True,
+            "below_ground_wind_mask_level_reference": "height_above_sea_level",
+            "below_ground_wind_masked_cell_count": int(np.count_nonzero(mask)),
+            "below_ground_wind_mask_rule": "mask levels where DEM elevation is greater than z",
+        },
+    )
+
+
+def _terrain_relative_heights(
+    level_meters: list[float],
+    *,
+    level_kind: str,
+    dem_elevation_m: np.ndarray | None,
+    shape: tuple[int, int],
+) -> np.ndarray:
+    levels = np.asarray(level_meters, dtype=float)
+    if level_kind == "height_above_ground":
+        return np.broadcast_to(levels[:, np.newaxis, np.newaxis], (levels.size, *shape)).astype(float)
+    if level_kind == "height_above_sea_level" and dem_elevation_m is not None:
+        dem = _require_grid_field("dem_elevation_m", dem_elevation_m, shape)
+        return levels[:, np.newaxis, np.newaxis] - dem[np.newaxis, :, :]
+    return np.broadcast_to(levels[:, np.newaxis, np.newaxis], (levels.size, *shape)).astype(float)
+
+
+def _apply_physical_wind_profile_constraint(
+    u: np.ndarray,
+    v: np.ndarray,
+    u10m: np.ndarray | None,
+    v10m: np.ndarray | None,
+    *,
+    level_meters: list[float] | None,
+    level_kind: str,
+    dem_elevation_m: np.ndarray | None,
+    land_cover: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    if level_meters is None:
+        return u, v, {"vertical_wind_profile_constraint": False}
+    u4 = np.asarray(u, dtype=float)
+    v4 = np.asarray(v, dtype=float)
+    if u4.ndim != 4 or v4.ndim != 4:
+        raise ValueError("wind must be shaped as time,z,y,x before vertical profile constraint")
+    if len(level_meters) != u4.shape[1]:
+        raise ValueError(f"level_meters contains {len(level_meters)} heights, but wind has {u4.shape[1]} vertical levels")
+    shape = u4.shape[-2:]
+    agl = _terrain_relative_heights(level_meters, level_kind=level_kind, dem_elevation_m=dem_elevation_m, shape=shape)
+    above_ground = agl > 0.0
+    if not np.any(above_ground):
+        return u4, v4, {"vertical_wind_profile_constraint": True, "vertical_wind_profile_constrained_cell_count": 0}
+
+    roughness = (
+        _land_cover_roughness(_require_grid_field("land_cover", land_cover, shape))
+        if land_cover is not None
+        else np.full(shape, REFERENCE_ROUGHNESS_M, dtype=float)
+    )
+    z0 = np.clip(roughness, MIN_ROUGHNESS_M, 2.0)
+    safe_agl = np.maximum(agl, WIND_PROFILE_MIN_AGL_M)
+    profile = np.log((safe_agl + z0[np.newaxis, :, :]) / z0[np.newaxis, :, :])
+    reference_profile = np.log(
+        (WIND_PROFILE_REFERENCE_AGL_M + z0[np.newaxis, :, :]) / z0[np.newaxis, :, :]
+    )
+    factor = np.divide(
+        profile,
+        np.maximum(reference_profile, 1.0e-9),
+        out=np.ones_like(profile),
+        where=reference_profile > 0.0,
+    )
+    factor = np.clip(factor, WIND_PROFILE_MIN_FACTOR, WIND_PROFILE_MAX_FACTOR)
+    factor = np.where(above_ground, factor, np.nan)
+
+    if u10m is not None and v10m is not None:
+        ref_u = np.asarray(u10m, dtype=float)
+        ref_v = np.asarray(v10m, dtype=float)
+        reference_source = "diagnostic_10m_wind"
+    else:
+        ref_u = np.empty((u4.shape[0], *shape), dtype=float)
+        ref_v = np.empty_like(ref_u)
+        first_valid = np.argmax(above_ground, axis=0)
+        has_valid = np.any(above_ground, axis=0)
+        for y, x in np.argwhere(has_valid):
+            level_index = int(first_valid[y, x])
+            ref_u[:, y, x] = u4[:, level_index, y, x]
+            ref_v[:, y, x] = v4[:, level_index, y, x]
+        ref_u[:, ~has_valid] = np.nan
+        ref_v[:, ~has_valid] = np.nan
+        reference_source = "first_above_ground_model_level"
+
+    constrained_u = ref_u[:, np.newaxis, :, :] * factor[np.newaxis, :, :, :]
+    constrained_v = ref_v[:, np.newaxis, :, :] * factor[np.newaxis, :, :, :]
+    model_blend = WIND_PROFILE_MODEL_BLEND
+    out_u = (1.0 - model_blend) * constrained_u + model_blend * u4
+    out_v = (1.0 - model_blend) * constrained_v + model_blend * v4
+    out_u = np.where(above_ground[np.newaxis, :, :, :], out_u, u4)
+    out_v = np.where(above_ground[np.newaxis, :, :, :], out_v, v4)
+    return (
+        out_u,
+        out_v,
+        {
+            "vertical_wind_profile_constraint": True,
+            "vertical_wind_profile_method": "neutral_log_law_roughness_blended_with_model_profile",
+            "vertical_wind_profile_reference": reference_source,
+            "vertical_wind_profile_uses_dem_elevation_m": dem_elevation_m is not None,
+            "vertical_wind_profile_uses_land_cover": land_cover is not None,
+            "vertical_wind_profile_model_blend": model_blend,
+            "vertical_wind_profile_min_factor": WIND_PROFILE_MIN_FACTOR,
+            "vertical_wind_profile_max_factor": WIND_PROFILE_MAX_FACTOR,
+            "vertical_wind_profile_constrained_cell_count": int(np.count_nonzero(above_ground)),
+        },
+    )
 
 
 def _expand_to_field(field: np.ndarray, target_ndim: int) -> np.ndarray:
@@ -1823,6 +1976,16 @@ def downscale_wrf_to_local_grid(
     relative_humidity_2m = _as_surface_scalar_3d("relative_humidity_2m", relative_humidity_2m, u.shape[0], u.shape[-2:])
     level_meters = _validated_level_meters(wrf.metadata, u.shape[1])
     level_kind = str((wrf.metadata or {}).get("level_meters_kind", "height_above_ground"))
+    u, v, vertical_profile_metadata = _apply_physical_wind_profile_constraint(
+        u,
+        v,
+        u10m,
+        v10m,
+        level_meters=level_meters,
+        level_kind=level_kind,
+        dem_elevation_m=local_dem,
+        land_cover=local_land_cover,
+    )
     reference_height_m, anchor_mask, reference_domain, reference_assumption = _diagnostic_10m_reference_height(
         level_kind=level_kind,
         dem_elevation_m=local_dem,
@@ -1840,11 +2003,20 @@ def downscale_wrf_to_local_grid(
         domain=reference_domain,
         assumption=reference_assumption,
     )
+    u, v, below_ground_metadata = _mask_wind_below_ground(
+        u,
+        v,
+        level_meters=level_meters,
+        level_kind=level_kind,
+        dem_elevation_m=local_dem,
+    )
     downscaling_metadata = {
         **downscaling_metadata,
         **optional_metadata,
         **station_metadata,
+        **vertical_profile_metadata,
         **diagnostic_reference_metadata,
+        **below_ground_metadata,
         **diagnostic_10m_surface_metadata,
         **thermodynamic_metadata,
         "wind_dimensions": "time,z,y,x",

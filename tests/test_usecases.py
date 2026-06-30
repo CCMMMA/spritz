@@ -876,6 +876,126 @@ def test_spritzmet_anchors_10m_diagnostic_to_dem_plus_10m_asl() -> None:
     assert "DEM elevation plus 10 m" in met.downscaling_metadata["vertical_level_10m_reference_assumption"]
 
 
+def test_spritzmet_anchors_water_cells_to_10m_asl_even_with_dem() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        lat,
+        lon,
+        np.full((2, 2), 1.0, dtype=float),
+        np.full((2, 2), 2.0, dtype=float),
+        Path("wrf_10m_mixed_water_land.nc"),
+        u10m=np.full((2, 2), 3.0, dtype=float),
+        v10m=np.full((2, 2), 4.0, dtype=float),
+    )
+    expanded = module._with_vertical_level_metadata(wrf, [10.0, 110.0])
+
+    met = spritzmet.downscale_wrf_to_local_grid(
+        expanded,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=2,
+        ny=2,
+        dx_m=100.0,
+        dy_m=100.0,
+        neighbours=1,
+        dem_elevation_m=np.asarray([[0.0, 100.0], [0.0, 100.0]], dtype=float),
+        land_cover=np.asarray([[80, 50], [80, 50]], dtype=float),
+    )
+
+    water = np.asarray([[True, False], [True, False]])
+    land = ~water
+    np.testing.assert_allclose(met.wind_speed[:, 0, water], met.wind_speed_10m[:, water])
+    np.testing.assert_allclose(met.wind_speed[:, 1, land], met.wind_speed_10m[:, land])
+    assert not np.allclose(met.wind_speed[:, 0, land], met.wind_speed_10m[:, land])
+    assert met.downscaling_metadata["vertical_level_10m_reference_domain"] == "water_10m_asl_land_dem_plus_10m_asl"
+    assert "water land-cover cells use 10 m above mean sea level" in met.downscaling_metadata[
+        "vertical_level_10m_reference_assumption"
+    ]
+
+
+def test_spritzmet_masks_asl_wind_levels_below_dem() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        lat,
+        lon,
+        np.full((2, 2), 1.0, dtype=float),
+        np.full((2, 2), 2.0, dtype=float),
+        Path("wrf_below_ground_mask.nc"),
+    )
+    expanded = module._with_vertical_level_metadata(wrf, [10.0, 100.0])
+    dem = np.asarray([[0.0, 20.0], [100.0, 150.0]], dtype=float)
+
+    met = spritzmet.downscale_wrf_to_local_grid(
+        expanded,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=2,
+        ny=2,
+        dx_m=100.0,
+        dy_m=100.0,
+        neighbours=1,
+        dem_elevation_m=dem,
+    )
+
+    assert np.isfinite(met.wind_speed[:, 0, 0, 0]).all()
+    assert np.isnan(met.wind_speed[:, 0, 0, 1]).all()
+    assert np.isnan(met.wind_speed[:, 0, 1, 0]).all()
+    assert np.isnan(met.wind_speed[:, 0, 1, 1]).all()
+    assert np.isfinite(met.wind_speed[:, 1, 0, 0]).all()
+    assert np.isfinite(met.wind_speed[:, 1, 0, 1]).all()
+    assert np.isfinite(met.wind_speed[:, 1, 1, 0]).all()
+    assert np.isnan(met.wind_speed[:, 1, 1, 1]).all()
+    assert met.downscaling_metadata["below_ground_wind_mask"] is True
+    assert met.downscaling_metadata["below_ground_wind_masked_cell_count"] == 4
+
+
+def test_spritzmet_vertical_profile_constraint_uses_dem_and_land_cover() -> None:
+    lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
+    lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
+    wrf = spritzwrf.WRFWindField(
+        lat,
+        lon,
+        np.full((1, 2, 2, 2), 4.0, dtype=float),
+        np.zeros((1, 2, 2, 2), dtype=float),
+        Path("wrf_profile_constraint.nc"),
+        metadata={
+            "time_index": "all",
+            "level_index": "all",
+            "level_meters": [10.0, 100.0],
+            "level_meters_kind": "height_above_sea_level",
+        },
+        u10m=np.full((2, 2), 4.0, dtype=float),
+        v10m=np.zeros((2, 2), dtype=float),
+    )
+
+    met = spritzmet.downscale_wrf_to_local_grid(
+        wrf,
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=2,
+        ny=2,
+        dx_m=100.0,
+        dy_m=100.0,
+        neighbours=1,
+        dem_elevation_m=np.zeros((2, 2), dtype=float),
+        land_cover=np.asarray([[80, 50], [80, 311]], dtype=float),
+    )
+
+    assert met.downscaling_metadata["vertical_wind_profile_constraint"] is True
+    assert met.downscaling_metadata["vertical_wind_profile_uses_dem_elevation_m"] is True
+    assert met.downscaling_metadata["vertical_wind_profile_uses_land_cover"] is True
+    np.testing.assert_allclose(met.wind_speed[:, 0], met.wind_speed_10m)
+    water_speed_100m = float(met.wind_speed[0, 1, 0, 0])
+    urban_speed_100m = float(met.wind_speed[0, 1, 0, 1])
+    forest_speed_100m = float(met.wind_speed[0, 1, 1, 1])
+    assert water_speed_100m > urban_speed_100m
+    assert water_speed_100m > forest_speed_100m
+
+
 def test_spritzmet_reuses_projected_idw_plan(monkeypatch: pytest.MonkeyPatch) -> None:
     lat = np.asarray([[40.0, 40.0], [40.01, 40.01]], dtype=float)
     lon = np.asarray([[14.0, 14.01], [14.0, 14.01]], dtype=float)
@@ -939,7 +1059,7 @@ def test_spritzmet_refines_10m_diagnostic_before_anchor() -> None:
         dy_m=100.0,
         neighbours=1,
         dem_elevation_m=np.asarray([[100.0, 120.0], [140.0, 160.0]], dtype=float),
-        land_cover=np.asarray([[80, 50], [311, 311]], dtype=float),
+        land_cover=np.asarray([[50, 50], [311, 311]], dtype=float),
     )
 
     assert met.downscaling_metadata["diagnostic_10m_max_wind_factor"] != pytest.approx(1.0)
