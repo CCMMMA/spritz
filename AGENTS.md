@@ -49,6 +49,10 @@ python -m pip install -e .[mpi]
 
 MPI execution must remain optional. Serial execution must work without `mpi4py`, without `netCDF4`, and without `matplotlib` unless a feature explicitly requires those optional extras.
 
+When adding, removing, or changing runtime, optional, development, or tooling
+dependencies in `pyproject.toml` or setup instructions, keep the root
+`requirements.txt` file updated with matching install requirements.
+
 ## Required checks before completing changes
 
 Run these from the repository root:
@@ -104,6 +108,53 @@ When changing physics or numerics:
 - Keep empirical coefficients visible, named, and configurable where possible.
 - Avoid hard-coding undocumented constants in deep implementation code.
 - Do not claim regulatory equivalence without external validation.
+
+## SpritzWRF/SpritzMet dynamical downscaling
+
+WRF-driven downscaling must preserve the generic SpritzWRF -> SpritzMet
+pipeline rather than adding use-case-only physics. Use case 01 may demonstrate
+the workflow, but production behavior belongs in `src/sprtz/models/spritzwrf.py`
+and `src/sprtz/models/spritzmet.py`.
+
+When changing WRF ingestion or local-grid downscaling:
+
+- Keep WRF extraction clean-room and dimension-aware. `time_index` and
+  `level_index` must remain independent, and `None` must preserve the full
+  corresponding axis where supported.
+- Reuse the local azimuthal-equidistant inverse-distance neighbour plan for all
+  WRF-derived fields on the same target grid so wind, precipitation,
+  diagnostic 10 m wind, 2 m temperature, and 2 m humidity share the same
+  horizontal sampling geometry.
+- Preserve diagnostic `U10M`/`V10M` as `time,y,x` outputs whenever available.
+  Treat them as wind at 10 m above local ground. For height-above-ground
+  vertical grids, anchor at 10 m. For height-above-sea-level grids with DEM,
+  anchor at `DEM + 10 m`. Without DEM, apply the sea-level equality only on
+  land-cover cells classified as water, where sea surface height is assumed
+  approximately equal to mean sea level.
+- Do not assume `wind_speed_10m == wind_speed(z=10 m above sea level)` on land.
+  That equality is valid only where the model vertical reference and local
+  ground/sea surface reference coincide. Over generic terrain, `U10M`/`V10M`
+  are 10 m above local ground and should anchor the vertical profile at
+  `ground elevation + 10 m` when the grid is above sea level.
+- Extract WRF `T2`/equivalent fields as `temperature_2m_c` in Celsius. Extract
+  `RH2`/equivalent fields as `relative_humidity_2m` as a unitless `0..1` rate.
+  If direct RH is absent, deriving RH from `Q2`, surface pressure, and `T2` is
+  acceptable when documented and tested.
+- Use DEM elevation for 2 m temperature lapse-rate correction, and recompute
+  2 m relative humidity by preserving vapor pressure through that temperature
+  correction. Land cover should enter deterministic downscaling through
+  documented roughness/precipitation adjustments unless a new thermodynamic
+  land-cover correction is explicitly justified, named, bounded, and tested.
+- Use DEM and land-cover inputs whenever they are supplied to
+  `downscale_wrf_to_local_grid`; output metadata must state whether each was
+  used and for which adjustment family.
+- Keep optional MPI parallelism behind `sprtz.parallel`. WRF-to-local-grid
+  downscaling may partition target rows across ranks, but serial output must
+  remain equivalent and shared NetCDF/JSON writes must be rank-0 only.
+- Update NetCDF-CF output, JSON fallback payloads, `tools/plotter.py` where
+  relevant, tests, `docs/numerical_model.md`, `docs/spritzwrf_spritzmet.md`,
+  use-case documentation, and README whenever WRF-derived downscaled fields or
+  metadata conventions change.
 
 ## Scientific reproducibility and provenance
 
@@ -216,6 +267,11 @@ Keep documentation coherent with the current package name, CLI names, and versio
   APIs or user-facing commands change.
 - Document public APIs and CLI options, including optional dependencies and
   network requirements.
+- End each documentation file with a bibliographic references section when
+  references are needed. Use only peer-reviewed journal articles and conference
+  proceedings as bibliographic sources; do not cite non-peer-reviewed web pages,
+  manuals, blogs, vendor pages, or proprietary documentation as bibliography
+  entries.
 
 ## Release hygiene
 
