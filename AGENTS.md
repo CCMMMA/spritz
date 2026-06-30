@@ -125,6 +125,12 @@ When changing WRF ingestion or local-grid downscaling:
   WRF-derived fields on the same target grid so wind, precipitation,
   diagnostic 10 m wind, 2 m temperature, and 2 m humidity share the same
   horizontal sampling geometry.
+- SpritzMet WRF downscaling must remain a three-dimensional dynamical
+  downscaling workflow with `deterministic` as the default mode and `ai` and
+  `diffusion` as supported optional model approaches.
+- Three-dimensional dynamical downscaling should be improvable with
+  geographically distributed weather-station data supplied as residual
+  observations.
 - Preserve diagnostic `U10M`/`V10M` as `time,y,x` outputs whenever available.
   Treat them as wind at 10 m above local ground. For height-above-ground
   vertical grids, anchor at 10 m. For height-above-sea-level grids with DEM,
