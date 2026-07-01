@@ -22,10 +22,10 @@ products follow strict CF time coordinates.
 Prepare WRF forcing before the run:
 
 ```bash
-tools/meteouniparthenope-wrf-download.py 20260527Z0000 \
-  --hours 1 \
+tools/meteouniparthenope-wrf-download.py 20240731Z1000 \
+  --hours 120 \
   --domain d03 \
-  --data-root data
+  --data-root data/wrf/d03/
 ```
 
 Prepare the optional COP30 terrain source for ground elevation and terrain/GEO
@@ -33,15 +33,18 @@ products:
 
 ```bash
 python3 tools/copernicus-cop30-dem-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
-  --output data/dem/cop30_naples.tif
+  --south 40.781975 --north 40.872024 \
+  --west 14.458727 --east 14.577273 \
+  --output data/dem/cop30_wildfire_case.tif
 
 python3 tools/copernicus-lc100-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
-  --output data/landcover/lc100_naples.tif
+  --south 40.781975 --north 40.872024 \
+  --west 14.458727 --east 14.577273 \
+  --output data/landcover/lc100_wildfire_case.tif
 ```
+
+These bounds use a 5 km geodetic half-width around `40.827, 14.518`, matching
+the edge nodes of a `101 x 101` grid with `100 m` spacing.
 
 Use the downloaded DEM and LC100 land-cover rasters through `sprtz-terrain
 fetch` with the same domain settings used by the wildfire run. The wind
@@ -53,38 +56,42 @@ grid.
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
-  --download-time 20260527Z0000 \
-  --download-dir data/wrf \
-  --output output/wildfire_case/wrf_100m_wind.nc \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --nx 101 --ny 101 \
-  --dem data/dem/cop30_naples.tif \
-  --land-cover data/landcover/lc100_naples.tif
+  --date 20240731Z1000 \
+  --hours 120 \
+  --download-dir data/wrf/d03 \
+  --output data/output/wildfire_case/wrf_100m_wind.nc \
+  --center-lat 40.827 \
+  --center-lon 14.518 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_wildfire_case.tif \
+  --land-cover data/landcover/lc100_wildfire_case.tif
 ```
 
 ## Step 1 alternative: Prepare wind with an existing WRF file
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
-  --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
-  --output output/wildfire_case/wrf_100m_wind.nc \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --dem data/dem/cop30_naples.tif \
-  --land-cover data/landcover/lc100_naples.tif
+  --wrf data/wrf/wrf5_d03_20240731Z0000.nc \
+  --output data/output/wildfire_case/wrf_100m_wind.nc \
+  --center-lat 40.827 \
+  --center-lon 14.518 \
+  --dem data/dem/cop30_wildfire_case.tif \
+  --land-cover data/landcover/lc100_wildfire_case.tif
 ```
 
 ## Step 2: Build the fire configuration
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_02_build_config.py \
-  --output output/wildfire_case/wildfire_event.json \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
+  --output data/output/wildfire_case/wildfire_event.json \
+  --center-lat 40.827 \
+  --center-lon 14.518 \
   --material plastic \
-  --start 20260527Z0000 \
-  --end 20260527Z0100 \
+  --start 20240731Z1000 \
+  --end 20240803Z0000 \
   --duration-s 3600 \
   --area-m2 2500 \
   --precipitation-washout
@@ -94,8 +101,8 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_03_run_model.py \
-  --config output/wildfire_case/wildfire_event.json \
-  --output-dir output/wildfire_case/model \
+  --config data/output/wildfire_case/wildfire_event.json \
+  --output-dir data/output/wildfire_case/model \
   --backend particles \
   --interchange netcdf
 ```
@@ -106,17 +113,17 @@ The step scripts call `tools/plotter.py` automatically for NetCDF products. To
 regenerate the maps explicitly for a report, run:
 
 ```bash
-python tools/plotter.py output/wildfire_case/wrf_100m_wind.nc \
+python tools/plotter.py data/output/wildfire_case/wrf_100m_wind.nc \
   --variable wind_speed \
-  --output output/wildfire_case/wrf_100m_wind_map.png
+  --output data/output/wildfire_case/wrf_100m_wind_map.png
 
-python tools/plotter.py output/wildfire_case/model/meteo.nc \
+python tools/plotter.py data/output/wildfire_case/model/meteo.nc \
   --variable wind_speed \
-  --output output/wildfire_case/model/meteo_map.png
+  --output data/output/wildfire_case/model/meteo_map.png
 
-python tools/plotter.py output/wildfire_case/model/concentration.nc \
+python tools/plotter.py data/output/wildfire_case/model/concentration.nc \
   --variable concentration \
-  --output output/wildfire_case/model/concentration_map.png
+  --output data/output/wildfire_case/model/concentration_map.png
 ```
 
 ## Event timing, materials, and source height
@@ -151,7 +158,7 @@ set `id`, `latitude`, `longitude`, `height_agl_m`, `start_datetime`,
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_02_build_config.py \
-  --output output/multi_fire/wildfire_event.json \
+  --output data/output/multi_fire/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --weather-start 20260601Z0000 \

@@ -726,9 +726,10 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
     )
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(description: str | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Use case 01: SpritzWRF -> SpritzMet downscaling from WRF 1 km winds to a 100 m local grid"
+        description=description
+        or "Use case 01: SpritzWRF -> SpritzMet downscaling from WRF 1 km winds to a 100 m local grid"
     )
     parser.add_argument("--config", default=None, help="optional shared JSON configuration; CLI options override matching values")
     parser.add_argument("--wrf", default=None, help="Local WRF NetCDF input; omit when using --date, --download-time, or --allow-synthetic")
@@ -777,8 +778,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
+def main(argv: list[str] | None = None, *, description: str | None = None) -> int:
+    parser = build_parser(description)
     config_parser = argparse.ArgumentParser(add_help=False)
     config_parser.add_argument("--config", default=None)
     config_args, _ = config_parser.parse_known_args(argv)
