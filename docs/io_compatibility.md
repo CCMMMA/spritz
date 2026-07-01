@@ -50,6 +50,52 @@ SpritzMet and dispersion outputs.
 
 When the optional `netCDF4` dependency is not installed, `.nc` writes fall back to a deterministic CF-shaped JSON payload so the core package remains usable in minimal CI environments. Install `.[netcdf]` for true NetCDF files.
 
+## CALMET.DAT binary export
+
+SpritzMet can also write a clean-room `CALMET.DAT`-compatible binary export
+from a `LocalMeteorology` object:
+
+```python
+from sprtz.models import spritzmet
+
+spritzmet.write_calmet_dat("data/output/CALMET.DAT", met)
+```
+
+The writer uses Fortran sequential unformatted records with 32-bit record
+markers, 32-bit integer dimensions, and 32-bit floating-point meteorological
+arrays. Records include a text header, grid dimensions, local grid spacing,
+projected coordinates, latitude/longitude, vertical levels, time labels,
+eastward and northward wind slabs in `time,z,y,x` order, precipitation rate,
+and optional 2 m temperature and relative humidity fields. Missing values are
+stored as `-9999.0`.
+
+The export is intended for model-evaluation workflows that need a binary
+`CALMET.DAT` artifact. NetCDF-CF remains the canonical Spritz interchange
+format because it preserves CF coordinates, named variables, attributes,
+vertical-level metadata, and optional fields without relying on fixed binary
+record positions.
+
+## Vertical-level storage strategy
+
+The best storage strategy for `sprtz.puff`, `spritz.particles`, and
+`spritz.firefront` is to keep SpritzMet meteorology internally as one canonical
+four-dimensional wind cube:
+
+- `eastward_wind(time,z,y,x)` and `northward_wind(time,z,y,x)` for transport;
+- `z(z)` with `level_meters_kind` metadata identifying height above local
+  ground or height above mean sea level;
+- surface diagnostics such as `U10M(time,y,x)`, `V10M(time,y,x)`,
+  `precipitation_rate(time,y,x)`, `temperature_2m_c(time,y,x)`, and
+  `relative_humidity_2m(time,y,x)`.
+
+The Gaussian puff and particle modules can sample the 4D wind cube by output
+time, vertical release height, and grid cell while retaining deterministic
+fallbacks for 2D legacy inputs. The firefront module should consume the
+near-surface diagnostic level, preferring `U10M/V10M` when present and otherwise
+interpolating from the lowest physically valid `z` level. Binary
+`CALMET.DAT` output should be generated only as an export from this canonical
+representation so all modules see the same vertical-level semantics.
+
 ## File-format selection
 
 All production commands infer format from extension and also accept explicit format flags. Use `.nc` for NetCDF-CF, `.json` for JSON diagnostics, `.csv` for tabular concentration files, and extensionless/legacy names for Fortran-style text tables.

@@ -38,6 +38,10 @@ uses both terrain and land cover for wind and precipitation downscaling. The
 same rasters can also feed `sprtz-terrain fetch` when the evaluated scenario
 includes standalone terrain/GEO products.
 
+Use case 02 writes `CALMET.DAT` next to the WRF-derived SpritzMet forcing by
+default. Keep that binary artifact with the evaluated concentration output when
+comparing Spritz results against external model-evaluation tools.
+
 ## Create a tiny demo mask
 
 ```bash

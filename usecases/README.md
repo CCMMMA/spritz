@@ -13,6 +13,12 @@ sprtz doctor --require-netcdf
 
 For lightweight tests or classroom demonstrations without WRF data, each relevant script provides a synthetic-data option. For real runs, use the meteo@uniparthenope WRF5 d03 archive URL pattern documented in the use-case folders.
 
+High-resolution WRF/SpritzMet preparation workflows can also save a
+`CALMET.DAT`-compatible binary export for model evaluation. Use case 01 exposes
+this with `--calmet-dat`; use case 02 writes `CALMET.DAT` into its output
+directory by default and supports `--no-calmet-dat` when only Spritz-native
+NetCDF-CF/JSON products are needed.
+
 Script-facing date-time values use compact UTC `YYYYMMDDZhhmm` format, for
 example `20260601Z0000`. Internal JSON configuration files may still contain
 ISO-8601 fields where the Sprtz schema requires them.

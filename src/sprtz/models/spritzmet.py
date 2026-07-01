@@ -4,6 +4,8 @@ import csv
 from dataclasses import asdict, dataclass
 import logging
 from pathlib import Path
+import struct
+import tempfile
 from typing import Any, Callable
 
 import numpy as np
@@ -110,6 +112,8 @@ DIFFUSION_RATE = 0.12
 DIFFUSION_TERRAIN_EDGE_SCALE = 0.35
 DIFFUSION_DETAIL_REINJECTION = 0.08
 DownscalingModel = Callable[[dict[str, np.ndarray]], dict[str, np.ndarray]]
+CALMET_DAT_SCHEMA_VERSION = 1
+CALMET_DAT_MISSING_VALUE = -9999.0
 
 
 def _csv_value(row: dict[str, str], *names: str) -> str | None:
@@ -2261,3 +2265,110 @@ def write_local_meteorology(
     LOGGER.info("SpritzMet: writing JSON local meteorology path=%s", out)
     write_json(out, payload)
     return "json"
+
+
+def _calmet_record(handle: Any, payload: bytes, endian: str) -> None:
+    marker = struct.pack(f"{endian}i", len(payload))
+    handle.write(marker)
+    handle.write(payload)
+    handle.write(marker)
+
+
+def _calmet_text_record(*values: str, width: int = 80) -> bytes:
+    return b"".join(str(value)[:width].ljust(width).encode("ascii", "replace") for value in values)
+
+
+def _calmet_i4_record(values: list[int], endian: str) -> bytes:
+    return struct.pack(f"{endian}{len(values)}i", *values)
+
+
+def _calmet_f4_record(values: np.ndarray, endian: str) -> bytes:
+    arr = np.asarray(values, dtype=np.float32)
+    arr = np.nan_to_num(arr, nan=CALMET_DAT_MISSING_VALUE, posinf=CALMET_DAT_MISSING_VALUE, neginf=CALMET_DAT_MISSING_VALUE)
+    dtype = np.dtype(f"{endian}f4")
+    return np.ascontiguousarray(arr.astype(dtype, copy=False)).tobytes(order="C")
+
+
+def write_calmet_dat(
+    path: str | Path,
+    met: LocalMeteorology,
+    *,
+    title: str = "Sprtz SpritzMet CALMET.DAT export",
+    endian: str = ">",
+) -> str:
+    """Write a clean-room CALMET.DAT-compatible binary meteorology file.
+
+    The file uses Fortran sequential unformatted records with 32-bit record
+    markers. Numeric arrays are 32-bit floats and dimensions are 32-bit
+    integers. Wind fields are written as `time,z,y,x` slabs so external model
+    evaluation tools can consume the same vertical meteorology used internally
+    by Spritz, particles, and firefront modules.
+    """
+    if endian not in {">", "<"}:
+        raise ValueError("endian must be '>' for big-endian or '<' for little-endian")
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    u4, v4 = met.wind_4d
+    precipitation3 = met.precipitation_3d
+    ntime, nz, ny, nx = u4.shape
+    if precipitation3.shape != (ntime, ny, nx):
+        raise ValueError(f"precipitation_rate shape {precipitation3.shape} must match {(ntime, ny, nx)}")
+    z_levels = met.z_levels_m
+    if z_levels is None:
+        z = np.arange(nz, dtype=np.float32)
+        z_kind = "index"
+    else:
+        z = np.asarray(z_levels, dtype=np.float32)
+        z_kind = str((met.downscaling_metadata or {}).get("level_meters_kind", "height_above_ground"))
+    if z.size != nz:
+        raise ValueError(f"z level count {z.size} must match wind vertical levels {nz}")
+    time_datetimes = [iso_utc(value) for value in (met.valid_datetimes_utc or [])]
+    time_datetimes = [value for value in time_datetimes if value]
+    if not time_datetimes and met.valid_datetime_utc:
+        parsed = iso_utc(met.valid_datetime_utc) or str(met.valid_datetime_utc)
+        time_datetimes = [parsed]
+    if time_datetimes and len(time_datetimes) not in {1, ntime}:
+        raise ValueError(f"valid_datetimes_utc count {len(time_datetimes)} must be 1 or match time count {ntime}")
+    if len(time_datetimes) == 1 and ntime > 1:
+        time_datetimes = time_datetimes * ntime
+    time_labels = time_datetimes or [f"time_index_{idx:06d}" for idx in range(ntime)]
+    scalar_fields: list[tuple[str, np.ndarray]] = [("PRECIP_MM_H", precipitation3)]
+    temperature_2m = met.temperature_2m_3d
+    if temperature_2m is not None:
+        if temperature_2m.shape != (ntime, ny, nx):
+            raise ValueError(f"temperature_2m_c shape {temperature_2m.shape} must match {(ntime, ny, nx)}")
+        scalar_fields.append(("TEMP2M_C", temperature_2m))
+    relative_humidity_2m = met.relative_humidity_2m_3d
+    if relative_humidity_2m is not None:
+        if relative_humidity_2m.shape != (ntime, ny, nx):
+            raise ValueError(f"relative_humidity_2m shape {relative_humidity_2m.shape} must match {(ntime, ny, nx)}")
+        scalar_fields.append(("RH2M_RATE", np.clip(relative_humidity_2m, 0.0, 1.0)))
+
+    LOGGER.info("SpritzMet: writing CALMET.DAT-compatible binary path=%s wind_shape=%s", out, u4.shape)
+    with tempfile.NamedTemporaryFile("wb", delete=False, dir=str(out.parent), prefix=f".{out.name}.", suffix=".tmp") as tmp:
+        tmp_path = Path(tmp.name)
+        _calmet_record(
+            tmp,
+            _calmet_text_record("CALMET.DAT", title, "Sprtz clean-room binary export", f"schema={CALMET_DAT_SCHEMA_VERSION}"),
+            endian,
+        )
+        _calmet_record(tmp, _calmet_i4_record([CALMET_DAT_SCHEMA_VERSION, nx, ny, nz, ntime, len(scalar_fields)], endian), endian)
+        _calmet_record(tmp, _calmet_f4_record(np.asarray([met.dx_m, met.dy_m, met.center_lat, met.center_lon]), endian), endian)
+        _calmet_record(tmp, _calmet_f4_record(np.asarray(met.x, dtype=float), endian), endian)
+        _calmet_record(tmp, _calmet_f4_record(np.asarray(met.y, dtype=float), endian), endian)
+        _calmet_record(tmp, _calmet_f4_record(np.asarray(met.latitude, dtype=float), endian), endian)
+        _calmet_record(tmp, _calmet_f4_record(np.asarray(met.longitude, dtype=float), endian), endian)
+        _calmet_record(tmp, _calmet_text_record("Z_LEVELS_M", z_kind), endian)
+        _calmet_record(tmp, _calmet_f4_record(z, endian), endian)
+        _calmet_record(tmp, _calmet_text_record(*time_labels, width=32), endian)
+        _calmet_record(tmp, _calmet_text_record("EASTWARD_WIND_M_S", "NORTHWARD_WIND_M_S", *(name for name, _ in scalar_fields)), endian)
+        for time_index in range(ntime):
+            _calmet_record(tmp, _calmet_i4_record([time_index], endian), endian)
+            for level_index in range(nz):
+                _calmet_record(tmp, _calmet_i4_record([time_index, level_index], endian), endian)
+                _calmet_record(tmp, _calmet_f4_record(u4[time_index, level_index], endian), endian)
+                _calmet_record(tmp, _calmet_f4_record(v4[time_index, level_index], endian), endian)
+            for _name, values in scalar_fields:
+                _calmet_record(tmp, _calmet_f4_record(values[time_index], endian), endian)
+    tmp_path.replace(out)
+    return "CALMET.DAT"

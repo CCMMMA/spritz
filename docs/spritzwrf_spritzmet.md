@@ -55,6 +55,7 @@ met = spritzmet.downscale_wrf_to_local_grid(
     parallel="auto",
 )
 spritzmet.write_local_meteorology("output/wrf_100m_wind.nc", met)
+spritzmet.write_calmet_dat("output/CALMET.DAT", met)
 ```
 
 When DEM elevation and land-cover fields have already been regridded to the
@@ -105,6 +106,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --dem data/dem/cop30_naples.tif \
   --land-cover data/landcover/lc100_naples.tif \
   --station-measurements data/stations/weather_observations.csv \
+  --calmet-dat data/output/CALMET.DAT \
   --downscaling-mode deterministic \
   --parallel auto
 ```
@@ -159,6 +161,13 @@ CF `time(time)` coordinate with absolute UTC units. JSON fallback uses the same
 logical dimensionality for WRF-derived local products. When physical
 `level_meters` metadata is available, `z` is written as metres above local
 ground; otherwise it remains a vertical level index.
+
+For binary model-evaluation workflows, `spritzmet.write_calmet_dat` writes a
+CALMET.DAT-compatible export using Fortran sequential unformatted records and
+the same SpritzMet `time,z,y,x` wind cube. NetCDF-CF remains the canonical
+module-to-module format for Spritz dispersion, particle, and firefront modules;
+the binary file is generated from that canonical representation so vertical
+level meaning is not duplicated across modules.
 
 Set `run.precipitation_washout: true` in the Spritz JSON configuration to use
 the downscaled precipitation rate as an additional wet-removal term in the

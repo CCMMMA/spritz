@@ -165,6 +165,8 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 ## Expected products
 
 - `wrf_100m_wind.nc` or `.json` — the local meteorological forcing product.
+- `CALMET.DAT` — CALMET.DAT-compatible binary SpritzMet export for
+  model-evaluation workflows.
 - `wildfire_event.json` — the generated Spritz configuration.
 - `model/meteo.*` — suite meteorology exchange file.
 - `model/concentration.*` — dispersion output.

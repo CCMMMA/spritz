@@ -1,7 +1,9 @@
 import csv
 from pathlib import Path
+import struct
 
 import numpy as np
+import pytest
 
 from sprtz.config import from_mapping, load_config
 from sprtz.models import spritzmet, spritzpost, spritz, ctgproc, spritzwrf
@@ -156,6 +158,45 @@ def test_spritzmet_downscales_wind_as_4d_and_precipitation_as_3d() -> None:
     assert met.downscaling_metadata["downscaling_mode"] == "deterministic"
     assert met.downscaling_metadata["wind_dimensions"] == "time,z,y,x"
     assert met.downscaling_metadata["precipitation_dimensions"] == "time,y,x"
+
+
+def _fortran_records(path: Path, endian: str = ">") -> list[bytes]:
+    records = []
+    data = path.read_bytes()
+    offset = 0
+    while offset < len(data):
+        (size,) = struct.unpack_from(f"{endian}i", data, offset)
+        offset += 4
+        records.append(data[offset : offset + size])
+        offset += size
+        (trailer,) = struct.unpack_from(f"{endian}i", data, offset)
+        offset += 4
+        assert trailer == size
+    return records
+
+
+def test_spritzmet_writes_calmet_dat_binary_records(tmp_path: Path) -> None:
+    met = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=3,
+        ny=3,
+        dx_m=100.0,
+        dy_m=100.0,
+    )
+    out = tmp_path / "CALMET.DAT"
+
+    assert spritzmet.write_calmet_dat(out, met) == "CALMET.DAT"
+
+    records = _fortran_records(out)
+    assert records[0][:80].rstrip() == b"CALMET.DAT"
+    assert struct.unpack(">6i", records[1]) == (1, 3, 3, 2, 2, 1)
+    assert struct.unpack(">4f", records[2]) == pytest.approx((100.0, 100.0, 40.005, 14.005))
+    field_names = records[10].decode("ascii")
+    assert "EASTWARD_WIND_M_S" in field_names
+    assert "NORTHWARD_WIND_M_S" in field_names
+    assert "PRECIP_MM_H" in field_names
 
 
 def test_spritzmet_ai_and_diffusion_downscaling_hooks_are_optional() -> None:

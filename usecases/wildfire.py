@@ -62,9 +62,10 @@ class WildfireRunResult:
     heat_release_w: float
     emission_rate_g_s: float
     plots: dict[str, str]
+    calmet_dat_path: Path | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "component": "usecase.wildfire_arson",
             "config_path": str(self.config_path),
             "output_dir": str(self.output_dir),
@@ -73,6 +74,9 @@ class WildfireRunResult:
             "emission_rate_g_s": self.emission_rate_g_s,
             "plots": self.plots,
         }
+        if self.calmet_dat_path is not None:
+            result["calmet_dat_path"] = str(self.calmet_dat_path)
+        return result
 
 
 def material_properties(material: str) -> dict[str, float]:
@@ -388,10 +392,15 @@ def run_wildfire_event(
     force_download: bool = False,
     dem_path: str | Path | None = None,
     land_cover_path: str | Path | None = None,
+    calmet_dat_path: str | Path | None = "CALMET.DAT",
 ) -> WildfireRunResult:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     wind_out = out / ("wrf_100m_wind.nc" if interchange == "netcdf" else "wrf_100m_wind.json")
+    calmet_out = None
+    if calmet_dat_path is not None:
+        raw_calmet = Path(calmet_dat_path)
+        calmet_out = raw_calmet if raw_calmet.is_absolute() else out / raw_calmet
     wind_result = downscale_wrf_to_100m(
         wrf_path,
         wind_out,
@@ -406,6 +415,7 @@ def run_wildfire_event(
         force_download=force_download,
         dem_path=dem_path,
         land_cover_path=land_cover_path,
+        calmet_dat_path=calmet_out,
     )
     plots: dict[str, str] = {}
     wind_plot = plot_netcdf_if_available(
@@ -481,6 +491,7 @@ def run_wildfire_event(
         heat_release,
         emission_rate,
         plots,
+        wind_result.calmet_dat_path,
     )
 
 
@@ -513,6 +524,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--precipitation-washout", action="store_true")
     parser.add_argument("--backend", choices=["gaussian", "particles"], default="particles")
     parser.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
+    parser.add_argument("--calmet-dat", default="CALMET.DAT", help="CALMET.DAT-compatible binary output path, relative to --output-dir unless absolute")
+    parser.add_argument("--no-calmet-dat", action="store_true", help="Do not write CALMET.DAT-compatible meteorology for model evaluation")
     parser.add_argument("--allow-synthetic-wrf", action="store_true")
     args = parser.parse_args(argv)
     fire_events = _load_fire_events(args.fire_events_json)
@@ -543,6 +556,7 @@ def main(argv: list[str] | None = None) -> int:
         force_download=args.force_download,
         dem_path=args.dem,
         land_cover_path=args.land_cover,
+        calmet_dat_path=None if args.no_calmet_dat else args.calmet_dat,
     )
     configure_logging(False)
     LOGGER.info("%s", result.as_dict())

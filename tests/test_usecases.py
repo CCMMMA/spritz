@@ -58,6 +58,7 @@ def _load_usecase_step(folder: str, script: str):
 
 def test_high_resolution_wind_json_synthetic(tmp_path: Path) -> None:
     out = tmp_path / "wind.json"
+    calmet = tmp_path / "CALMET.DAT"
     result = downscale_wrf_to_100m(
         None,
         out,
@@ -67,10 +68,13 @@ def test_high_resolution_wind_json_synthetic(tmp_path: Path) -> None:
         ny=7,
         prefer_netcdf=False,
         allow_synthetic=True,
+        calmet_dat_path=calmet,
     )
     assert out.exists()
+    assert calmet.exists()
     assert result.nx == 9
     assert result.format == "json"
+    assert result.calmet_dat_path == calmet
 
 
 def test_high_resolution_wind_netcdf_synthetic_requires_valid_time(tmp_path: Path) -> None:
@@ -118,6 +122,37 @@ def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
         [10.0, 15.0, 25.0, 50.0, 75.0, 100.0, 150.0, 250.0, 500.0, 750.0, 1000.0, 1250.0]
     )
     assert payload["metadata"]["level_meters_kind"] == "height_above_sea_level"
+
+
+def test_high_resolution_wind_run_entrypoint_writes_calmet_dat(tmp_path: Path) -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind.py")
+    out = tmp_path / "wind.json"
+    calmet = tmp_path / "CALMET.DAT"
+
+    assert (
+        module.main(
+            [
+                "--allow-synthetic",
+                "--json",
+                "--output",
+                str(out),
+                "--calmet-dat",
+                str(calmet),
+                "--center-lat",
+                "40.85",
+                "--center-lon",
+                "14.27",
+                "--nx",
+                "7",
+                "--ny",
+                "7",
+            ]
+        )
+        == 0
+    )
+    assert out.exists()
+    assert calmet.exists()
+    assert calmet.read_bytes()[4:14].rstrip() == b"CALMET.DAT"
 
 
 def test_high_resolution_wind_geotiff_dependency_fails_before_wrf_work(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -301,6 +336,8 @@ def test_run_wildfire_event_json_synthetic(tmp_path: Path) -> None:
         land_cover_path="examples/data/highres_landcover.asc",
     )
     assert result.config_path.exists()
+    assert result.calmet_dat_path == tmp_path / "case" / "CALMET.DAT"
+    assert result.calmet_dat_path.exists()
     assert Path(result.workflow["concentration"]).exists()
     meteo = read_json(tmp_path / "case" / "wrf_100m_wind.json")
     assert meteo["metadata"]["uses_dem_elevation_m"] is True

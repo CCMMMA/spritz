@@ -697,6 +697,9 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
     _teach("strict NetCDF-CF is preferred for interchange; --json selects the lightweight JSON fallback")
     fmt = spritzmet.write_local_meteorology(args.output, met, prefer_netcdf=not args.json)
     _teach("wrote %s output to %s", fmt, args.output)
+    if args.calmet_dat is not None:
+        calmet_fmt = spritzmet.write_calmet_dat(args.calmet_dat, met)
+        _teach("wrote %s binary evaluation output to %s", calmet_fmt, args.calmet_dat)
     plot_path = plot_netcdf_if_available(
         args.output,
         Path(args.output).with_suffix(".png"),
@@ -769,6 +772,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional CSV weather-station residual observations with x,y or latitude,longitude plus wind_speed/wind_dir and/or precipitation_rate",
     )
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
+    parser.add_argument("--calmet-dat", default=None, help="Optional CALMET.DAT-compatible binary output for model-evaluation workflows")
     parser.add_argument("--allow-synthetic", action="store_true")
     return parser
 

@@ -8,7 +8,7 @@ This didactic workflow is deliberately explicit, and
 1. **Input step.** Use a local WRF NetCDF file or call `spritzwrf.download_meteo_uniparthenope_wrf` for the meteo@uniparthenope archive.
 2. **SpritzWRF extraction step.** Call `spritzwrf.load_near_surface_wind` to extract latitude, longitude, near-surface wind components, precipitation, 2 m temperature, and 2 m relative humidity when available.
 3. **SpritzMet downscaling step.** Call `spritzmet.downscale_wrf_to_local_grid` to build the local azimuthal-equidistant grid and downscale SpritzWRF fields onto the 100 m grid.
-4. **Output step.** Call `spritzmet.write_local_meteorology` to write NetCDF-CF by default, or JSON for lightweight runs.
+4. **Output step.** Call `spritzmet.write_local_meteorology` to write NetCDF-CF by default, or JSON for lightweight runs. Pass `--calmet-dat data/output/CALMET.DAT` when a binary CALMET.DAT-compatible artifact is needed for model evaluation.
 
 SpritzWRF reads WRF valid time strictly from WRF/CF metadata (`Times`, CF
 `time`, or explicit global time attributes). It does not infer datetimes from
@@ -102,6 +102,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
   --dem data/dem/cop30_naples.tif \
   --land-cover data/landcover/lc100_naples.tif \
   --station-measurements data/stations/weather_observations.csv \
+  --calmet-dat data/output/CALMET.DAT \
   --parallel auto
 ```
 

@@ -59,6 +59,7 @@ class WindDownscalingResult:
     format: str
     pipeline: str = "SpritzWRF -> SpritzMet"
     plot_path: Path | None = None
+    calmet_dat_path: Path | None = None
 
     def as_dict(self) -> dict[str, Any]:
         result = {
@@ -76,6 +77,8 @@ class WindDownscalingResult:
         }
         if self.plot_path is not None:
             result["plot_path"] = str(self.plot_path)
+        if self.calmet_dat_path is not None:
+            result["calmet_dat_path"] = str(self.calmet_dat_path)
         return result
 
 
@@ -155,6 +158,7 @@ def downscale_wrf_to_100m(
     land_cover_path: str | Path | None = None,
     downscaling_mode: str = "deterministic",
     station_measurements_path: str | Path | None = None,
+    calmet_dat_path: str | Path | None = None,
 ) -> WindDownscalingResult:
     """Downscale 1 km WRF wind to a 100 m local grid using SpritzWRF then SpritzMet.
 
@@ -223,6 +227,9 @@ def downscale_wrf_to_100m(
         station_measurements=station_measurements,
     )
     fmt = spritzmet.write_local_meteorology(output_path, met, prefer_netcdf=prefer_netcdf)
+    calmet_path = Path(calmet_dat_path) if calmet_dat_path is not None else None
+    if calmet_path is not None:
+        spritzmet.write_calmet_dat(calmet_path, met)
     plot_path = plot_netcdf_if_available(
         output_path,
         Path(output_path).with_suffix(".png"),
@@ -231,7 +238,19 @@ def downscale_wrf_to_100m(
         center_lat=center_lat,
         center_lon=center_lon,
     )
-    return WindDownscalingResult(Path(output_path), nx, ny, dx_m, dy_m, center_lat, center_lon, met.source, fmt, plot_path=plot_path)
+    return WindDownscalingResult(
+        Path(output_path),
+        nx,
+        ny,
+        dx_m,
+        dy_m,
+        center_lat,
+        center_lon,
+        met.source,
+        fmt,
+        plot_path=plot_path,
+        calmet_dat_path=calmet_path,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -263,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional CSV weather-station residual observations with x,y or latitude,longitude plus wind_speed/wind_dir and/or precipitation_rate",
     )
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
+    parser.add_argument("--calmet-dat", default=None, help="Optional CALMET.DAT-compatible binary output for model-evaluation workflows")
     parser.add_argument("--allow-synthetic", action="store_true")
     config_parser = argparse.ArgumentParser(add_help=False)
     config_parser.add_argument("--config", default=None)
@@ -307,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
             land_cover_path=args.land_cover,
             downscaling_mode=args.downscaling_mode,
             station_measurements_path=args.station_measurements,
+            calmet_dat_path=args.calmet_dat,
         )
     except UseCaseDependencyError as exc:
         parser.error(str(exc))
