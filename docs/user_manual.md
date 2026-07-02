@@ -412,6 +412,11 @@ wet_flux_field(time, field_z, field_y, field_x)
 field_x(field_x), field_y(field_y), field_z(field_z)
 ```
 
+If the configuration metadata contains `center_lat` and `center_lon`, generated
+grid-field receptor rows also include WGS84 `latitude` and `longitude`. For
+centered odd grids, the middle field cell is `x=0, y=0` and maps back to that
+configured geographic center.
+
 If `netCDF4` is not installed, `.nc` output falls back to JSON with the same
 logical `rows` table and a `field` object when gridded output is available.
 

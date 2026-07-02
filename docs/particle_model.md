@@ -1,6 +1,6 @@
 # Particle-based Spritz alternative
 
-`sprtz.models.particles` implements a Lagrangian particle screening backend that accepts the same `SuiteConfig`, the same SpritzMet meteorology files, and writes the same receptor table and optional gridded field schema as the Gaussian Spritz backend. For SpritzMet NetCDF inputs, particles are advected through the full `eastward_wind(time,z,y,x)` / `northward_wind(time,z,y,x)` cube with deterministic substeps; 2D legacy meteorology still uses a deterministic fallback.
+`sprtz.models.particles` implements a Lagrangian particle screening backend that accepts the same `SuiteConfig`, the same SpritzMet meteorology files, and writes the same receptor table and optional gridded field schema as the Gaussian Spritz backend. For SpritzMet NetCDF inputs, particles are advected through the full `eastward_wind(time,z,y,x)` / `northward_wind(time,z,y,x)` cube with deterministic substeps; when diagnostic `U10M/V10M` is available and the first physical `z` level is aloft, that 10 m above-ground wind is used as the lower-boundary layer. 2D legacy meteorology still uses a deterministic fallback.
 
 CLI:
 

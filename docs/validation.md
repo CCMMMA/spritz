@@ -11,7 +11,8 @@ Required validation levels:
    `concentration_field(time, field_z, field_y, field_x)` outputs;
 4. grid-axis consistency checks for particle/Gaussian comparison products,
    including identical `time`, `field_z`, `field_y`, and `field_x`
-   coordinates before metrics are computed;
+   coordinates before metrics are computed, plus centered-grid checks that the
+   middle field cell maps back to configured `center_lat`/`center_lon` metadata;
 5. clean-room CALPUFF-style binary export checks against the canonical
    NetCDF-CF gridded concentration, dry-flux, and wet-flux fields;
 6. component parity tests against redistributable reference outputs;

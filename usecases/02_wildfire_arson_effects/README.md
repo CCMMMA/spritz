@@ -26,7 +26,10 @@ Meteorology convention: Step 1 writes SpritzMet wind as
 coordinate in metres and a SpritzMet metadata attribute describing whether the
 levels are height above local ground or height above mean sea level. Step 3
 reuses this prepared file instead of rebuilding a one-time diagnostic
-meteorology grid.
+meteorology grid. When `U10M`/`V10M` diagnostic wind is available and the first
+physical `z` level is above the surface, the Gaussian and particle samplers use
+that diagnostic 10 m above-ground wind as the lower-boundary layer for
+near-ground plume transport.
 
 ## Data preparation
 
@@ -108,6 +111,13 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --precipitation-washout
 ```
 
+For the default single-fire case, `--center-lat 40.827 --center-lon 14.518`
+defines both the local projection origin and the fire location. With
+`--nx 101 --ny 101 --dx 100 --dy 100`, the local grid is
+`x=-5000..5000 m`, `y=-5000..5000 m`, and field cell `G50_50` is the center at
+`x=0, y=0`, mapping back to `40.827 N, 14.518 E`. The particle and Gaussian
+gridded concentration outputs both use this same center and coordinate contract.
+
 ## Step 3: Run the model
 
 By default, step 3 looks for `wrf_100m_wind.nc` beside the configuration file,
@@ -149,7 +159,7 @@ python tools/plotter.py data/output/wildfire_case/wrf_100m_wind.nc \
   --output data/output/wildfire_case/wrf_100m_wind_map.png
 
 python tools/plotter.py data/output/wildfire_case/model_compare/particles/meteo.nc \
-  --variable wind_speed \
+  --variable wind_speed_10m \
   --output data/output/wildfire_case/model_compare/particles/meteo_map.png
 
 python tools/plotter.py data/output/wildfire_case/model_compare/particles/concentration.nc \
@@ -160,7 +170,9 @@ python tools/plotter.py data/output/wildfire_case/model_compare/particles/concen
 
 The automatic plotting step also writes `meteo_vertical_profiles.png` for each
 backend. The profile figure contains a center-cell time-height wind-speed panel
-and sampled vertical profile curves through the WRF/SpritzMet time axis.
+and sampled vertical profile curves through the WRF/SpritzMet time axis. When
+the prepared meteo file contains diagnostic `U10M`/`V10M`, the plotted profile
+prepends the diagnostic 10 m above-ground layer before the aloft model levels.
 
 ## Event timing, materials, and source height
 
@@ -223,7 +235,9 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 - `model_compare/particles/meteo.nc` — the particle backend copy of the
   high-resolution SpritzMet forcing.
 - `model_compare/particles/concentration.nc` — particle receptor and
-  `concentration_field(time,field_z,field_y,field_x)` output.
+  `concentration_field(time,field_z,field_y,field_x)` output. The center field
+  receptor `G50_50` is `x=0, y=0` and carries latitude/longitude
+  `40.827, 14.518` for the default case.
 - `model_compare/particles/concentration_calpuff.dat` — clean-room
   CALPUFF-style binary export of the same particle gridded concentration,
   dry-flux, and wet-flux fields when `--calpuff-binary` is used.
@@ -231,7 +245,9 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 - `model_compare/gaussian/meteo.nc` — the Gaussian backend copy of the same
   SpritzMet forcing.
 - `model_compare/gaussian/concentration.nc` — Gaussian receptor and
-  `concentration_field(time,field_z,field_y,field_x)` output.
+  `concentration_field(time,field_z,field_y,field_x)` output on the same
+  centered grid and geographic field-receptor coordinates as the particle
+  backend.
 - `model_compare/gaussian/concentration_calpuff.dat` — clean-room
   CALPUFF-style binary export of the same Gaussian gridded concentration,
   dry-flux, and wet-flux fields when `--calpuff-binary` is used.

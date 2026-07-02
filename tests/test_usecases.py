@@ -262,6 +262,12 @@ def test_build_wildfire_config(tmp_path: Path) -> None:
     assert cfg_path.exists()
     assert config["sources"][0]["heat_release"] > 0
     assert config["sources"][0]["emission_rate"] > 0
+    assert config["sources"][0]["x"] == pytest.approx(0.0, abs=1.0e-6)
+    assert config["sources"][0]["y"] == pytest.approx(0.0, abs=1.0e-6)
+    assert config["sources"][0]["latitude"] == pytest.approx(40.85)
+    assert config["sources"][0]["longitude"] == pytest.approx(14.27)
+    assert config["grid"]["x0"] + ((config["grid"]["nx"] - 1) / 2.0) * config["grid"]["dx"] == pytest.approx(0.0)
+    assert config["grid"]["y0"] + ((config["grid"]["ny"] - 1) / 2.0) * config["grid"]["dy"] == pytest.approx(0.0)
     assert len(config["receptors"]) > 0
     assert all("latitude" in receptor and "longitude" in receptor for receptor in config["receptors"])
     center_receptor = min(

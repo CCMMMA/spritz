@@ -51,4 +51,7 @@ The module imports Matplotlib lazily, so compute-only deployments do not need pl
 Use-case workflow plotting also writes `meteo_vertical_profiles.png` for
 SpritzMet NetCDF products. The profile figure combines a time-height wind-speed
 section and sampled center-cell vertical profiles, using the same `time,z,y,x`
-wind cube consumed by the Gaussian and particle dispersion backends.
+wind cube consumed by the Gaussian and particle dispersion backends. When
+diagnostic `U10M/V10M` is available and the first physical model level is
+aloft, the plot prepends the diagnostic 10 m above-ground layer so the
+near-surface profile matches dispersion sampling.

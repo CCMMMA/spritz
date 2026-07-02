@@ -185,7 +185,10 @@ This preset samples heights above ground as `10 * exp(level_index)` for
 remains supported when exact heights are required.
 
 With NetCDF-CF output, gridded runs include receptor-table variables plus
-`concentration_field(time, field_z, field_y, field_x)`.
+`concentration_field(time, field_z, field_y, field_x)`. When configuration
+metadata provides `center_lat` and `center_lon`, gridded field receptors also
+carry WGS84 latitude/longitude coordinates; the model-grid midpoint remains
+`x=0, y=0` for odd node-count centered grids.
 For external comparison workflows, Gaussian and particle gridded concentration
 outputs can also be exported with `--format calpuff` on `spritz`, or as
 `concentration_calpuff.dat` sidecars from use case 02 with `--calpuff-binary`.

@@ -135,6 +135,13 @@ preferred 10 m reference vector when available; otherwise the first valid
 above-ground model level is used. For above-sea-level products, wind levels
 below DEM elevation are masked as `NaN` before NetCDF/JSON output.
 
+Dispersion wind sampling uses the same constraint: if a SpritzMet NetCDF input
+contains diagnostic `U10M`/`V10M` and the first physical `z` level is aloft,
+Gaussian and particle samplers insert a diagnostic 10 m above-ground lower
+boundary before interpolating through the `time,z,y,x` wind cube. Near-ground
+source and receptor heights therefore do not silently fall back to the first
+above-sea-level model layer.
+
 SpritzWRF extracts WRF `T2` as Celsius and `RH2` as a unitless rate. When
 `RH2` is unavailable, SpritzWRF can derive the rate from `Q2`, surface pressure,
 and `T2`. SpritzMet downscales these 2 m fields onto the same local grid. If a
@@ -155,8 +162,12 @@ wind and precipitation adjustments.
 
 Gaussian and particle grid outputs share the same `time`, `field_z`, `field_y`,
 and `field_x` coordinate contract. The use case 02 comparison workflow checks
-those coordinates before comparing backend values. Complete gridded rows can
-also be exported as a clean-room CALPUFF-style concentration binary with
+those coordinates before comparing backend values. If configuration metadata
+contains `center_lat` and `center_lon`, generated grid-field receptors include
+latitude/longitude coordinates from the same local azimuthal-equidistant
+projection; for odd grids such as `101 x 101` with `x0=y0=-5000 m` and
+`dx=dy=100 m`, cell `G50_50` is the `x=0, y=0` center. Complete gridded rows
+can also be exported as a clean-room CALPUFF-style concentration binary with
 `spritz --format calpuff` or use case 02 `--calpuff-binary`.
 
 ## Scientific scope

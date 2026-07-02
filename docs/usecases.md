@@ -74,7 +74,10 @@ fire events into multiple Spritz source records. Step 3 can run particle and
 Gaussian backends side by side against the same high-resolution SpritzMet
 meteorology, validates matching `time/field_z/field_y/field_x` grids before
 comparison, and can write clean-room CALPUFF-style concentration binary
-sidecars with `--calpuff-binary`.
+sidecars with `--calpuff-binary`. In the default centered-grid setup, the fire
+location is the local projection origin, the middle field cell is `x=0, y=0`,
+and both particle and Gaussian gridded concentration outputs carry the same
+center-cell geographic coordinates.
 
 ## 03 - Satellite and AI-supported model evaluation
 

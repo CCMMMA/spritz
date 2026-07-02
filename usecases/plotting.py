@@ -106,6 +106,33 @@ def _decode_time_labels(values: Any) -> list[str]:
     return labels
 
 
+def _with_diagnostic_10m_profile_layer(ds: Any, values: np.ndarray, z_axis: np.ndarray, variable: str) -> tuple[np.ndarray, np.ndarray, bool]:
+    if values.ndim != 4 or z_axis.size == 0 or float(np.nanmin(z_axis)) <= 10.0 + 1.0e-6:
+        return values, z_axis, False
+    diagnostic: np.ndarray | None = None
+    if variable == "wind_speed" and "wind_speed_10m" in ds.variables:
+        diagnostic = np.asarray(ds.variables["wind_speed_10m"][:], dtype=float)
+    elif variable in {"eastward_wind", "u"} and "U10M" in ds.variables:
+        diagnostic = np.asarray(ds.variables["U10M"][:], dtype=float)
+    elif variable in {"northward_wind", "v"} and "V10M" in ds.variables:
+        diagnostic = np.asarray(ds.variables["V10M"][:], dtype=float)
+    elif variable == "wind_speed" and "U10M" in ds.variables and "V10M" in ds.variables:
+        diagnostic = np.hypot(
+            np.asarray(ds.variables["U10M"][:], dtype=float),
+            np.asarray(ds.variables["V10M"][:], dtype=float),
+        )
+    if diagnostic is None:
+        return values, z_axis, False
+    if diagnostic.ndim == 2:
+        diagnostic = diagnostic[np.newaxis, :, :]
+    if diagnostic.shape != (values.shape[0], values.shape[2], values.shape[3]):
+        return values, z_axis, False
+    z_aug = np.concatenate(([10.0], z_axis.astype(float)))
+    values_aug = np.concatenate((diagnostic[:, np.newaxis, :, :], values), axis=1)
+    order = np.argsort(z_aug)
+    return values_aug[:, order, :, :], z_aug[order], True
+
+
 def plot_vertical_profiles_if_available(
     input_path: str | Path | None,
     output_path: str | Path,
@@ -148,12 +175,15 @@ def plot_vertical_profiles_if_available(
             x_axis = np.asarray(ds.variables["x"][:], dtype=float) if "x" in ds.variables else np.arange(values.shape[-1])
             y_axis = np.asarray(ds.variables["y"][:], dtype=float) if "y" in ds.variables else np.arange(values.shape[-2])
             z_axis = np.asarray(ds.variables["z"][:], dtype=float) if "z" in ds.variables else np.arange(values.shape[1])
+            values, z_axis, used_diagnostic_10m = _with_diagnostic_10m_profile_layer(ds, values, z_axis, variable)
             time_axis = np.asarray(ds.variables["time"][:], dtype=float) if "time" in ds.variables else np.arange(values.shape[0])
             if "time_datetime" in ds.variables:
                 time_labels = _decode_time_labels(ds.variables["time_datetime"][:])
             else:
                 time_labels = [f"{float(value):g} s" for value in time_axis]
             z_label = str(getattr(ds.variables["z"], "long_name", "vertical level")) if "z" in ds.variables else "vertical level"
+            if used_diagnostic_10m:
+                z_label = "diagnostic 10 m AGL plus model vertical levels"
             z_units = str(getattr(ds.variables["z"], "units", "")) if "z" in ds.variables else ""
         ix = int(np.argmin(np.abs(x_axis - float(x_m))))
         iy = int(np.argmin(np.abs(y_axis - float(y_m))))
@@ -202,7 +232,7 @@ def plot_workflow_netcdfs(
     products: dict[str, str] = {}
     variables = {
         "terrain": "surface_altitude",
-        "meteo": "wind_speed",
+        "meteo": "wind_speed_10m",
         "concentration": "concentration_field",
         "firefront": "fire_probability",
         "puff": "concentration",

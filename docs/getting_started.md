@@ -314,7 +314,10 @@ levels in the same `run` block:
 ```
 
 NetCDF-CF output then includes `concentration_field(time, field_z, field_y,
-field_x)` in addition to the receptor table.
+field_x)` in addition to the receptor table. When the configuration metadata
+contains `center_lat` and `center_lon`, generated gridded-field receptor rows
+also include latitude/longitude; for centered odd grids the middle field cell is
+`x=0, y=0` and maps back to the configured geographic center.
 
 For binary comparison workflows, use `spritz --format calpuff` with a complete
 gridded concentration field, or use case 02 `--calpuff-binary`. The binary file

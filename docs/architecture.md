@@ -68,6 +68,9 @@ SpritzPost computes maxima, averages, ranked values, percentiles, and threshold
 summaries from concentration/deposition outputs. Module exchange prefers
 NetCDF-CF. Concentration NetCDF files keep the receptor table and, for complete
 grid outputs, include `concentration_field(time, field_z, field_y, field_x)`.
+When metadata provides a local-grid geographic center, generated grid-field
+receptors carry latitude/longitude as well as local x/y so downstream
+comparison and plotting workflows can audit the center cell.
 CSV, JSON, and legacy-style outputs remain available for portability and
 migration workflows.
 

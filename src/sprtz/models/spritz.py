@@ -84,6 +84,47 @@ def _wind_4d(meteo: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
     return u, v
 
 
+def _surface_wind_3d(values: Any, *, name: str, target_shape: tuple[int, int, int]) -> np.ndarray:
+    arr = np.asarray(values, dtype=float)
+    nt, ny, nx = target_shape
+    if arr.ndim == 2:
+        arr = arr[np.newaxis, :, :]
+    if arr.ndim != 3:
+        raise DataFormatError(f"meteorology {name} must be shaped as y,x or time,y,x")
+    if arr.shape == (1, ny, nx) and nt > 1:
+        arr = np.repeat(arr, nt, axis=0)
+    if arr.shape != target_shape:
+        raise DataFormatError(f"meteorology {name} shape {arr.shape} does not match time/y/x shape {target_shape}")
+    return arr
+
+
+def _augment_with_diagnostic_10m(
+    meteo: dict[str, Any],
+    u: np.ndarray,
+    v: np.ndarray,
+    z_axis: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Use diagnostic 10 m wind as the lower-boundary layer when available.
+
+    SpritzMet stores WRF U10M/V10M separately because the true reference is
+    10 m above local ground, often DEM + 10 m in above-sea-level grids. The
+    dispersion samplers use source/receptor heights above ground, so they need
+    that diagnostic near-surface wind before falling back to model levels aloft.
+    """
+    if "u10m" not in meteo or "v10m" not in meteo or z_axis.size == 0:
+        return u, v, z_axis
+    if np.nanmin(z_axis) <= 10.0 + 1.0e-6:
+        return u, v, z_axis
+    nt, _nz, ny, nx = u.shape
+    u10 = _surface_wind_3d(meteo["u10m"], name="u10m", target_shape=(nt, ny, nx))
+    v10 = _surface_wind_3d(meteo["v10m"], name="v10m", target_shape=(nt, ny, nx))
+    z_aug = np.concatenate(([10.0], z_axis.astype(float)))
+    u_aug = np.concatenate((u10[:, np.newaxis, :, :], u), axis=1)
+    v_aug = np.concatenate((v10[:, np.newaxis, :, :], v), axis=1)
+    order = np.argsort(z_aug)
+    return u_aug[:, order, :, :], v_aug[:, order, :, :], z_aug[order]
+
+
 def _bracket(axis: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if axis.size == 1:
         zeros = np.zeros(values.shape, dtype=int)
@@ -117,6 +158,7 @@ def sample_wind(
     x_axis = _axis_values(meteo, "x", nx, grid_dx)
     y_axis = _axis_values(meteo, "y", ny, grid_dy)
     z_axis = _axis_values(meteo, "z", nz, 1.0)
+    u, v, z_axis = _augment_with_diagnostic_10m(meteo, u, v, z_axis)
     t_axis = _axis_values(meteo, "time", nt, 1.0)
     bx = np.broadcast_arrays(np.asarray(x, dtype=float), np.asarray(y, dtype=float), np.asarray(z, dtype=float), np.asarray(time_s, dtype=float))
     x_arr, y_arr, z_arr, t_arr = bx
@@ -146,6 +188,7 @@ class WindSampler:
         self.x_axis = _axis_values(meteo, "x", nx, grid_dx)
         self.y_axis = _axis_values(meteo, "y", ny, grid_dy)
         self.z_axis = _axis_values(meteo, "z", nz, 1.0)
+        self.u, self.v, self.z_axis = _augment_with_diagnostic_10m(meteo, self.u, self.v, self.z_axis)
         self.t_axis = _axis_values(meteo, "time", nt, 1.0)
 
     def sample(self, x: Any, y: Any, z: Any, time_s: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -326,15 +369,46 @@ def field_z_levels(config: SuiteConfig) -> tuple[float, ...]:
     )
 
 
+def _grid_geographic_transformer(config: SuiteConfig) -> Any | None:
+    metadata = config.raw.get("metadata", {}) if isinstance(config.raw, dict) else {}
+    if not isinstance(metadata, dict) or "center_lat" not in metadata or "center_lon" not in metadata:
+        return None
+    try:
+        from pyproj import CRS, Transformer
+    except Exception:
+        return None
+    center_lat = float(metadata["center_lat"])
+    center_lon = float(metadata["center_lon"])
+    local = CRS.from_proj4(
+        f"+proj=aeqd +lat_0={center_lat:.12f} +lon_0={center_lon:.12f} "
+        "+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+    )
+    return Transformer.from_crs(local, CRS.from_epsg(4326), always_xy=True)
+
+
 def _grid_receptors(config: SuiteConfig, z_levels: tuple[float, ...] | None = None) -> tuple[Receptor, ...]:
     grid = Grid(**asdict(config.grid))
     levels = z_levels if z_levels is not None else (0.0,)
+    transformer = _grid_geographic_transformer(config)
     receptors: list[Receptor] = []
     for iz, z_value in enumerate(levels):
         for iy, y in enumerate(grid.y):
             for ix, x in enumerate(grid.x):
                 receptor_id = f"G{iy}_{ix}" if len(levels) == 1 else f"G{iz}_{iy}_{ix}"
-                receptors.append(Receptor(id=receptor_id, x=float(x), y=float(y), z=float(z_value)))
+                latitude = None
+                longitude = None
+                if transformer is not None:
+                    longitude, latitude = transformer.transform(float(x), float(y))
+                receptors.append(
+                    Receptor(
+                        id=receptor_id,
+                        x=float(x),
+                        y=float(y),
+                        z=float(z_value),
+                        latitude=None if latitude is None else float(latitude),
+                        longitude=None if longitude is None else float(longitude),
+                    )
+                )
     return tuple(receptors)
 
 

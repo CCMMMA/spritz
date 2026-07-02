@@ -43,7 +43,10 @@ New module-to-module exchange prefers NetCDF-CF:
 - Gaussian and particle gridded outputs use the same coordinate contract:
   `time(time)`, `field_z(field_z)`, `field_y(field_y)`, and
   `field_x(field_x)`. Use case 02 validates those axes before writing
-  particle/Gaussian comparison metrics.
+  particle/Gaussian comparison metrics. When `metadata.center_lat` and
+  `metadata.center_lon` are present, the receptor table rows that back the
+  gridded field also include WGS84 `latitude` and `longitude`, so the local
+  center cell can be audited against the configured geographic center.
 
 Sprtz-produced NetCDF files follow strict CF conventions for coordinate
 variables, dimensions, units, and metadata. Files with a time axis must include
@@ -120,12 +123,14 @@ four-dimensional wind cube:
 
 The Gaussian puff and particle modules can sample the 4D wind cube by output
 time, vertical release height, and grid cell while retaining deterministic
-fallbacks for 2D legacy inputs. The firefront module should consume the
-near-surface diagnostic level, preferring `U10M/V10M` when present and otherwise
-interpolating from the lowest physically valid `z` level. Binary `CALMET.DAT`
-and CALPUFF-style concentration outputs should be generated only as exports
-from these canonical representations so all modules see the same horizontal,
-temporal, and vertical semantics.
+fallbacks for 2D legacy inputs. When diagnostic `U10M/V10M` is present and the
+first `z` level is above the surface, dispersion sampling inserts that
+diagnostic 10 m above-ground wind as the lower boundary. The firefront module
+should consume the near-surface diagnostic level, preferring `U10M/V10M` when
+present and otherwise interpolating from the lowest physically valid `z` level.
+Binary `CALMET.DAT` and CALPUFF-style concentration outputs should be generated
+only as exports from these canonical representations so all modules see the
+same horizontal, temporal, and vertical semantics.
 
 ## File-format selection
 

@@ -270,6 +270,14 @@ def read_cf_meteorology(path: str | Path) -> dict[str, Any]:
             "precipitation_rate": read_var("precipitation_rate", "rainfall_rate", default=0.0),
             "fmc": read_var("fmc", default=0.08),
         }
+        if "U10M" in ds.variables:
+            result["u10m"] = np.asarray(ds.variables["U10M"][:], dtype=float).tolist()
+        if "V10M" in ds.variables:
+            result["v10m"] = np.asarray(ds.variables["V10M"][:], dtype=float).tolist()
+        if "wind_speed_10m" in ds.variables:
+            result["wind_speed_10m"] = np.asarray(ds.variables["wind_speed_10m"][:], dtype=float).tolist()
+        if "wind_from_direction_10m" in ds.variables:
+            result["wind_from_direction_10m"] = np.asarray(ds.variables["wind_from_direction_10m"][:], dtype=float).tolist()
         if "time" in ds.variables:
             result["time"] = np.asarray(ds.variables["time"][:], dtype=float).tolist()
             result["time_units"] = str(getattr(ds.variables["time"], "units", ""))

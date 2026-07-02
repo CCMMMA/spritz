@@ -54,7 +54,10 @@ For four-dimensional wind products such as `eastward_wind(time,z,y,x)` or WRF
 `U(Time,bottom_top,south_north,west_east)`, select the vertical slice with
 `--level-index`. Surface diagnostic products such as `U10M(time,y,x)`,
 `V10M(time,y,x)`, `wind_speed_10m(time,y,x)`, and
-`precipitation_rate(time,y,x)` use only `--time-index`. Sprtz NetCDF products
+`precipitation_rate(time,y,x)` use only `--time-index`. Use-case vertical
+profile plots prepend the diagnostic 10 m above-ground layer when it is present
+and the first physical `z` level is aloft, matching Gaussian and particle wind
+sampling. Sprtz NetCDF products
 with a time axis must
 provide a CF `time(time)` coordinate with units such as
 `seconds since 2026-05-27 00:00:00 UTC`; products may also include

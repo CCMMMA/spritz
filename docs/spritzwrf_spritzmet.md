@@ -140,6 +140,11 @@ level. Three-dimensional diagnostic wind such as `U10/V10` is interpreted as
 `time, y, x` at 10 m above local ground. Precipitation stays three-dimensional
 as `time, y, x`.
 
+Downstream Gaussian and particle dispersion sampling preserves that near-surface
+constraint. If diagnostic `U10M/V10M` exists and the first physical model level
+is aloft, the sampler inserts the diagnostic 10 m above-ground wind as the
+lower-boundary layer before interpolating the `time,z,y,x` cube.
+
 SpritzWRF also owns WRF valid-time extraction. It reads datetimes only from
 WRF/CF time metadata such as `Times`, CF `time` units, or explicit global time
 attributes. It does not infer datetimes from WRF filenames. SpritzMet propagates

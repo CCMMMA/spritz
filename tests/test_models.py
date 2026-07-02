@@ -182,6 +182,49 @@ def test_particles_emit_time_dependent_grid_field():
     assert first != second
 
 
+def test_gaussian_and_particles_grid_fields_keep_config_center_coordinates():
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "metadata": {"center_lat": 40.827, "center_lon": 14.518},
+            "grid": {
+                **base.raw["grid"],
+                "nx": 5,
+                "ny": 5,
+                "dx": 100.0,
+                "dy": 100.0,
+                "x0": -200.0,
+                "y0": -200.0,
+            },
+            "sources": [{**base.raw["sources"][0], "x": 0.0, "y": 0.0, "latitude": 40.827, "longitude": 14.518}],
+            "receptors": [],
+            "run": {
+                **base.raw["run"],
+                "output_interval_s": 60.0,
+                "output_duration_s": 60.0,
+                "concentration_output": "grid",
+                "field_z_levels": [1.5],
+                "particles": 50,
+                "particle_duration_s": 60.0,
+                "particle_sigma_h": 20.0,
+            },
+        }
+    )
+    meteo = {
+        "u": [[0.0]],
+        "v": [[0.0]],
+        "temperature": [[293.15]],
+        "mixing_height": [[1000.0]],
+        "precipitation_rate": [[0.0]],
+    }
+
+    for rows in (spritz.compute_concentrations(cfg, meteo), particles.simulate_particles(cfg, meteo, seed=2)):
+        center = next(row for row in rows if row["x"] == 0.0 and row["y"] == 0.0)
+        assert center["latitude"] == pytest.approx(40.827)
+        assert center["longitude"] == pytest.approx(14.518)
+
+
 def test_wind_sampler_interpolates_time_space_and_height():
     meteo = {
         "time": [0.0, 10.0],
@@ -206,6 +249,31 @@ def test_wind_sampler_interpolates_time_space_and_height():
     sampled_u, sampled_v = sampler.sample(50.0, 50.0, 50.0, 5.0)
     assert float(sampled_u) == pytest.approx(5.555)
     assert float(sampled_v) == pytest.approx(-5.555)
+
+
+def test_wind_sampler_uses_diagnostic_10m_below_first_model_level():
+    meteo = {
+        "time": [0.0],
+        "z": [252.32, 500.0],
+        "y": [0.0],
+        "x": [0.0],
+        "u": np.array([[[[20.0]], [[30.0]]]], dtype=float).tolist(),
+        "v": np.array([[[[0.0]], [[0.0]]]], dtype=float).tolist(),
+        "u10m": np.array([[[3.0]]], dtype=float).tolist(),
+        "v10m": np.array([[[4.0]]], dtype=float).tolist(),
+    }
+
+    sampler = spritz.WindSampler(meteo)
+    u_ground, v_ground = sampler.sample(0.0, 0.0, 1.5, 0.0)
+    u_10m, v_10m = sampler.sample(0.0, 0.0, 10.0, 0.0)
+    u_mid, v_mid = sampler.sample(0.0, 0.0, 131.16, 0.0)
+
+    assert float(u_ground) == pytest.approx(3.0)
+    assert float(v_ground) == pytest.approx(4.0)
+    assert float(u_10m) == pytest.approx(3.0)
+    assert float(v_10m) == pytest.approx(4.0)
+    assert 3.0 < float(u_mid) < 20.0
+    assert 0.0 < float(v_mid) < 4.0
 
 
 def test_precipitation_washout_reduces_concentration():
