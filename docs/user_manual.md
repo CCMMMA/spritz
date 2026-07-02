@@ -418,6 +418,22 @@ logical `rows` table and a `field` object when gridded output is available.
 For large domains, remember that grid output creates `nx * ny *
 len(field_z_levels)` receptor calculations for each output time.
 
+Complete gridded outputs can also be written as clean-room CALPUFF-style binary
+concentration files:
+
+```bash
+spritz --config examples/minimal.json \
+  --meteo output/meteo.nc \
+  --output output/concentration.calpuff \
+  --format calpuff \
+  --backend particles
+```
+
+This binary export preserves the same `time`, `field_z`, `field_y`, and
+`field_x` grid used by NetCDF-CF concentration fields and stores concentration,
+dry flux, and wet flux slabs. It is intended for comparison workflows; NetCDF-CF
+remains the canonical Sprtz interchange.
+
 ## Direct Commands
 
 Run SpritzMet:
@@ -431,6 +447,7 @@ Run unified Spritz concentration:
 ```bash
 spritz --config examples/minimal.json --meteo output/meteo.nc --output output/concentration.nc --format netcdf
 spritz --config examples/minimal.json --meteo output/meteo.nc --output output/particle.nc --format netcdf --backend particles
+spritz --config examples/minimal.json --meteo output/meteo.nc --output output/particle.calpuff --format calpuff --backend particles
 ```
 
 Run SpritzPost:
@@ -445,8 +462,9 @@ Plot concentration:
 sprtz-plot --input output/concentration.nc --output output/concentration.png --title "Scenario A"
 ```
 
-The plotter reads the receptor-table view. It does not yet render volume slices
-from `concentration_field`.
+`tools/plotter.py` can render receptor-table NetCDF variables and gridded
+fields such as `concentration_field` by passing `--variable concentration_field`
+and selecting `--time-index` / `--level-index` as needed.
 
 ## Terrain And GEO Products
 

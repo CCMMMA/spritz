@@ -9,13 +9,18 @@ Required validation levels:
 3. NetCDF-CF metadata and variable checks for module interoperability,
    including receptor-table variables and gridded
    `concentration_field(time, field_z, field_y, field_x)` outputs;
-4. component parity tests against redistributable reference outputs;
-5. WRF precipitation extraction checks for direct rate variables and accumulated
+4. grid-axis consistency checks for particle/Gaussian comparison products,
+   including identical `time`, `field_z`, `field_y`, and `field_x`
+   coordinates before metrics are computed;
+5. clean-room CALPUFF-style binary export checks against the canonical
+   NetCDF-CF gridded concentration, dry-flux, and wet-flux fields;
+6. component parity tests against redistributable reference outputs;
+7. WRF precipitation extraction checks for direct rate variables and accumulated
    `RAINC`/`RAINNC`/`RAINSH` increments;
-6. source-window, firefighter-window, and precipitation-washout limiting cases;
-7. mass-conservation and monotonicity checks for plume and particle kernels;
-8. end-to-end workflow regression tests pinned by versioned input data;
-9. figure-regression smoke tests for visualization outputs.
+8. source-window, firefighter-window, and precipitation-washout limiting cases;
+9. mass-conservation and monotonicity checks for plume and particle kernels;
+10. end-to-end workflow regression tests pinned by versioned input data;
+11. figure-regression smoke tests for visualization outputs.
 
 Operational or regulatory use requires a documented numerical acceptance
 envelope for each component and input-data pathway, including WRF precipitation

@@ -70,8 +70,11 @@ use case 01, then builds a Spritz scenario from event location, burning
 material, source height above ground, start/end datetimes, area,
 firefighter-action windows, and emission assumptions. It accepts `generic`,
 `paper`, and `plastic` material presets and can expand a JSON list of multiple
-fire events into multiple Spritz source records. It can run the configured
-Gaussian or particle backend and writes the ordinary Spritz model outputs.
+fire events into multiple Spritz source records. Step 3 can run particle and
+Gaussian backends side by side against the same high-resolution SpritzMet
+meteorology, validates matching `time/field_z/field_y/field_x` grids before
+comparison, and can write clean-room CALPUFF-style concentration binary
+sidecars with `--calpuff-binary`.
 
 ## 03 - Satellite and AI-supported model evaluation
 

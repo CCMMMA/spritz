@@ -8,9 +8,10 @@ intermediate and final products.
 
 ```bash
 MPLBACKEND=Agg python tools/plotter.py \
-  output/wildfire_case/model/concentration.nc \
-  --variable concentration \
-  --output output/wildfire_case/model_concentration_map.png
+  output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --time-index 1 \
+  --output output/wildfire_case/model_compare/particles/concentration_map.png
 ```
 
 For SpritzMet products with geographic coordinates:
@@ -64,10 +65,10 @@ from NetCDF filenames or `source` paths:
 
 ```bash
 MPLBACKEND=Agg python tools/plotter.py \
-  output/wildfire_case/model/concentration.nc \
-  --variable concentration \
+  output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
   --time-index 3 \
-  --output output/wildfire_case/model/concentration_t003.png
+  --output output/wildfire_case/model_compare/particles/concentration_t003.png
 
 MPLBACKEND=Agg python tools/plotter.py \
   data/output/wrf_100m_wind.nc \
@@ -88,6 +89,11 @@ MPLBACKEND=Agg python tools/plotter.py \
   --center-lon 14.27 \
   --output output_fire/firefront_map.png
 ```
+
+Use-case plotting helpers also generate `meteo_vertical_profiles.png` beside
+workflow meteo maps. That figure is not a separate `tools/plotter.py` CLI mode;
+it is produced by the didactic workflow helpers from SpritzMet NetCDF files
+with `wind_speed(time,z,y,x)`.
 
 ## Coastlines
 

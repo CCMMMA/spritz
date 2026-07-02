@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from sprtz.config import SuiteConfig
+from sprtz.core.grid import Grid
 from sprtz.exceptions import DataFormatError
+from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
 from sprtz.io.netcdf_cf import write_cf_concentration
 from sprtz.models.spritz import (
@@ -20,6 +23,7 @@ from sprtz.models.spritz import (
     precipitation_washout_rate,
     read_meteorology,
     sample_datetime,
+    WindSampler,
     write_csv,
 )
 from sprtz.parallel import get_gpu_context, get_mpi_context
@@ -55,18 +59,33 @@ def simulate_particles(
     if n_particles <= 0:
         raise DataFormatError("n_particles must be positive")
     base_seed = seed if seed is not None else int(config.run.get("seed", config.run.get("SEED", 42)))
-    u, v = _wind(meteo)
     duration = float(config.run.get("particle_duration_s", config.run.get("PARTICLE_DURATION_S", 3600.0)))
+    advection_steps = max(1, int(config.run.get("particle_advection_steps", config.run.get("PARTICLE_ADVECTION_STEPS", 8))))
     sigma_h = float(config.run.get("particle_sigma_h", 250.0))
     sigma_z = float(config.run.get("particle_sigma_z", 80.0))
     receptor_radius = float(config.run.get("particle_receptor_radius", 400.0))
     washout_rate = precipitation_washout_rate(config, meteo)
     receptors = model_receptors(config)
     output_mode = concentration_output_mode(config)
-    field_ids = (
-        {rec.id for rec in _grid_receptors(config, field_z_levels(config))}
-        if output_mode in {"grid", "both"}
-        else set()
+    field_levels = field_z_levels(config)
+    field_receptors = _grid_receptors(config, field_levels) if output_mode in {"grid", "both"} else ()
+    field_ids = {rec.id for rec in field_receptors}
+    point_receptors = tuple(rec for rec in receptors if rec.id not in field_ids)
+    grid = Grid(**asdict(config.grid))
+    wind_sampler = WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy)
+    x_edges = np.concatenate(
+        (
+            [grid.x[0] - 0.5 * grid.dx],
+            0.5 * (grid.x[:-1] + grid.x[1:]),
+            [grid.x[-1] + 0.5 * grid.dx],
+        )
+    )
+    y_edges = np.concatenate(
+        (
+            [grid.y[0] - 0.5 * grid.dy],
+            0.5 * (grid.y[:-1] + grid.y[1:]),
+            [grid.y[-1] + 0.5 * grid.dy],
+        )
     )
     total_emission = sum(src.emission_rate for src in config.sources) or 1.0
 
@@ -74,71 +93,104 @@ def simulate_particles(
     gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
     xp = gpu.xp
     local_sources = [(i, config.sources[i]) for i in ctx.partition(len(config.sources))]
-    local_source_totals: dict[str, dict[str, float]] = {}
-
-    for source_index, src in local_sources:
-        source_totals = {rec.id: 0.0 for rec in receptors}
-        # Per-source seed keeps results deterministic regardless of MPI size.
-        seed_i = base_seed + source_index * 1000003
-        rng = np.random.default_rng(seed_i)
-        count = max(1, int(round(n_particles * src.emission_rate / total_emission)))
-        if gpu.enabled:
-            grng = xp.random.default_rng(seed_i)
-            travel = grng.uniform(0.0, duration, count)
-            px = src.x + u * travel + grng.normal(0.0, sigma_h, count)
-            py = src.y + v * travel + grng.normal(0.0, sigma_h, count)
-            pz = src.z + src.stack_height + grng.normal(0.0, sigma_z, count)
-        else:
-            travel = rng.uniform(0.0, duration, count)
-            px = src.x + u * travel + rng.normal(0.0, sigma_h, count)
-            py = src.y + v * travel + rng.normal(0.0, sigma_h, count)
-            pz = src.z + src.stack_height + rng.normal(0.0, sigma_z, count)
-        if src.width > 0 or src.length > 0:
-            if gpu.enabled:
-                px += grng.uniform(-0.5 * src.length, 0.5 * src.length, count)
-                py += grng.uniform(-0.5 * src.width, 0.5 * src.width, count)
-            else:
-                px += rng.uniform(-0.5 * src.length, 0.5 * src.length, count)
-                py += rng.uniform(-0.5 * src.width, 0.5 * src.width, count)
-        if src.source_type.lower() == "flare":
-            pz += max(src.heat_release, 0.0) ** (1.0 / 3.0) * 0.01
-        loss_rate = max(src.decay_rate, 0.0) + max(src.wet_scavenging, 0.0) + washout_rate
-        loss_rate += max(src.deposition_velocity + src.settling_velocity, 0.0) / max(
-            sigma_z * 10.0, 1.0
-        )
-        weights = xp.exp(-loss_rate * travel) if gpu.enabled else np.exp(-loss_rate * travel)
-        particle_mass = src.emission_rate * duration / count
-        for rec in receptors:
-            dist2 = (px - rec.x) ** 2 + (py - rec.y) ** 2 + ((pz - rec.z) * 0.2) ** 2
-            hits = dist2 <= receptor_radius**2
-            hit_mass = float(gpu.asnumpy(xp.sum(weights[hits])) if gpu.enabled else np.sum(weights[hits])) * particle_mass
-            # Convert hit density to a stable screening concentration proxy.
-            volume = max(np.pi * receptor_radius**2 * max(sigma_z, 1.0), 1.0)
-            source_totals[rec.id] += hit_mass / volume
-        local_source_totals[src.id] = source_totals
-
-    source_concentrations = {src.id: {rec.id: 0.0 for rec in receptors} for src in config.sources}
-    gathered = ctx.allgather(local_source_totals)
-    for partial in gathered:
-        for source_id, values in partial.items():
-            for rec_id, value in values.items():
-                source_concentrations[source_id][rec_id] += float(value)
-
     rows: list[dict[str, float | str]] = []
     for time_value in output_times(config):
         sample_dt = sample_datetime(config, time_value)
         firefighter_factor = _firefighters_emission_factor(config, sample_dt)
+        receptor_values = {rec.id: {"concentration": 0.0, "dry_flux": 0.0, "wet_flux": 0.0} for rec in receptors}
+        local_values = {rec.id: {"concentration": 0.0, "dry_flux": 0.0, "wet_flux": 0.0} for rec in receptors}
+        sample_window = min(duration, max(float(time_value), 0.0))
+        if sample_window <= 0.0:
+            sample_window = min(duration, float(config.run.get("output_interval_s", duration)))
+        for source_index, src in local_sources:
+            if not _source_active(config, src, sample_dt):
+                continue
+            seed_i = base_seed + source_index * 1000003 + int(round(float(time_value) * 10.0))
+            rng = np.random.default_rng(seed_i)
+            count = max(1, int(round(n_particles * src.emission_rate / total_emission)))
+            if gpu.enabled:
+                grng = xp.random.default_rng(seed_i)
+                travel = grng.uniform(0.0, sample_window, count)
+                px = xp.full(count, src.x, dtype=float)
+                py = xp.full(count, src.y, dtype=float)
+                pz = src.z + src.stack_height + grng.normal(0.0, sigma_z, count)
+            else:
+                travel = rng.uniform(0.0, sample_window, count)
+                px = np.full(count, src.x, dtype=float)
+                py = np.full(count, src.y, dtype=float)
+                pz = src.z + src.stack_height + rng.normal(0.0, sigma_z, count)
+            if src.width > 0 or src.length > 0:
+                if gpu.enabled:
+                    px += grng.uniform(-0.5 * src.length, 0.5 * src.length, count)
+                    py += grng.uniform(-0.5 * src.width, 0.5 * src.width, count)
+                else:
+                    px += rng.uniform(-0.5 * src.length, 0.5 * src.length, count)
+                    py += rng.uniform(-0.5 * src.width, 0.5 * src.width, count)
+            if src.source_type.lower() == "flare":
+                pz += max(src.heat_release, 0.0) ** (1.0 / 3.0) * 0.01
+            travel_np = gpu.asnumpy(travel) if gpu.enabled else travel
+            px_np = gpu.asnumpy(px) if gpu.enabled else px
+            py_np = gpu.asnumpy(py) if gpu.enabled else py
+            pz_np = gpu.asnumpy(pz) if gpu.enabled else pz
+            release_time = np.maximum(float(time_value) - travel_np, 0.0)
+            step_dt = travel_np / float(advection_steps)
+            for step in range(advection_steps):
+                current_time = release_time + (step + 0.5) * step_dt
+                u_step, v_step = wind_sampler.sample(
+                    px_np,
+                    py_np,
+                    pz_np,
+                    current_time,
+                )
+                px_np = px_np + u_step * step_dt
+                py_np = py_np + v_step * step_dt
+            px_np = px_np + rng.normal(0.0, sigma_h, count)
+            py_np = py_np + rng.normal(0.0, sigma_h, count)
+            loss_rate = max(src.decay_rate, 0.0) + max(src.wet_scavenging, 0.0) + washout_rate
+            loss_rate += max(src.deposition_velocity + src.settling_velocity, 0.0) / max(
+                sigma_z * 10.0, 1.0
+            )
+            weights_np = np.exp(-loss_rate * travel_np)
+            particle_mass = src.emission_rate * sample_window / count
+            point_volume = max(np.pi * receptor_radius**2 * max(sigma_z, 1.0), 1.0)
+            for rec in point_receptors:
+                dist2 = (px_np - rec.x) ** 2 + (py_np - rec.y) ** 2 + ((pz_np - rec.z) * 0.2) ** 2
+                hits = dist2 <= receptor_radius**2
+                value = float(np.sum(weights_np[hits])) * particle_mass / point_volume * firefighter_factor
+                local_values[rec.id]["concentration"] += value
+                local_values[rec.id]["dry_flux"] += value * max(src.deposition_velocity, 0.0)
+                local_values[rec.id]["wet_flux"] += value * (max(src.wet_scavenging, 0.0) + washout_rate)
+            if field_receptors:
+                cell_volume = max(grid.dx * grid.dy * max(sigma_z, 1.0), 1.0)
+                for level_index, level in enumerate(field_levels):
+                    vertical_weight = np.exp(-0.5 * ((pz_np - level) / max(sigma_z, 1.0)) ** 2)
+                    mass_grid, _, _ = np.histogram2d(
+                        py_np,
+                        px_np,
+                        bins=(y_edges, x_edges),
+                        weights=weights_np * vertical_weight,
+                    )
+                    conc_grid = mass_grid * particle_mass / cell_volume * firefighter_factor
+                    for iy in range(grid.ny):
+                        for ix in range(grid.nx):
+                            rec_id = f"G{iy}_{ix}" if len(field_levels) == 1 else f"G{level_index}_{iy}_{ix}"
+                            value = float(conc_grid[iy, ix])
+                            local_values[rec_id]["concentration"] += value
+                            local_values[rec_id]["dry_flux"] += value * max(src.deposition_velocity, 0.0)
+                            local_values[rec_id]["wet_flux"] += value * (max(src.wet_scavenging, 0.0) + washout_rate)
+        gathered = ctx.allgather(local_values)
+        for partial in gathered:
+            for rec_id, values in partial.items():
+                receptor_values[rec_id]["concentration"] += float(values["concentration"])
+                receptor_values[rec_id]["dry_flux"] += float(values["dry_flux"])
+                receptor_values[rec_id]["wet_flux"] += float(values["wet_flux"])
         for rec in receptors:
             total = 0.0
             dry_flux = 0.0
             wet_flux = 0.0
-            for src in config.sources:
-                if not _source_active(config, src, sample_dt):
-                    continue
-                value = source_concentrations[src.id][rec.id] * firefighter_factor
-                total += value
-                dry_flux += value * max(src.deposition_velocity, 0.0)
-                wet_flux += value * (max(src.wet_scavenging, 0.0) + washout_rate)
+            total += receptor_values[rec.id]["concentration"]
+            dry_flux += receptor_values[rec.id]["dry_flux"]
+            wet_flux += receptor_values[rec.id]["wet_flux"]
             row: dict[str, float | str] = {
                 "time": time_value,
                 **({} if sample_dt is None else {"datetime": sample_dt.isoformat()}),
@@ -162,6 +214,8 @@ def write_particle_output(path: str | Path, rows: list[dict[str, float | str]], 
     fmt = infer_format(path, output_format)
     if fmt == "netcdf":
         write_cf_concentration(path, rows)
+    elif fmt == "calpuff":
+        write_calpuff_concentration_dat(path, rows)
     elif fmt == "legacy":
         write_legacy_table(path, "Spritz particle concentration and deposition table", rows)
     else:

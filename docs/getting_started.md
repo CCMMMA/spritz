@@ -189,7 +189,9 @@ Use case 02 creates a Spritz scenario for a burning place at a known latitude an
 
 - a local wind product;
 - a Spritz scenario configuration;
-- a model output directory containing meteorology, concentration, and postprocessing files.
+- particle and Gaussian model output directories containing meteorology,
+  concentration, postprocessing files, optional CALPUFF-style binary sidecars,
+  maps, and vertical wind-profile plots.
 
 Prepare the local wind product:
 
@@ -226,9 +228,10 @@ Run the model:
 ```bash
 python usecases/02_wildfire_arson_effects/step_03_run_model.py \
   --config output/wildfire_case/wildfire_event.json \
-  --output-dir output/wildfire_case/model \
-  --backend particles \
-  --interchange netcdf
+  --output-dir output/wildfire_case/model_compare \
+  --backend both \
+  --interchange netcdf \
+  --calpuff-binary
 ```
 
 Use `--material generic`, `--material paper`, or `--material plastic` to choose
@@ -258,9 +261,15 @@ Expected products:
 ```text
 output/wildfire_case/wrf_100m_wind.nc
 output/wildfire_case/wildfire_event.json
-output/wildfire_case/model/meteo.nc
-output/wildfire_case/model/concentration.nc
-output/wildfire_case/model/post.json
+output/wildfire_case/model_compare/particles/meteo.nc
+output/wildfire_case/model_compare/particles/concentration.nc
+output/wildfire_case/model_compare/particles/concentration_calpuff.dat
+output/wildfire_case/model_compare/particles/meteo_vertical_profiles.png
+output/wildfire_case/model_compare/gaussian/meteo.nc
+output/wildfire_case/model_compare/gaussian/concentration.nc
+output/wildfire_case/model_compare/gaussian/concentration_calpuff.dat
+output/wildfire_case/model_compare/gaussian/meteo_vertical_profiles.png
+output/wildfire_case/model_compare/particle_gaussian_comparison.json
 ```
 
 ## 6. Run the core suite directly from a configuration file
@@ -307,6 +316,12 @@ levels in the same `run` block:
 NetCDF-CF output then includes `concentration_field(time, field_z, field_y,
 field_x)` in addition to the receptor table.
 
+For binary comparison workflows, use `spritz --format calpuff` with a complete
+gridded concentration field, or use case 02 `--calpuff-binary`. The binary file
+is a clean-room CALPUFF-style Fortran-record export of concentration, dry flux,
+and wet flux on the same `time, field_z, field_y, field_x` grid. NetCDF-CF
+remains the canonical Sprtz output.
+
 To enable precipitation washout in a WRF-driven run:
 
 ```json
@@ -336,7 +351,7 @@ Render a concentration scatter plot from the NetCDF-CF output:
 
 ```bash
 sprtz-plot \
-  --input output/wildfire_case/model/concentration.nc \
+  --input output/wildfire_case/model_compare/particles/concentration.nc \
   --output output/wildfire_case/concentration.png \
   --title "Spritz wildfire screening concentration" \
   --dpi 300
@@ -365,7 +380,7 @@ Run evaluation:
 
 ```bash
 python usecases/03_satellite_ai_evaluation/step_02_evaluate.py \
-  --concentration output/wildfire_case/model/concentration.nc \
+  --concentration output/wildfire_case/model_compare/particles/concentration.nc \
   --satellite-mask output/demo_mask.json \
   --output output/wildfire_case/evaluation.json \
   --threshold 0.5

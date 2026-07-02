@@ -40,6 +40,10 @@ New module-to-module exchange prefers NetCDF-CF:
   plus gridded dry and wet deposition flux fields. Use JSON
   `run.concentration_output: "grid"` and `run.field_z_levels` to request a
   model-grid 3D field when explicit receptors are also present.
+- Gaussian and particle gridded outputs use the same coordinate contract:
+  `time(time)`, `field_z(field_z)`, `field_y(field_y)`, and
+  `field_x(field_x)`. Use case 02 validates those axes before writing
+  particle/Gaussian comparison metrics.
 
 Sprtz-produced NetCDF files follow strict CF conventions for coordinate
 variables, dimensions, units, and metadata. Files with a time axis must include
@@ -75,6 +79,32 @@ format because it preserves CF coordinates, named variables, attributes,
 vertical-level metadata, and optional fields without relying on fixed binary
 record positions.
 
+## CALPUFF-style concentration binary export
+
+Gaussian and particle concentration runs can export complete gridded
+concentration fields to a clean-room CALPUFF-style binary sidecar:
+
+```bash
+spritz --config examples/minimal.json \
+  --meteo output/meteo.nc \
+  --output output/concentration.calpuff \
+  --backend particles \
+  --format calpuff
+```
+
+The writer requires rows that form a complete `time, field_z, field_y, field_x`
+grid. It writes Fortran sequential unformatted records with a text header,
+integer dimensions, `x/y/z/time` coordinates, time labels, and 32-bit floating
+point slabs for concentration, dry flux, and wet flux. Missing or invalid
+floating-point values are exported as `-9999.0`.
+
+Use case 02 can write the same sidecar for each backend with
+`--calpuff-binary`; the files are named `concentration_calpuff.dat` inside the
+particle and Gaussian output directories. These files are intended for external
+comparison workflows and are not a claim of official CALPUFF distribution
+compatibility. NetCDF-CF remains the canonical Sprtz interchange and should be
+archived with any binary export.
+
 ## Vertical-level storage strategy
 
 The best storage strategy for `sprtz.puff`, `spritz.particles`, and
@@ -92,13 +122,14 @@ The Gaussian puff and particle modules can sample the 4D wind cube by output
 time, vertical release height, and grid cell while retaining deterministic
 fallbacks for 2D legacy inputs. The firefront module should consume the
 near-surface diagnostic level, preferring `U10M/V10M` when present and otherwise
-interpolating from the lowest physically valid `z` level. Binary
-`CALMET.DAT` output should be generated only as an export from this canonical
-representation so all modules see the same vertical-level semantics.
+interpolating from the lowest physically valid `z` level. Binary `CALMET.DAT`
+and CALPUFF-style concentration outputs should be generated only as exports
+from these canonical representations so all modules see the same horizontal,
+temporal, and vertical semantics.
 
 ## File-format selection
 
-All production commands infer format from extension and also accept explicit format flags. Use `.nc` for NetCDF-CF, `.json` for JSON diagnostics, `.csv` for tabular concentration files, and extensionless/legacy names for Fortran-style text tables.
+All production commands infer format from extension and also accept explicit format flags. Use `.nc` for NetCDF-CF, `.json` for JSON diagnostics, `.csv` for tabular concentration files, `.calpuff` / `.puff` / `.bin` or `--format calpuff` for the clean-room CALPUFF-style concentration binary export, and extensionless/legacy names for Fortran-style text tables.
 
 ## WRF5 d03 archive input
 

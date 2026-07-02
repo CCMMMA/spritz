@@ -19,6 +19,7 @@ from sprtz.core.physics import (
     gaussian_puff,
 )
 from sprtz.exceptions import DataFormatError
+from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.jsonio import read_json
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
 from sprtz.io.netcdf_cf import read_cf_meteorology, write_cf_concentration
@@ -50,6 +51,145 @@ def _mean_wind(meteo: dict[str, Any]) -> tuple[float, float, float]:
     vm = float(np.nanmean(v))
     speed = max(float(np.hypot(um, vm)), 0.1)
     return um, vm, speed
+
+
+def _axis_values(meteo: dict[str, Any], name: str, size: int, spacing: float = 1.0) -> np.ndarray:
+    values = meteo.get(name)
+    if values is None:
+        return np.arange(size, dtype=float) * float(spacing)
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim != 1 or arr.size != size:
+        return np.arange(size, dtype=float) * float(spacing)
+    return arr
+
+
+def _wind_4d(meteo: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+    try:
+        u = np.asarray(meteo.get("u", meteo.get("eastward_wind", [[[[2.0]]]])), dtype=float)
+        v = np.asarray(meteo.get("v", meteo.get("northward_wind", [[[[0.0]]]])), dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise DataFormatError("meteorology u/v fields must be numeric arrays") from exc
+    if u.ndim == 2:
+        u = u[np.newaxis, np.newaxis, :, :]
+    elif u.ndim == 3:
+        u = u[:, np.newaxis, :, :]
+    if v.ndim == 2:
+        v = v[np.newaxis, np.newaxis, :, :]
+    elif v.ndim == 3:
+        v = v[:, np.newaxis, :, :]
+    if u.ndim != 4 or v.ndim != 4:
+        raise DataFormatError("meteorology u/v fields must be y,x; time,y,x; or time,z,y,x")
+    if u.shape != v.shape:
+        raise DataFormatError(f"meteorology u/v shape mismatch: {u.shape} vs {v.shape}")
+    return u, v
+
+
+def _bracket(axis: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if axis.size == 1:
+        zeros = np.zeros(values.shape, dtype=int)
+        return zeros, zeros, np.zeros(values.shape, dtype=float)
+    increasing = axis[-1] >= axis[0]
+    work_axis = axis if increasing else axis[::-1]
+    clipped = np.clip(values, work_axis[0], work_axis[-1])
+    upper = np.searchsorted(work_axis, clipped, side="right")
+    upper = np.clip(upper, 1, work_axis.size - 1)
+    lower = upper - 1
+    span = np.maximum(work_axis[upper] - work_axis[lower], 1.0e-12)
+    weight = (clipped - work_axis[lower]) / span
+    if not increasing:
+        lower, upper = axis.size - 1 - upper, axis.size - 1 - lower
+    return lower.astype(int), upper.astype(int), weight.astype(float)
+
+
+def sample_wind(
+    meteo: dict[str, Any],
+    x: Any,
+    y: Any,
+    z: Any,
+    time_s: Any,
+    *,
+    grid_dx: float = 1.0,
+    grid_dy: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Interpolate eastward/northward wind from a SpritzMet time,z,y,x cube."""
+    u, v = _wind_4d(meteo)
+    nt, nz, ny, nx = u.shape
+    x_axis = _axis_values(meteo, "x", nx, grid_dx)
+    y_axis = _axis_values(meteo, "y", ny, grid_dy)
+    z_axis = _axis_values(meteo, "z", nz, 1.0)
+    t_axis = _axis_values(meteo, "time", nt, 1.0)
+    bx = np.broadcast_arrays(np.asarray(x, dtype=float), np.asarray(y, dtype=float), np.asarray(z, dtype=float), np.asarray(time_s, dtype=float))
+    x_arr, y_arr, z_arr, t_arr = bx
+    x0, x1, wx = _bracket(x_axis, x_arr)
+    y0, y1, wy = _bracket(y_axis, y_arr)
+    z0, z1, wz = _bracket(z_axis, z_arr)
+    t0, t1, wt = _bracket(t_axis, t_arr)
+
+    def interp(values: np.ndarray) -> np.ndarray:
+        out = np.zeros(x_arr.shape, dtype=float)
+        for ti, tw in ((t0, 1.0 - wt), (t1, wt)):
+            for zi, zw in ((z0, 1.0 - wz), (z1, wz)):
+                for yi, yw in ((y0, 1.0 - wy), (y1, wy)):
+                    for xi, xw in ((x0, 1.0 - wx), (x1, wx)):
+                        out += values[ti, zi, yi, xi] * tw * zw * yw * xw
+        return out
+
+    return interp(u), interp(v)
+
+
+class WindSampler:
+    """Reusable interpolator for SpritzMet wind cubes."""
+
+    def __init__(self, meteo: dict[str, Any], *, grid_dx: float = 1.0, grid_dy: float = 1.0) -> None:
+        self.u, self.v = _wind_4d(meteo)
+        nt, nz, ny, nx = self.u.shape
+        self.x_axis = _axis_values(meteo, "x", nx, grid_dx)
+        self.y_axis = _axis_values(meteo, "y", ny, grid_dy)
+        self.z_axis = _axis_values(meteo, "z", nz, 1.0)
+        self.t_axis = _axis_values(meteo, "time", nt, 1.0)
+
+    def sample(self, x: Any, y: Any, z: Any, time_s: Any) -> tuple[np.ndarray, np.ndarray]:
+        bx = np.broadcast_arrays(
+            np.asarray(x, dtype=float),
+            np.asarray(y, dtype=float),
+            np.asarray(z, dtype=float),
+            np.asarray(time_s, dtype=float),
+        )
+        x_arr, y_arr, z_arr, t_arr = bx
+        x0, x1, wx = _bracket(self.x_axis, x_arr)
+        y0, y1, wy = _bracket(self.y_axis, y_arr)
+        z0, z1, wz = _bracket(self.z_axis, z_arr)
+        t0, t1, wt = _bracket(self.t_axis, t_arr)
+
+        def interp(values: np.ndarray) -> np.ndarray:
+            out = np.zeros(x_arr.shape, dtype=float)
+            for ti, tw in ((t0, 1.0 - wt), (t1, wt)):
+                for zi, zw in ((z0, 1.0 - wz), (z1, wz)):
+                    for yi, yw in ((y0, 1.0 - wy), (y1, wy)):
+                        for xi, xw in ((x0, 1.0 - wx), (x1, wx)):
+                            out += values[ti, zi, yi, xi] * tw * zw * yw * xw
+            return out
+
+        return interp(self.u), interp(self.v)
+
+    def vector(self, x: float, y: float, z: float, time_s: float) -> tuple[float, float, float]:
+        u, v = self.sample(x, y, z, time_s)
+        uf = float(np.asarray(u).reshape(-1)[0])
+        vf = float(np.asarray(v).reshape(-1)[0])
+        return uf, vf, max(float(np.hypot(uf, vf)), 0.1)
+
+
+def sampled_wind_vector(
+    meteo: dict[str, Any],
+    x: float,
+    y: float,
+    z: float,
+    time_s: float,
+    *,
+    grid_dx: float = 1.0,
+    grid_dy: float = 1.0,
+) -> tuple[float, float, float]:
+    return WindSampler(meteo, grid_dx=grid_dx, grid_dy=grid_dy).vector(x, y, z, time_s)
 
 
 def _mean_precipitation_rate(meteo: dict[str, Any]) -> float:
@@ -262,7 +402,6 @@ def compute_concentrations(
     gpu_backend: str | None = None,
 ) -> list[dict[str, float | str]]:
     config.validate()
-    u, v, speed = _mean_wind(meteo)
     rows: list[dict[str, float | str]] = []
     receptors = model_receptors(config)
     output_mode = concentration_output_mode(config)
@@ -281,11 +420,9 @@ def compute_concentrations(
     ambient_temperature = float(np.nanmean(np.asarray(meteo.get("temperature", [[293.15]]), dtype=float)))
     mixing_height = float(np.nanmean(np.asarray(meteo.get("mixing_height", [[1000.0]]), dtype=float)))
     washout_rate = precipitation_washout_rate(config, meteo)
+    wind_sampler = WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy)
     ctx = get_mpi_context(parallel)
     gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
-    xp = gpu.xp
-    source_x = xp.asarray([src.x for src in config.sources], dtype=float)
-    source_y = xp.asarray([src.y for src in config.sources], dtype=float)
     local_receptors = [receptors[i] for i in ctx.partition(len(receptors))]
     local_rows: list[dict[str, float | str]] = []
     for rec in local_receptors:
@@ -295,24 +432,27 @@ def compute_concentrations(
             total = 0.0
             dry_total = 0.0
             wet_total = 0.0
-            dx_all = rec.x - source_x
-            dy_all = rec.y - source_y
-            xdown_all = dx_all * (u / speed) + dy_all * (v / speed)
-            ycross_all = -dx_all * (v / speed) + dy_all * (u / speed)
-            xdown_values = np.asarray(gpu.asnumpy(xdown_all), dtype=float)
-            ycross_values = np.asarray(gpu.asnumpy(ycross_all), dtype=float)
             for src_index, src in enumerate(config.sources):
                 if not _source_active(config, src, sample_dt):
                     continue
-                xdown = float(xdown_values[src_index])
-                ycross = float(ycross_values[src_index])
+                u, v, speed = wind_sampler.vector(
+                    0.5 * (src.x + rec.x),
+                    0.5 * (src.y + rec.y),
+                    max(0.5 * (src.z + src.stack_height + rec.z), 0.0),
+                    sample_time,
+                )
+                dx = rec.x - src.x
+                dy = rec.y - src.y
+                xdown = dx * (u / speed) + dy * (v / speed)
+                ycross = -dx * (v / speed) + dy * (u / speed)
                 if xdown <= 0:
                     continue
                 source_wet_rate = max(src.wet_scavenging, 0.0) + washout_rate
                 emission_rate = src.emission_rate * firefighter_factor
                 travel_time = xdown / speed
-                elapsed_s = travel_time if legacy_steady_output else max(sample_time, 1.0)
-                puff_center_x = xdown if legacy_steady_output else speed * sample_time
+                puff_age_s = min(max(sample_time, 1.0), interval_mass_time)
+                elapsed_s = travel_time if legacy_steady_output else puff_age_s
+                puff_center_x = xdown if legacy_steady_output else speed * puff_age_s
                 eff_h = effective_release_height(
                     stack_height=src.stack_height,
                     source_z=src.z,
@@ -422,6 +562,8 @@ def write_concentration(path: str | Path, rows: list[dict[str, float | str]], ou
     fmt = infer_format(path, output_format)
     if fmt == "netcdf":
         write_cf_concentration(path, rows)
+    elif fmt == "calpuff":
+        write_calpuff_concentration_dat(path, rows)
     elif fmt == "legacy":
         write_legacy_table(path, "Spritz concentration and deposition table", rows)
     else:

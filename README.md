@@ -186,6 +186,11 @@ remains supported when exact heights are required.
 
 With NetCDF-CF output, gridded runs include receptor-table variables plus
 `concentration_field(time, field_z, field_y, field_x)`.
+For external comparison workflows, Gaussian and particle gridded concentration
+outputs can also be exported with `--format calpuff` on `spritz`, or as
+`concentration_calpuff.dat` sidecars from use case 02 with `--calpuff-binary`.
+These are clean-room CALPUFF-style binary exports generated from Sprtz
+NetCDF/row data; NetCDF-CF remains the canonical interchange.
 
 Time-aware and washout options live in the same `run` block:
 
@@ -227,7 +232,7 @@ spritzpost --input output/concentration.csv --output output/post.json
 
 MPI parallel execution is available through the optional `mpi4py` extra for SpritzMet diagnostic grids, WRF-to-local-grid downscaling, and the Gaussian and particle backends. See `docs/parallelization.md` for the detailed schema and `docs/parallel_mpi.md` for command examples.
 
-The suite accepts a shared JSON configuration model and tolerant Fortran-style `.inp` control files. New module interoperability prefers NetCDF-CF. CSV and legacy text outputs are retained for migration and comparison workflows. See `docs/io_compatibility.md` and `docs/spritzwrf_spritzmet.md`.
+The suite accepts a shared JSON configuration model and tolerant Fortran-style `.inp` control files. New module interoperability prefers NetCDF-CF. CSV, clean-room CALPUFF-style concentration binary exports, and legacy text outputs are retained for migration and comparison workflows. See `docs/io_compatibility.md` and `docs/spritzwrf_spritzmet.md`.
 
 ## Architecture
 
@@ -280,8 +285,8 @@ Install the package, then run the explicit root-level didactic steps. The use ca
 ```bash
 python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py --date 20260527Z0000 --hours 24 --download-dir data/wrf --output data/wrf_100m_wind.nc --center-lat 40.85 --center-lon 14.27 --nx 101 --ny 101 --dx 100 --dy 100 --config usecases/01_high_resolution_wind_field/config.json
 python usecases/02_wildfire_arson_effects/step_02_build_config.py --output data/wildfire_case/wildfire_event.json --center-lat 40.85 --center-lon 14.27 --material plastic --start 20260527Z0000 --end 20260527Z0100 --precipitation-washout
-python usecases/02_wildfire_arson_effects/step_03_run_model.py --config data/wildfire_case/wildfire_event.json --output-dir data/wildfire_case/model --backend gaussian --interchange netcdf
-python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --concentration data/wildfire_case/model/concentration.nc --satellite-mask data/satellite_mask.json --output data/wildfire_case/evaluation.json
+python usecases/02_wildfire_arson_effects/step_03_run_model.py --config data/wildfire_case/wildfire_event.json --output-dir data/wildfire_case/model_compare --backend both --interchange netcdf --calpuff-binary
+python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --concentration data/wildfire_case/model_compare/particles/concentration.nc --satellite-mask data/satellite_mask.json --output data/wildfire_case/evaluation.json
 python usecases/04_production_incidents/step_01_build_config.py --code 2021_44 --output data/production_2021_44/2021_44_config.json
 python usecases/04_production_incidents/step_02_run_model.py --config data/production_2021_44/2021_44_config.json --output-dir data/production_2021_44/model --interchange netcdf
 python usecases/05_sailing_wind_forecast/step_01_build_forecast.py --output data/sailing_bay_of_naples.json

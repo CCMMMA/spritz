@@ -253,15 +253,14 @@ def read_cf_meteorology(path: str | Path) -> dict[str, Any]:
     from netCDF4 import Dataset  # type: ignore
 
     with Dataset(p) as ds:
-        def read_var(*names: str, default: float) -> list[list[float]]:
+        def read_var(*names: str, default: float) -> list[Any]:
             for name in names:
                 if name in ds.variables:
                     values = np.asarray(ds.variables[name][:], dtype=float)
-                    return _surface_2d(values, name=name).tolist()
+                    return values.tolist()
             shape = (len(ds.dimensions.get("y", [])), len(ds.dimensions.get("x", [])))
             return np.full(shape, default, dtype=float).tolist()
-
-        return {
+        result = {
             "component": "spritzmet",
             "format": "NetCDF-CF",
             "u": read_var("eastward_wind", "u", default=0.0),
@@ -271,6 +270,18 @@ def read_cf_meteorology(path: str | Path) -> dict[str, Any]:
             "precipitation_rate": read_var("precipitation_rate", "rainfall_rate", default=0.0),
             "fmc": read_var("fmc", default=0.08),
         }
+        if "time" in ds.variables:
+            result["time"] = np.asarray(ds.variables["time"][:], dtype=float).tolist()
+            result["time_units"] = str(getattr(ds.variables["time"], "units", ""))
+        if "time_datetime" in ds.variables:
+            result["time_datetime"] = [str(value) for value in ds.variables["time_datetime"][:]]
+        for name in ("x", "y", "z"):
+            if name in ds.variables:
+                result[name] = np.asarray(ds.variables[name][:], dtype=float).tolist()
+                result[f"{name}_units"] = str(getattr(ds.variables[name], "units", ""))
+                result[f"{name}_long_name"] = str(getattr(ds.variables[name], "long_name", ""))
+        result["z_reference"] = str(getattr(ds, "spritzmet_level_meters_kind", "height_above_ground"))
+        return result
 
 
 def _field_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

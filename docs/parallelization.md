@@ -216,7 +216,8 @@ rank-local source partition
 for each local source:
     initialize RNG with base_seed + source_index * 1000003
     compute particle count proportional to emission rate
-    transport particles with mean wind and stochastic spread
+    transport particles through sampled time,z,y,x SpritzMet wind substeps
+    apply stochastic horizontal and vertical spread
     apply finite source-size, flare uplift, loss/deposition terms
     accumulate local receptor hit masses
         │
@@ -292,6 +293,7 @@ The I/O contract is intentionally conservative.
 | Configuration JSON / `.inp` | User | All ranks | Small text inputs; read independently. |
 | SpritzMet meteorology NetCDF/JSON | Rank 0 | All ranks | Rank 0 writes, all ranks read after a barrier. |
 | Concentration NetCDF/CSV/legacy table | Rank 0 | User / SpritzPost | Rank 0 writes gathered results. |
+| CALPUFF-style concentration binary sidecar | Rank 0 | External comparison tools | Exported from the same gathered gridded rows as NetCDF-CF output. |
 | Post-processing JSON | Rank 0 | User | Produced after concentration output exists. |
 | Visualization figures | Serial scripts or rank 0 | User | Visualization is not currently MPI-parallel. |
 

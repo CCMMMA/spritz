@@ -9,13 +9,24 @@ The workflow is intentionally step-by-step:
 3. **Downscale wind.** Reuse use case 01 logic: SpritzWRF extracts WRF wind and SpritzMet downscales it to 100 m.
 4. **Build source terms.** Convert burning material, optional burning temperature, duration, source height, and area into a documented screening heat-release and PM emission estimate.
 5. **Generate receptors.** Create a circular receptor set around the fire location.
-6. **Run dispersion.** Execute Spritz with the configured Gaussian or particle backend.
-7. **Review outputs.** Inspect the generated configuration, concentration product, and postprocessing summary.
+6. **Run dispersion.** Execute both the particle and Gaussian backends against
+   the same high-resolution SpritzMet meteorology, or select one backend for a
+   shorter diagnostic run.
+7. **Review outputs.** Inspect time-dependent gridded concentration fields,
+   postprocessing summaries, backend-comparison metrics, horizontal maps, and
+   time-varying vertical wind-profile plots.
 
 NetCDF/time convention: WRF valid time is read only by SpritzWRF from WRF/CF
 metadata (`Times`, CF `time`, or explicit global time attributes). The workflow
 does not infer datetimes from WRF filenames; NetCDF meteorology and dispersion
 products follow strict CF time coordinates.
+
+Meteorology convention: Step 1 writes SpritzMet wind as
+`eastward_wind(time,z,y,x)` and `northward_wind(time,z,y,x)`, with the `z`
+coordinate in metres and a SpritzMet metadata attribute describing whether the
+levels are height above local ground or height above mean sea level. Step 3
+reuses this prepared file instead of rebuilding a one-time diagnostic
+meteorology grid.
 
 ## Data preparation
 
@@ -99,13 +110,33 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 
 ## Step 3: Run the model
 
+By default, step 3 looks for `wrf_100m_wind.nc` beside the configuration file,
+copies it into each backend output directory as `meteo.nc`, derives the
+concentration output interval from the NetCDF `time` axis, and enables gridded
+plume output with a near-surface field level.
+
 ```bash
 python usecases/02_wildfire_arson_effects/step_03_run_model.py \
   --config data/output/wildfire_case/wildfire_event.json \
-  --output-dir data/output/wildfire_case/model \
-  --backend particles \
-  --interchange netcdf
+  --output-dir data/output/wildfire_case/model_compare \
+  --backend both \
+  --interchange netcdf \
+  --calpuff-binary
 ```
+
+This writes separate backend products under:
+
+- `data/output/wildfire_case/model_compare/particles/`
+- `data/output/wildfire_case/model_compare/gaussian/`
+- `data/output/wildfire_case/model_compare/particle_gaussian_comparison.json`
+
+Use `--backend particles` or `--backend gaussian` to run only one backend. Use
+`--meteo path/to/wrf_100m_wind.nc` when the prepared SpritzMet product is not
+stored beside the configuration JSON. Use `--output-interval-s` to override the
+interval inferred from the meteo file. Use `--calpuff-binary` to write a
+clean-room CALPUFF-style concentration binary sidecar,
+`concentration_calpuff.dat`, for each backend. NetCDF-CF remains the canonical
+Sprtz interchange; the binary sidecar is for external comparison workflows.
 
 ## Step 4: Plot intermediate and final NetCDF maps
 
@@ -117,14 +148,19 @@ python tools/plotter.py data/output/wildfire_case/wrf_100m_wind.nc \
   --variable wind_speed \
   --output data/output/wildfire_case/wrf_100m_wind_map.png
 
-python tools/plotter.py data/output/wildfire_case/model/meteo.nc \
+python tools/plotter.py data/output/wildfire_case/model_compare/particles/meteo.nc \
   --variable wind_speed \
-  --output data/output/wildfire_case/model/meteo_map.png
+  --output data/output/wildfire_case/model_compare/particles/meteo_map.png
 
-python tools/plotter.py data/output/wildfire_case/model/concentration.nc \
-  --variable concentration \
-  --output data/output/wildfire_case/model/concentration_map.png
+python tools/plotter.py data/output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --time-index 1 \
+  --output data/output/wildfire_case/model_compare/particles/concentration_map.png
 ```
+
+The automatic plotting step also writes `meteo_vertical_profiles.png` for each
+backend. The profile figure contains a center-cell time-height wind-speed panel
+and sampled vertical profile curves through the WRF/SpritzMet time axis.
 
 ## Event timing, materials, and source height
 
@@ -147,6 +183,15 @@ washout settings are written under `run`. The WRF-derived center-cell
 `precipitation_rate` is preserved in the generated station record and in
 `run.default_precipitation_rate` so the suite run can apply washout without
 requiring a separate meteorology file.
+
+Step 2 also writes time-dependent plume defaults under `run`:
+
+- `output_interval_s`: hourly output by default, overridden in step 3 when a
+  different interval is inferred or supplied;
+- `concentration_output`: `both`, so receptor values and gridded plume fields
+  are written together;
+- `field_z_levels`: `[1.5]`, a near-surface concentration field in metres above
+  local ground.
 
 ## Multi-fire event JSON
 
@@ -175,17 +220,41 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 - `CALMET.DAT` — CALMET.DAT-compatible binary SpritzMet export for
   model-evaluation workflows.
 - `wildfire_event.json` — the generated Spritz configuration.
-- `model/meteo.*` — suite meteorology exchange file.
-- `model/concentration.*` — dispersion output.
-- `model/post.json` — postprocessed statistics.
-- `wrf_100m_wind_map.png` and `model_*_map.png` — plotter maps for NetCDF
-  intermediate and final products when plotting dependencies are available.
+- `model_compare/particles/meteo.nc` — the particle backend copy of the
+  high-resolution SpritzMet forcing.
+- `model_compare/particles/concentration.nc` — particle receptor and
+  `concentration_field(time,field_z,field_y,field_x)` output.
+- `model_compare/particles/concentration_calpuff.dat` — clean-room
+  CALPUFF-style binary export of the same particle gridded concentration,
+  dry-flux, and wet-flux fields when `--calpuff-binary` is used.
+- `model_compare/particles/post.json` — particle postprocessed statistics.
+- `model_compare/gaussian/meteo.nc` — the Gaussian backend copy of the same
+  SpritzMet forcing.
+- `model_compare/gaussian/concentration.nc` — Gaussian receptor and
+  `concentration_field(time,field_z,field_y,field_x)` output.
+- `model_compare/gaussian/concentration_calpuff.dat` — clean-room
+  CALPUFF-style binary export of the same Gaussian gridded concentration,
+  dry-flux, and wet-flux fields when `--calpuff-binary` is used.
+- `model_compare/gaussian/post.json` — Gaussian postprocessed statistics.
+- `model_compare/particle_gaussian_comparison.json` — common-grid comparison
+  metrics, including min/max, mean absolute difference, RMS difference, and max
+  absolute difference.
+- `wrf_100m_wind_map.png` — horizontal wind map for the prepared forcing.
+- `model_compare/*/meteo_map.png` — backend meteo map.
+- `model_compare/*/meteo_vertical_profiles.png` — time-varying vertical wind
+  profile figure.
+- `model_compare/*/concentration_map.png` — gridded plume map for a nonzero
+  output time.
 
-The `--backend` choice is stored in `wildfire_event.json` under `run.backend`.
-Change that JSON key, or pass `--backend` when rerunning `sprtz run`, to compare
-Gaussian and particle behavior. For gridded 3D output, add
-`"concentration_output": "grid"` and `"field_z_levels": [...]` to the same
-`run` block.
+The particle backend now advects particles through the full
+`time,z,y,x` SpritzMet wind cube. The Gaussian backend samples the same
+time-varying wind field along each source/receptor path and treats the active
+wildfire as a continuous output-window source. The two backends are screening
+models with different numerical assumptions, so compare their spatial patterns
+and timing as well as the summary metrics. Step 3 checks that particle and
+Gaussian `time`, `field_z`, `field_y`, and `field_x` coordinates match before
+writing the comparison report, so horizontal and vertical output grids stay
+consistent across both modes.
 
 ## Scientific caution
 

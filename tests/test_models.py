@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from sprtz.config import from_mapping, load_config
-from sprtz.models import spritzmet, spritzpost, spritz, ctgproc, spritzwrf
+from sprtz.models import spritzmet, spritzpost, spritz, particles, ctgproc, spritzwrf
+from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.jsonio import read_json
 from sprtz.io.netcdf_cf import available as netcdf_available, read_cf_concentration
 
@@ -104,6 +105,107 @@ def test_spritz_can_write_3d_concentration_field(tmp_path):
         assert data["field"]["z"] == [0.0, 25.0]
         assert len(data["field"]["concentration"][0][0]) == cfg.grid.ny
         assert len(data["field"]["concentration"][0][0][0]) == cfg.grid.nx
+
+
+def test_calpuff_style_concentration_binary_records(tmp_path: Path) -> None:
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "receptors": [],
+            "run": {
+                **base.raw["run"],
+                "concentration_output": "grid",
+                "field_z_levels": [0.0, 25.0],
+            },
+        }
+    )
+    rows = spritz.compute_concentrations(
+        cfg,
+        {
+            "u": [[2.0]],
+            "v": [[0.0]],
+            "temperature": [[293.15]],
+            "mixing_height": [[1000.0]],
+            "precipitation_rate": [[0.0]],
+        },
+    )
+    out = tmp_path / "concentration.calpuff"
+
+    assert write_calpuff_concentration_dat(out, rows) == "CALPUFF.CONC"
+
+    records = _fortran_records(out)
+    assert records[0][:80].rstrip() == b"CALPUFF.CONC"
+    assert struct.unpack(">6i", records[1]) == (1, cfg.grid.nx, cfg.grid.ny, 2, 1, 3)
+    assert "CONCENTRATION_G_M3" in records[7].decode("ascii")
+
+
+def test_particles_emit_time_dependent_grid_field():
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "grid": {
+                **base.raw["grid"],
+                "nx": 5,
+                "ny": 5,
+                "dx": 500.0,
+                "dy": 500.0,
+                "x0": -1000.0,
+                "y0": -1000.0,
+            },
+            "receptors": [],
+            "run": {
+                **base.raw["run"],
+                "output_interval_s": 600.0,
+                "output_duration_s": 1200.0,
+                "concentration_output": "grid",
+                "field_z_levels": [0.0],
+                "particles": 300,
+                "particle_duration_s": 1200.0,
+            },
+        }
+    )
+    meteo = {
+        "u": [[2.0]],
+        "v": [[0.0]],
+        "temperature": [[293.15]],
+        "mixing_height": [[1000.0]],
+        "precipitation_rate": [[0.0]],
+    }
+    rows = particles.simulate_particles(cfg, meteo)
+    assert sorted({row["time"] for row in rows}) == [600.0, 1200.0]
+    assert len(rows) == 2 * cfg.grid.nx * cfg.grid.ny
+    first = [row["concentration"] for row in rows if row["time"] == 600.0]
+    second = [row["concentration"] for row in rows if row["time"] == 1200.0]
+    assert max(second) > 0.0
+    assert first != second
+
+
+def test_wind_sampler_interpolates_time_space_and_height():
+    meteo = {
+        "time": [0.0, 10.0],
+        "z": [0.0, 100.0],
+        "y": [0.0, 100.0],
+        "x": [0.0, 100.0],
+        "u": np.zeros((2, 2, 2, 2), dtype=float).tolist(),
+        "v": np.zeros((2, 2, 2, 2), dtype=float).tolist(),
+    }
+    u = np.asarray(meteo["u"], dtype=float)
+    v = np.asarray(meteo["v"], dtype=float)
+    for it, time_value in enumerate(meteo["time"]):
+        for iz, z_value in enumerate(meteo["z"]):
+            for iy, y_value in enumerate(meteo["y"]):
+                for ix, x_value in enumerate(meteo["x"]):
+                    u[it, iz, iy, ix] = time_value + 0.01 * z_value + 0.001 * y_value + 0.0001 * x_value
+                    v[it, iz, iy, ix] = -u[it, iz, iy, ix]
+    meteo["u"] = u.tolist()
+    meteo["v"] = v.tolist()
+
+    sampler = spritz.WindSampler(meteo)
+    sampled_u, sampled_v = sampler.sample(50.0, 50.0, 50.0, 5.0)
+    assert float(sampled_u) == pytest.approx(5.555)
+    assert float(sampled_v) == pytest.approx(-5.555)
 
 
 def test_precipitation_washout_reduces_concentration():

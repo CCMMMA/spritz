@@ -1,6 +1,6 @@
 # Publishing-quality visualization
 
-`sprtz.models.visualization` provides figure generation for suite outputs. The production scatter plot supports local x/y or WGS84 longitude/latitude coordinates, labelled axes, colorbars, high-DPI output, CSV/JSON/NetCDF-CF concentration inputs, optional local raster basemaps, and explicit opt-in web tile basemaps. For NetCDF files that also contain `concentration_field(time, field_z, field_y, field_x)`, the current plotter reads the receptor-table view.
+`sprtz.models.visualization` provides figure generation for suite outputs. The production scatter plot supports local x/y or WGS84 longitude/latitude coordinates, labelled axes, colorbars, high-DPI output, CSV/JSON/NetCDF-CF concentration inputs, optional local raster basemaps, and explicit opt-in web tile basemaps. For NetCDF concentration files that contain `concentration_field(time, field_z, field_y, field_x)`, `tools/plotter.py` can render the gridded field directly with `--variable concentration_field`.
 
 Install visualization dependencies:
 
@@ -47,3 +47,8 @@ Network map tiles are never fetched implicitly. To use a `contextily` provider,
 pass both `--tile-provider` and `--allow-network-basemap`.
 
 The module imports Matplotlib lazily, so compute-only deployments do not need plotting dependencies.
+
+Use-case workflow plotting also writes `meteo_vertical_profiles.png` for
+SpritzMet NetCDF products. The profile figure combines a time-height wind-speed
+section and sampled center-cell vertical profiles, using the same `time,z,y,x`
+wind cube consumed by the Gaussian and particle dispersion backends.

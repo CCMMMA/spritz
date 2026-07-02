@@ -15,9 +15,10 @@ For lightweight tests or classroom demonstrations without WRF data, each relevan
 
 High-resolution WRF/SpritzMet preparation workflows can also save a
 `CALMET.DAT`-compatible binary export for model evaluation. Use case 01 exposes
-this with `--calmet-dat`; use case 02 writes `CALMET.DAT` into its output
-directory by default and supports `--no-calmet-dat` when only Spritz-native
-NetCDF-CF/JSON products are needed.
+this with `--calmet-dat`. Use case 02 reuses the prepared SpritzMet NetCDF
+meteorology for both particle and Gaussian dispersion, and can write
+clean-room CALPUFF-style concentration binary sidecars with `--calpuff-binary`
+when external comparison workflows need a binary concentration grid.
 
 Script-facing date-time values use compact UTC `YYYYMMDDZhhmm` format, for
 example `20260601Z0000`. Internal JSON configuration files may still contain
@@ -68,7 +69,7 @@ optional dependency notes.
 ## Use-case sequence
 
 1. `01_high_resolution_wind_field` — download or read WRF 1 km data, extract near-surface wind with SpritzWRF, and downscale it to a 100 m SpritzMet grid using both DEM and land cover when supplied.
-2. `02_wildfire_arson_effects` — build single- or multi-fire arson/wildfire source scenarios using DEM/LC-aware WRF/SpritzMet wind and precipitation, material presets, source heights, time windows, firefighter actions, and Spritz dispersion.
+2. `02_wildfire_arson_effects` — build single- or multi-fire arson/wildfire source scenarios using DEM/LC-aware WRF/SpritzMet wind and precipitation, material presets, source heights, time windows, firefighter actions, side-by-side particle/Gaussian Spritz dispersion, comparison metrics, vertical profile plots, and optional CALPUFF-style concentration binary sidecars.
 3. `03_satellite_ai_evaluation` — compare model output with a satellite-derived mask and compute deterministic skill metrics plus a lightweight AI calibration diagnostic.
 4. `04_production_incidents` — build catalog-driven production-style incident cases with receptor latitude/longitude and geographic maps.
 5. `05_sailing_wind_forecast` — build a high-resolution space-height-time wind forecast product for professional sailing race planning.

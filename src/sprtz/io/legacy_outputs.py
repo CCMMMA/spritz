@@ -16,6 +16,8 @@ def infer_format(path: str | Path, default: str = "auto") -> str:
         return "json"
     if suffix in {".csv"}:
         return "csv"
+    if suffix in {".calpuff", ".puff", ".bin"}:
+        return "calpuff"
     return "legacy"
 
 

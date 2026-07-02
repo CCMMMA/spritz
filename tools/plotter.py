@@ -302,6 +302,24 @@ def _coordinate_mesh(
         if lat.shape == shape and lon.shape == shape:
             return lon, lat, True
 
+    for x_name, y_name in (("field_x", "field_y"), ("x", "y"), ("lon", "lat")):
+        if x_name in ds.variables and y_name in ds.variables:
+            x = _select_1d_or_2d(_variable_array(ds.variables[x_name]), time_index=time_index)
+            y = _select_1d_or_2d(_variable_array(ds.variables[y_name]), time_index=time_index)
+            if x.ndim == y.ndim == 1 and x.size == shape[1] and y.size == shape[0]:
+                x_grid, y_grid = np.meshgrid(x, y)
+                if x_name == "lon" and y_name == "lat":
+                    return x_grid, y_grid, True
+                if center_lat is not None and center_lon is not None:
+                    return _local_to_lat_lon(x_grid, y_grid, center_lat=center_lat, center_lon=center_lon)
+                return x_grid, y_grid, False
+            if x.shape == y.shape == shape:
+                if x_name == "lon" and y_name == "lat":
+                    return x, y, True
+                if center_lat is not None and center_lon is not None:
+                    return _local_to_lat_lon(x, y, center_lat=center_lat, center_lon=center_lon)
+                return x, y, False
+
     x_var = _find_variable(ds, X_NAMES)
     y_var = _find_variable(ds, Y_NAMES)
     if x_var is not None and y_var is not None:
@@ -310,8 +328,10 @@ def _coordinate_mesh(
         if x.ndim == y.ndim == 1:
             if x.size == y.size == shape[0] * shape[1]:
                 x_grid, y_grid = x.reshape(shape), y.reshape(shape)
-            else:
+            elif x.size == shape[1] and y.size == shape[0]:
                 x_grid, y_grid = np.meshgrid(x, y)
+            else:
+                x_grid, y_grid = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
         elif x.shape == y.shape == shape:
             x_grid, y_grid = x, y
         else:

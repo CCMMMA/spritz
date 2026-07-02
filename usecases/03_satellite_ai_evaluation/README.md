@@ -38,9 +38,11 @@ uses both terrain and land cover for wind and precipitation downscaling. The
 same rasters can also feed `sprtz-terrain fetch` when the evaluated scenario
 includes standalone terrain/GEO products.
 
-Use case 02 writes `CALMET.DAT` next to the WRF-derived SpritzMet forcing by
-default. Keep that binary artifact with the evaluated concentration output when
-comparing Spritz results against external model-evaluation tools.
+Use case 02 can write particle and Gaussian outputs under `model_compare/`.
+Choose the backend concentration file that matches the satellite product being
+evaluated. When `--calpuff-binary` is used upstream, keep the
+`concentration_calpuff.dat` sidecar with the NetCDF-CF concentration output for
+external binary-comparison workflows.
 
 ## Create a tiny demo mask
 
@@ -52,7 +54,7 @@ python usecases/03_satellite_ai_evaluation/step_01_make_demo_mask.py output/demo
 
 ```bash
 python usecases/03_satellite_ai_evaluation/step_02_evaluate.py \
-  --concentration output/wildfire_case/model/concentration.nc \
+  --concentration output/wildfire_case/model_compare/particles/concentration.nc \
   --satellite-mask output/demo_mask.json \
   --output output/wildfire_case/evaluation.json \
   --threshold 0.5
@@ -64,9 +66,10 @@ The evaluation step calls `tools/plotter.py` for NetCDF concentration inputs.
 To regenerate the evaluated concentration map explicitly, run:
 
 ```bash
-python tools/plotter.py output/wildfire_case/model/concentration.nc \
-  --variable concentration \
-  --output output/wildfire_case/model/concentration_map.png
+python tools/plotter.py output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --time-index 1 \
+  --output output/wildfire_case/model_compare/particles/concentration_map.png
 ```
 
 ## Metrics reported

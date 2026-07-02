@@ -84,9 +84,10 @@ and `backend = particles` for the Lagrangian particle backend. Use
 `numerical_mode = plume` to reproduce the older steady Gaussian screening pathway.
 Omit `output_interval_s` to keep the legacy single output at `time=0`. When it
 is set, Spritz emits concentration/deposition rows at that interval, independent
-of the meteorological input cadence. Puff-mode time-resolved output advects the
-representative puff center with the mean wind; plume mode remains steady at each
-requested output time.
+of the meteorological input cadence. Puff-mode time-resolved output samples the
+SpritzMet `time,z,y,x` wind cube along each source/receptor path and treats
+active wildfire sources as continuous output-window emissions; plume mode
+remains steady at each requested output time.
 
 When weather start/end datetimes are supplied, `output_interval_s` defaults to
 covering the weather period. Output rows carry absolute `datetime` values. The
@@ -151,6 +152,12 @@ wind and precipitation adjustments.
 - `grid` samples every model-grid cell at every `field_z_levels` height and
   writes `concentration_field(time, field_z, field_y, field_x)` in NetCDF-CF.
 - `both` keeps named receptors and also writes the model-grid field.
+
+Gaussian and particle grid outputs share the same `time`, `field_z`, `field_y`,
+and `field_x` coordinate contract. The use case 02 comparison workflow checks
+those coordinates before comparing backend values. Complete gridded rows can
+also be exported as a clean-room CALPUFF-style concentration binary with
+`spritz --format calpuff` or use case 02 `--calpuff-binary`.
 
 ## Scientific scope
 

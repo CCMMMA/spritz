@@ -82,3 +82,32 @@ def test_spritz_command_uses_json_backend(tmp_path):
     )
     rows = list(__import__("csv").DictReader(concentration_path.open()))
     assert rows[0]["output_kind"] == "receptor"
+
+
+def test_spritz_command_writes_calpuff_style_binary(tmp_path):
+    data = read_json("examples/minimal.json")
+    data["receptors"] = []
+    data["run"]["concentration_output"] = "grid"
+    data["run"]["field_z_levels"] = [0.0]
+    config_path = tmp_path / "grid.json"
+    meteo_path = tmp_path / "meteo.json"
+    concentration_path = tmp_path / "concentration.calpuff"
+    write_json(config_path, data)
+
+    assert spritzmet_main(["--config", str(config_path), "--output", str(meteo_path), "--format", "json"]) == 0
+    assert (
+        spritz_main(
+            [
+                "--config",
+                str(config_path),
+                "--meteo",
+                str(meteo_path),
+                "--output",
+                str(concentration_path),
+                "--format",
+                "calpuff",
+            ]
+        )
+        == 0
+    )
+    assert concentration_path.read_bytes()[4:16].rstrip() == b"CALPUFF.CONC"

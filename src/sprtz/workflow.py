@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 from dataclasses import replace
 
 from .config import configured_backend, from_mapping, load_config
+from .io.calpuff import write_calpuff_concentration_dat
 from .io.jsonio import write_json
 from .models import spritzmet, spritzpost, spritz, particles
 from .parallel import get_mpi_context
@@ -22,6 +24,8 @@ def run_workflow(
     auto_terrain: bool = False,
     allow_terrain_network: bool = False,
     output_interval_s: float | None = None,
+    meteo_input: str | Path | None = None,
+    calpuff_binary: bool = False,
 ) -> dict[str, Any]:
     ctx = get_mpi_context(parallel)
     out = Path(output_dir)
@@ -86,13 +90,22 @@ def run_workflow(
     meteo_path = out / ("meteo.nc" if use_netcdf else "meteo.json")
     conc_path = out / ("concentration.nc" if use_netcdf else "concentration.csv")
     post_path = out / "post.json"
-    meteo = spritzmet.run(
-        config,
-        meteo_path,
-        "netcdf" if use_netcdf else "json",
-        parallel=parallel,
-        gpu_backend=gpu_backend,
-    )
+    if meteo_input is None:
+        meteo = spritzmet.run(
+            config,
+            meteo_path,
+            "netcdf" if use_netcdf else "json",
+            parallel=parallel,
+            gpu_backend=gpu_backend,
+        )
+    else:
+        source_meteo_path = Path(meteo_input)
+        if not source_meteo_path.exists():
+            raise FileNotFoundError(f"meteorology input not found: {source_meteo_path}")
+        if ctx.is_root:
+            if source_meteo_path.resolve() != meteo_path.resolve():
+                shutil.copy2(source_meteo_path, meteo_path)
+        meteo = {"component": "spritzmet.external_meteorology", "source": str(source_meteo_path)}
     ctx.barrier()
     if model_backend == "particles":
         conc = particles.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel, gpu_backend=gpu_backend)
@@ -103,6 +116,9 @@ def run_workflow(
     else:
         raise ValueError("backend must be gaussian or particles")
     if ctx.is_root:
+        calpuff_path = out / "concentration_calpuff.dat"
+        if calpuff_binary:
+            write_calpuff_concentration_dat(calpuff_path, conc)
         post = spritzpost.run(conc_path, post_path, threshold=config.run.get("threshold", config.run.get("THRESHOLD")))
     else:
         post = {"component": "spritzpost"}
@@ -124,6 +140,10 @@ def run_workflow(
         result["terrain_cache_key"] = terrain_result["cache_key"]
     if output_interval_s is not None:
         result["output_interval_s"] = float(output_interval_s)
+    if meteo_input is not None:
+        result["meteo_input"] = str(meteo_input)
+    if calpuff_binary:
+        result["calpuff_concentration"] = str(out / "concentration_calpuff.dat")
     return ctx.bcast(result, root=0)
 
 

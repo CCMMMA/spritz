@@ -32,7 +32,7 @@ assumptions, event start/end datetimes, and any firefighter-action period.
 
 ## Parallel production execution
 
-The suite supports optional MPI execution with `mpi4py` for the Gaussian and particle concentration backends. Serial execution remains the default. In MPI workflows, shared output files are written by rank 0 after deterministic gathers, preventing concurrent writes to CSV, JSON, legacy text, or NetCDF-CF files.
+The suite supports optional MPI execution with `mpi4py` for the Gaussian and particle concentration backends. Serial execution remains the default. In MPI workflows, shared output files are written by rank 0 after deterministic gathers, preventing concurrent writes to CSV, JSON, legacy text, NetCDF-CF files, or clean-room CALPUFF-style binary sidecars.
 
 ## Runtime diagnostics
 
