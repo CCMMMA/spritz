@@ -23,6 +23,10 @@ from plotting import plot_netcdf_if_available, plot_workflow_netcdfs
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_WILDFIRE_FIELD_Z_LEVELS = [1.5, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 1500.0, 2000.0]
+DEFAULT_WILDFIRE_PARTICLE_COUNT = 10000
+DEFAULT_WILDFIRE_PARTICLE_SIGMA_H_M = 175.0
+DEFAULT_WILDFIRE_PARTICLE_SIGMA_Z_M = 150.0
+DEFAULT_WILDFIRE_PARTICLE_ADVECTION_STEPS = 12
 
 
 def _center_value(values: Any, *, level_index: int = 0) -> float:
@@ -415,6 +419,11 @@ def build_wildfire_config(
             "event_type": "wildfire_or_arson",
             "wind_u_m_s": station_speed * math.cos(theta),
             "wind_v_m_s": station_speed * math.sin(theta),
+            "particles": DEFAULT_WILDFIRE_PARTICLE_COUNT,
+            "particle_duration_s": 3600.0,
+            "particle_sigma_h": DEFAULT_WILDFIRE_PARTICLE_SIGMA_H_M,
+            "particle_sigma_z": DEFAULT_WILDFIRE_PARTICLE_SIGMA_Z_M,
+            "particle_advection_steps": DEFAULT_WILDFIRE_PARTICLE_ADVECTION_STEPS,
         },
     }
     from_mapping(config).validate()

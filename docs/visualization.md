@@ -55,3 +55,9 @@ wind cube consumed by the Gaussian and particle dispersion backends. When
 diagnostic `U10M/V10M` is available and the first physical model level is
 aloft, the plot prepends the diagnostic 10 m above-ground layer so the
 near-surface profile matches dispersion sampling.
+
+Use `tools/profiler.py` to create the same style of vertical profile figure from
+any compatible Sprtz NetCDF product. It supports meteo wind profiles and plume
+concentration profiles, uses `--x`/`--y` to select the sampled local grid
+column, and supports `--animate` for simulation-long profile GIFs. Use
+`tools/plotter.py --animate` for simulation-long map GIFs.

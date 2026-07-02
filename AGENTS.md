@@ -88,6 +88,7 @@ mpiexec -n 2 python -m sprtz run examples/minimal.json --output-dir /tmp/sprtz_s
 - Keep optional dependencies optional and import them lazily.
 - Keep CLI behavior deterministic and suitable for batch/HPC runs.
 - Use the standard `logging` module for all operational, diagnostic, and user-facing runtime messages; do not use `print()` in package modules, scripts, or use-case programs.
+- Ensure logs include an absolute timestamp or elapsed-time reference so wall-clock performance can be evaluated from runtime logs.
 - Use unit tests for new behavior and bug fixes. Keep tests deterministic and
   focused on public behavior, numerical invariants, parsing, validation, and
   fallback paths.

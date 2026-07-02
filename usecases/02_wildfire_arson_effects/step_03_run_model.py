@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 from sprtz.workflow import run_workflow
@@ -13,8 +14,15 @@ from sprtz.logging import configure_logging
 USECASES_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(USECASES_ROOT))
 
-from plotting import plot_workflow_netcdfs
-from wildfire import DEFAULT_WILDFIRE_FIELD_Z_LEVELS, ensure_wildfire_receptor_coordinates
+from plotting import plot_concentration_vertical_profiles_if_available, plot_workflow_netcdfs
+from wildfire import (
+    DEFAULT_WILDFIRE_FIELD_Z_LEVELS,
+    DEFAULT_WILDFIRE_PARTICLE_ADVECTION_STEPS,
+    DEFAULT_WILDFIRE_PARTICLE_COUNT,
+    DEFAULT_WILDFIRE_PARTICLE_SIGMA_H_M,
+    DEFAULT_WILDFIRE_PARTICLE_SIGMA_Z_M,
+    ensure_wildfire_receptor_coordinates,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -58,6 +66,25 @@ def _ensure_time_dependent_plume_config(config_path: str | Path, meteo_path: str
     if "field_z_levels" not in run:
         run["field_z_levels"] = list(DEFAULT_WILDFIRE_FIELD_Z_LEVELS)
         changed = True
+    else:
+        try:
+            max_field_z = max(float(value) for value in run["field_z_levels"])
+        except (TypeError, ValueError):
+            max_field_z = 0.0
+        if max_field_z < 1000.0:
+            run["field_z_levels"] = list(DEFAULT_WILDFIRE_FIELD_Z_LEVELS)
+            changed = True
+    particle_defaults = {
+        "particles": DEFAULT_WILDFIRE_PARTICLE_COUNT,
+        "particle_duration_s": 3600.0,
+        "particle_sigma_h": DEFAULT_WILDFIRE_PARTICLE_SIGMA_H_M,
+        "particle_sigma_z": DEFAULT_WILDFIRE_PARTICLE_SIGMA_Z_M,
+        "particle_advection_steps": DEFAULT_WILDFIRE_PARTICLE_ADVECTION_STEPS,
+    }
+    for key, value in particle_defaults.items():
+        if key not in run:
+            run[key] = value
+            changed = True
     if changed:
         config = {**config, "run": run}
         write_json(config_path, config)
@@ -103,6 +130,92 @@ def _compare_concentration_outputs(particle_path: str | Path, gaussian_path: str
     return report
 
 
+def _concentration_output_times(concentration_path: str | Path) -> list[float]:
+    try:
+        from netCDF4 import Dataset  # type: ignore
+    except Exception:
+        return []
+    path = Path(concentration_path)
+    if path.suffix.lower() != ".nc" or not path.exists():
+        return []
+    with Dataset(path) as ds:
+        if "time" not in ds.variables:
+            return []
+        return [float(value) for value in ds.variables["time"][:]]
+
+
+def _log_backend_hourly_performance(
+    *,
+    backend: str,
+    workflow: dict,
+    elapsed_s: float,
+    output_interval_s: float | None,
+) -> None:
+    concentration = workflow.get("concentration")
+    output_times = _concentration_output_times(concentration) if concentration else []
+    interval_s = float(output_interval_s or workflow.get("output_interval_s") or 3600.0)
+    simulated_hours = max(len(output_times) * interval_s / 3600.0, 1.0)
+    seconds_per_hour = elapsed_s / simulated_hours
+    LOGGER.info(
+        "step 3/3 performance: backend=%s elapsed_s=%.3f simulated_hours=%.3f seconds_per_simulated_hour=%.3f",
+        backend,
+        elapsed_s,
+        simulated_hours,
+        seconds_per_hour,
+    )
+    if output_times:
+        cumulative_simulated_hours = 0.0
+        for index, output_time_s in enumerate(output_times, start=1):
+            cumulative_simulated_hours += interval_s / 3600.0
+            LOGGER.info(
+                "step 3/3 progress: backend=%s computed_hour=%d output_time_s=%.0f cumulative_simulated_hours=%.3f estimated_seconds_for_hour=%.3f",
+                backend,
+                index,
+                output_time_s,
+                cumulative_simulated_hours,
+                seconds_per_hour,
+            )
+    else:
+        LOGGER.info(
+            "step 3/3 progress: backend=%s computed_hour=1 output_time_s=unknown cumulative_simulated_hours=%.3f estimated_seconds_for_hour=%.3f",
+            backend,
+            simulated_hours,
+            seconds_per_hour,
+        )
+
+
+def _run_workflow_with_performance_log(
+    *,
+    config_path: str | Path,
+    output_dir: str | Path,
+    backend: str,
+    interchange: str,
+    output_interval_s: float | None,
+    meteo_input: Path | None,
+    calpuff_binary: bool,
+) -> dict:
+    LOGGER.info("step 3/3 workflow: running Sprtz workflow backend=%s", backend)
+    started = time.perf_counter()
+    workflow = run_workflow(
+        config_path,
+        output_dir,
+        backend=backend,
+        interchange=interchange,
+        parallel="serial",
+        output_interval_s=output_interval_s,
+        meteo_input=meteo_input,
+        calpuff_binary=calpuff_binary,
+    )
+    elapsed_s = time.perf_counter() - started
+    _log_backend_hourly_performance(
+        backend=backend,
+        workflow=workflow,
+        elapsed_s=elapsed_s,
+        output_interval_s=output_interval_s,
+    )
+    return workflow
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run Spritz for a prepared wildfire/arson configuration")
     parser.add_argument("--config", required=True)
@@ -112,8 +225,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--meteo", default=None, help="prepared meteorology file; defaults to wrf_100m_wind.nc beside the config")
     parser.add_argument("--output-interval-s", type=float, default=None, help="concentration output interval in seconds")
     parser.add_argument("--calpuff-binary", action="store_true", help="write clean-room CALPUFF-style binary concentration sidecars")
+    parser.add_argument("--overlay-plume-wind", action="store_true", help="overlay unit-length meteo wind vectors on concentration plume maps")
+    parser.add_argument("--plume-wind-level-index", type=int, default=0, help="meteo z-level index used for plume-map wind-vector overlays")
     parser.add_argument("--verbose", action="store_true", help="enable debug logging")
     args = parser.parse_args(argv)
+    if args.plume_wind_level_index < 0:
+        parser.error("--plume-wind-level-index must be non-negative")
     configure_logging(args.verbose)
     LOGGER.info("step 3/3 input: config=%s output_dir=%s", args.config, args.output_dir)
     LOGGER.info("step 3/3 model: backend=%s interchange=%s parallel=serial", args.backend, args.interchange)
@@ -138,13 +255,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.backend == "both":
         for backend in ("particles", "gaussian"):
             backend_dir = Path(args.output_dir) / backend
-            LOGGER.info("step 3/3 workflow: running Sprtz workflow backend=%s", backend)
-            workflows[backend] = run_workflow(
-                args.config,
-                backend_dir,
+            workflows[backend] = _run_workflow_with_performance_log(
+                config_path=args.config,
+                output_dir=backend_dir,
                 backend=backend,
                 interchange=args.interchange,
-                parallel="serial",
                 output_interval_s=output_interval_s,
                 meteo_input=meteo_input,
                 calpuff_binary=args.calpuff_binary,
@@ -165,16 +280,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         LOGGER.info("step 3/3 comparison: wrote %s metrics=%s", comparison_path, comparison)
     else:
-        LOGGER.info("step 3/3 workflow: running Sprtz workflow backend=%s", args.backend)
-        workflow = run_workflow(
-            args.config,
-            args.output_dir,
+        workflow = _run_workflow_with_performance_log(
+            config_path=args.config,
+            output_dir=args.output_dir,
             backend=args.backend,
             interchange=args.interchange,
-            parallel="serial",
-                output_interval_s=output_interval_s,
-                meteo_input=meteo_input,
-                calpuff_binary=args.calpuff_binary,
+            output_interval_s=output_interval_s,
+            meteo_input=meteo_input,
+            calpuff_binary=args.calpuff_binary,
         )
         workflows[args.backend] = workflow
         LOGGER.info("step 3/3 workflow: wrote meteo=%s concentration=%s post=%s", workflow.get("meteo"), workflow.get("concentration"), workflow.get("post"))
@@ -189,9 +302,17 @@ def main(argv: list[str] | None = None) -> int:
                     backend_output_dir,
                     center_lat=None if center_lat is None else float(center_lat),
                     center_lon=None if center_lon is None else float(center_lon),
+                    overlay_plume_wind_vectors=args.overlay_plume_wind,
+                    plume_wind_level_index=args.plume_wind_level_index,
                 ).items()
             }
         )
+        plume_profile = plot_concentration_vertical_profiles_if_available(
+            backend_workflow.get("concentration"),
+            backend_output_dir / f"{backend}_concentration_vertical_profiles.png",
+        )
+        if plume_profile is not None:
+            plots[f"{backend}_plume_vertical_profiles"] = str(plume_profile)
     if plots:
         LOGGER.info("step 3/3 plotting: wrote %s", plots)
     else:

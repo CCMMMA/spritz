@@ -12,11 +12,14 @@ import argparse
 import logging
 import math
 import ast
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
 import numpy as np
+
+from sprtz.logging import LOG_DATE_FORMAT, LOG_FORMAT_VERBOSE
 
 LOGGER = logging.getLogger("sprtz.plotter")
 
@@ -347,6 +350,16 @@ def _coordinate_mesh(
 def _wind_from_speed_direction(speed: np.ndarray, direction_from_deg: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     theta = np.deg2rad(270.0 - direction_from_deg)
     return speed * np.cos(theta), speed * np.sin(theta)
+
+
+def _unit_vector_components(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    u_arr = np.asarray(u, dtype=float)
+    v_arr = np.asarray(v, dtype=float)
+    magnitude = np.hypot(u_arr, v_arr)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        unit_u = np.divide(u_arr, magnitude, out=np.zeros_like(u_arr), where=magnitude > 0.0)
+        unit_v = np.divide(v_arr, magnitude, out=np.zeros_like(v_arr), where=magnitude > 0.0)
+    return unit_u, unit_v
 
 
 def _read_vectors(ds: Any, shape: tuple[int, int], *, time_index: int, level_index: int) -> VectorField | None:
@@ -857,11 +870,12 @@ def plot_map(
         }
         if transform is not None:
             vector_kwargs["transform"] = transform
+        vector_u, vector_v = _unit_vector_components(field.vectors.u, field.vectors.v)
         ax.quiver(
             field.x[::stride, ::stride],
             field.y[::stride, ::stride],
-            field.vectors.u[::stride, ::stride],
-            field.vectors.v[::stride, ::stride],
+            vector_u[::stride, ::stride],
+            vector_v[::stride, ::stride],
             **vector_kwargs,
         )
 
@@ -903,6 +917,104 @@ def plot_map(
     return out
 
 
+def _animation_time_indexes(input_path: str | Path, variable_name: str | None) -> list[int]:
+    Dataset = _load_netcdf4()
+    with Dataset(input_path) as ds:
+        variable = _find_variable(ds, (variable_name,)) if variable_name else None
+        if variable is None:
+            candidates = _candidate_variables(ds)
+            if not candidates:
+                return [0]
+            variable = ds.variables[candidates[0]]
+        dims = tuple(str(dim).lower() for dim in getattr(variable, "dimensions", ()))
+        shape = tuple(int(size) for size in getattr(variable, "shape", ()))
+        for axis, dim in enumerate(dims):
+            if any(token in dim for token in TIME_DIMENSION_TOKENS):
+                return list(range(max(1, shape[axis])))
+        return [0]
+
+
+def _write_gif(frame_paths: Sequence[Path], output_path: str | Path, *, duration_ms: int, loop: int) -> Path:
+    if not frame_paths:
+        raise ValueError("animation requires at least one frame")
+    try:
+        from PIL import Image
+    except Exception as exc:  # pragma: no cover - depends on optional extra
+        raise RuntimeError("Pillow is required to write animated GIFs; install matplotlib with Pillow support") from exc
+    frames = [Image.open(path).convert("P", palette=Image.ADAPTIVE) for path in frame_paths]
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    first, rest = frames[0], frames[1:]
+    first.save(
+        out,
+        save_all=True,
+        append_images=rest,
+        duration=max(1, int(duration_ms)),
+        loop=max(0, int(loop)),
+        optimize=False,
+    )
+    for frame in frames:
+        frame.close()
+    return out
+
+
+def plot_animation(
+    input_path: str | Path,
+    output_path: str | Path,
+    *,
+    variable_name: str | None,
+    level_index: int,
+    center_lat: float | None,
+    center_lon: float | None,
+    title: str | None,
+    dpi: int,
+    cmap: str,
+    coastline_source: str,
+    coastline_resolution: str,
+    allow_cartopy_download: bool,
+    figure_size: tuple[float, float],
+    log_scale: bool,
+    vector_overlay: bool,
+    vector_stride: int,
+    vector_density: int | None,
+    vector_scale: float | None,
+    duration_ms: int,
+    loop: int,
+) -> Path:
+    time_indexes = _animation_time_indexes(input_path, variable_name)
+    with tempfile.TemporaryDirectory(prefix="sprtz_plotter_frames_") as tmp:
+        frame_paths: list[Path] = []
+        for time_index in time_indexes:
+            field = read_map_field(
+                input_path,
+                variable_name=variable_name,
+                time_index=time_index,
+                level_index=level_index,
+                center_lat=center_lat,
+                center_lon=center_lon,
+            )
+            frame_path = Path(tmp) / f"frame_{time_index:05d}.png"
+            plot_map(
+                field,
+                frame_path,
+                title=title,
+                dpi=dpi,
+                cmap=cmap,
+                coastline_source=coastline_source,
+                coastline_resolution=coastline_resolution,
+                allow_cartopy_download=allow_cartopy_download,
+                figure_size=figure_size,
+                log_scale=log_scale,
+                vector_overlay=vector_overlay,
+                vector_stride=vector_stride,
+                vector_density=vector_density,
+                vector_scale=vector_scale,
+            )
+            frame_paths.append(frame_path)
+            LOGGER.info("animation frame %d/%d time_index=%d", len(frame_paths), len(time_indexes), time_index)
+        return _write_gif(frame_paths, output_path, duration_ms=duration_ms, loop=loop)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Plot publication-ready maps from Sprtz NetCDF-CF products."
@@ -922,6 +1034,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vector-stride", type=int, default=8, help="plot every Nth wind vector")
     parser.add_argument("--vector-density", type=int, default=None, help="target number of wind vectors along the longest grid axis")
     parser.add_argument("--vector-scale", type=float, default=None, help="matplotlib quiver scale for wind vectors")
+    parser.add_argument("--animate", action="store_true", help="write an animated GIF using every time frame of the selected variable")
+    parser.add_argument("--frame-duration-ms", type=int, default=300, help="animated GIF frame duration in milliseconds")
+    parser.add_argument("--gif-loop", type=int, default=0, help="animated GIF loop count; 0 loops forever")
     parser.add_argument(
         "--coastline-resolution",
         choices=("10m", "50m", "110m"),
@@ -950,33 +1065,58 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s: %(message)s",
+        format=LOG_FORMAT_VERBOSE,
+        datefmt=LOG_DATE_FORMAT,
     )
     try:
-        field = read_map_field(
-            args.input,
-            variable_name=args.variable,
-            time_index=args.time_index,
-            level_index=args.level_index,
-            center_lat=args.center_lat,
-            center_lon=args.center_lon,
-        )
-        out = plot_map(
-            field,
-            args.output,
-            title=args.title,
-            dpi=args.dpi,
-            cmap=args.cmap,
-            coastline_source=args.coastline_source,
-            coastline_resolution=args.coastline_resolution,
-            allow_cartopy_download=args.allow_cartopy_download,
-            figure_size=(args.width, args.height),
-            log_scale=args.log_scale,
-            vector_overlay=not args.no_vectors,
-            vector_stride=args.vector_stride,
-            vector_density=args.vector_density,
-            vector_scale=args.vector_scale,
-        )
+        if args.animate:
+            out = plot_animation(
+                args.input,
+                args.output,
+                variable_name=args.variable,
+                level_index=args.level_index,
+                center_lat=args.center_lat,
+                center_lon=args.center_lon,
+                title=args.title,
+                dpi=args.dpi,
+                cmap=args.cmap,
+                coastline_source=args.coastline_source,
+                coastline_resolution=args.coastline_resolution,
+                allow_cartopy_download=args.allow_cartopy_download,
+                figure_size=(args.width, args.height),
+                log_scale=args.log_scale,
+                vector_overlay=not args.no_vectors,
+                vector_stride=args.vector_stride,
+                vector_density=args.vector_density,
+                vector_scale=args.vector_scale,
+                duration_ms=args.frame_duration_ms,
+                loop=args.gif_loop,
+            )
+        else:
+            field = read_map_field(
+                args.input,
+                variable_name=args.variable,
+                time_index=args.time_index,
+                level_index=args.level_index,
+                center_lat=args.center_lat,
+                center_lon=args.center_lon,
+            )
+            out = plot_map(
+                field,
+                args.output,
+                title=args.title,
+                dpi=args.dpi,
+                cmap=args.cmap,
+                coastline_source=args.coastline_source,
+                coastline_resolution=args.coastline_resolution,
+                allow_cartopy_download=args.allow_cartopy_download,
+                figure_size=(args.width, args.height),
+                log_scale=args.log_scale,
+                vector_overlay=not args.no_vectors,
+                vector_stride=args.vector_stride,
+                vector_density=args.vector_density,
+                vector_scale=args.vector_scale,
+            )
     except KeyboardInterrupt:
         LOGGER.warning("interrupted; stopping plot generation")
         return 130

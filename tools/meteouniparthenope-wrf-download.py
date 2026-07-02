@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.request import urlopen
 
+from sprtz.logging import LOG_DATE_FORMAT, LOG_FORMAT_VERBOSE
+
 LOGGER = logging.getLogger("meteouniparthenope-wrf-download.py")
 
 WRF5_FILES_BASE_URL = "https://data.meteo.uniparthenope.it/files/wrf5"
@@ -177,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(message)s",
+        format=LOG_FORMAT_VERBOSE,
+        datefmt=LOG_DATE_FORMAT,
     )
     try:
         downloads = plan_downloads(

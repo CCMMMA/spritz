@@ -291,6 +291,29 @@ def test_particle_backend_honors_heat_release_plume_rise():
     assert max(row["concentration"] for row in hot_rows) < max(row["concentration"] for row in cool_rows)
 
 
+def test_particle_plume_rise_uses_particle_age():
+    base = load_config("examples/minimal.json")
+    src = from_mapping(base.raw).sources[0]
+    hot_src = type(src)(
+        **{
+            **src.__dict__,
+            "z": 0.0,
+            "stack_height": 0.0,
+            "heat_release": 10_000_000.0,
+            "exit_temperature": 1123.15,
+        }
+    )
+    heights = particles._particle_effective_release_heights(
+        hot_src,
+        wind_speed=2.0,
+        downwind_distances=np.asarray([2.0, 200.0, 2000.0], dtype=float),
+        ambient_temperature=293.15,
+        downwash=True,
+    )
+    assert heights[0] < heights[1] < heights[2]
+    assert heights[0] < 0.25 * heights[2]
+
+
 def test_gaussian_and_particles_grid_fields_keep_config_center_coordinates():
     base = load_config("examples/minimal.json")
     cfg = from_mapping(

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import sys
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -40,6 +42,10 @@ from sailing_forecast import (  # noqa: E402
     parse_bbox,
 )
 from wildfire import (  # noqa: E402
+    DEFAULT_WILDFIRE_PARTICLE_ADVECTION_STEPS,
+    DEFAULT_WILDFIRE_PARTICLE_COUNT,
+    DEFAULT_WILDFIRE_PARTICLE_SIGMA_H_M,
+    DEFAULT_WILDFIRE_PARTICLE_SIGMA_Z_M,
     _load_fire_events,
     build_wildfire_config,
     ensure_wildfire_receptor_coordinates,
@@ -269,6 +275,10 @@ def test_build_wildfire_config(tmp_path: Path) -> None:
     assert config["grid"]["x0"] + ((config["grid"]["nx"] - 1) / 2.0) * config["grid"]["dx"] == pytest.approx(0.0)
     assert config["grid"]["y0"] + ((config["grid"]["ny"] - 1) / 2.0) * config["grid"]["dy"] == pytest.approx(0.0)
     assert config["run"]["field_z_levels"][-1] >= 2000.0
+    assert config["run"]["particles"] == DEFAULT_WILDFIRE_PARTICLE_COUNT
+    assert config["run"]["particle_sigma_h"] == DEFAULT_WILDFIRE_PARTICLE_SIGMA_H_M
+    assert config["run"]["particle_sigma_z"] == DEFAULT_WILDFIRE_PARTICLE_SIGMA_Z_M
+    assert config["run"]["particle_advection_steps"] == DEFAULT_WILDFIRE_PARTICLE_ADVECTION_STEPS
     assert len(config["receptors"]) > 0
     assert all("latitude" in receptor and "longitude" in receptor for receptor in config["receptors"])
     center_receptor = min(
@@ -291,6 +301,109 @@ def test_build_wildfire_config_supports_multiple_field_z_levels(tmp_path: Path) 
 
     assert config["run"]["field_z_levels"] == [1.5, 10.0, 50.0, 100.0]
     assert read_json(cfg_path)["run"]["field_z_levels"] == [1.5, 10.0, 50.0, 100.0]
+
+
+def test_wildfire_step3_logs_seconds_per_simulated_hour(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    if not netcdf_available():
+        pytest.skip("netCDF4 unavailable")
+    from netCDF4 import Dataset  # type: ignore
+
+    module = _load_usecase_step("02_wildfire_arson_effects", "step_03_run_model.py")
+    concentration = tmp_path / "concentration.nc"
+    with Dataset(concentration, "w") as ds:
+        ds.createDimension("time", 2)
+        time_var = ds.createVariable("time", "f8", ("time",))
+        time_var[:] = np.asarray([3600.0, 7200.0], dtype=float)
+
+    caplog.set_level(logging.INFO, logger=module.LOGGER.name)
+    module._log_backend_hourly_performance(
+        backend="particles",
+        workflow={"concentration": str(concentration), "output_interval_s": 3600.0},
+        elapsed_s=8.0,
+        output_interval_s=3600.0,
+    )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("seconds_per_simulated_hour=4.000" in message for message in messages)
+    assert sum("step 3/3 progress: backend=particles computed_hour=" in message for message in messages) == 2
+
+
+def test_plot_netcdf_can_overlay_plume_vectors_from_meteo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import plotting  # noqa: PLC0415
+
+    @dataclass(frozen=True)
+    class FakeVectors:
+        u: np.ndarray
+        v: np.ndarray
+        label: str = "Wind vector"
+
+    @dataclass(frozen=True)
+    class FakeField:
+        values: np.ndarray
+        vectors: FakeVectors | None
+
+    plume = tmp_path / "concentration.nc"
+    meteo = tmp_path / "meteo.nc"
+    out = tmp_path / "concentration_map.png"
+    plume.write_text("", encoding="utf-8")
+    meteo.write_text("", encoding="utf-8")
+
+    class FakePlotter:
+        def read_map_field(self, path, **kwargs):
+            if Path(path) == meteo:
+                vectors = FakeVectors(np.ones((2, 2)), np.zeros((2, 2)))
+                return FakeField(np.zeros((2, 2)), vectors)
+            return FakeField(np.zeros((2, 2)), None)
+
+        def plot_map(self, field, output_path, **kwargs):
+            assert field.vectors is not None
+            Path(output_path).write_text("ok", encoding="utf-8")
+            return Path(output_path)
+
+    monkeypatch.setattr(plotting, "_load_plotter", lambda: FakePlotter())
+    plotted = plotting.plot_netcdf_if_available(
+        plume,
+        out,
+        variable="concentration_field",
+        vector_source_path=meteo,
+        vector_variable="wind_speed",
+        vector_level_index=0,
+    )
+
+    assert plotted == out
+    assert out.read_text(encoding="utf-8") == "ok"
+
+
+def test_wildfire_step3_writes_explicit_plume_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = _load_usecase_step("02_wildfire_arson_effects", "step_03_run_model.py")
+    config = tmp_path / "wildfire.json"
+    config.write_text("{}", encoding="utf-8")
+    output_dir = tmp_path / "model"
+    concentration = output_dir / "concentration.nc"
+
+    monkeypatch.setattr(module, "ensure_wildfire_receptor_coordinates", lambda path: False)
+    monkeypatch.setattr(
+        module,
+        "_ensure_time_dependent_plume_config",
+        lambda config_path, meteo_path: ({"metadata": {}}, 3600.0, False),
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_workflow_with_performance_log",
+        lambda **kwargs: {"concentration": str(concentration), "meteo": str(output_dir / "meteo.nc"), "post": str(output_dir / "post.json")},
+    )
+    monkeypatch.setattr(module, "plot_workflow_netcdfs", lambda *args, **kwargs: {})
+
+    plotted: list[Path] = []
+
+    def fake_plot_concentration(input_path, output_path, **kwargs):
+        plotted.append(Path(output_path))
+        return Path(output_path)
+
+    monkeypatch.setattr(module, "plot_concentration_vertical_profiles_if_available", fake_plot_concentration)
+
+    assert module.main(["--config", str(config), "--output-dir", str(output_dir), "--backend", "particles"]) == 0
+    assert plotted == [output_dir / "particles_concentration_vertical_profiles.png"]
 
 
 def test_build_wildfire_config_supports_multi_fire_materials_and_windows(tmp_path: Path) -> None:

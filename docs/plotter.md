@@ -1,8 +1,9 @@
 # Plotter
 
 `tools/plotter.py` creates publication-oriented maps from Sprtz NetCDF outputs.
-It is intended for use-case figures, reports, and quick quality-control maps of
-intermediate and final products.
+`tools/profiler.py` creates centralized time-varying vertical profile figures
+from the same NetCDF products. They are intended for use-case figures, reports,
+and quick quality-control plots of intermediate and final products.
 
 ## Basic usage
 
@@ -94,9 +95,53 @@ MPLBACKEND=Agg python tools/plotter.py \
 ```
 
 Use-case plotting helpers also generate `meteo_vertical_profiles.png` beside
-workflow meteo maps. That figure is not a separate `tools/plotter.py` CLI mode;
-it is produced by the didactic workflow helpers from SpritzMet NetCDF files
-with `wind_speed(time,z,y,x)`.
+workflow meteo maps and plume concentration profile figures beside concentration
+maps. The centralized CLI for those figures is `tools/profiler.py`:
+
+```bash
+MPLBACKEND=Agg python tools/profiler.py \
+  output/wildfire_case/model_compare/particles/meteo.nc \
+  --variable wind_speed \
+  --output output/wildfire_case/model_compare/particles/meteo_vertical_profiles.png
+
+MPLBACKEND=Agg python tools/profiler.py \
+  output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --output output/wildfire_case/model_compare/particles/concentration_vertical_profiles.png
+```
+
+`tools/profiler.py` accepts the same broad CLI style as `tools/plotter.py`:
+input path first, `--variable`, `--output`, `--time-index`, `--dpi`, and
+`--animate`. Use `--x` and `--y` to select the local grid column. Without
+`--time-index`, static figures show a time-height section plus sampled vertical
+profiles through the simulation.
+
+## Animations
+
+`tools/plotter.py` can render a simulation-long animated GIF from every time
+frame of a gridded map variable:
+
+```bash
+MPLBACKEND=Agg python tools/plotter.py \
+  output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --level-index 0 \
+  --animate \
+  --frame-duration-ms 300 \
+  --output output/wildfire_case/model_compare/particles/concentration_animation.gif
+```
+
+`tools/profiler.py` can render a simulation-long animated GIF from every
+vertical-profile time frame:
+
+```bash
+MPLBACKEND=Agg python tools/profiler.py \
+  output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --animate \
+  --frame-duration-ms 300 \
+  --output output/wildfire_case/model_compare/particles/concentration_profiles_animation.gif
+```
 
 ## Coastlines
 

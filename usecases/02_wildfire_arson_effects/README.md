@@ -84,17 +84,6 @@ python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
   --land-cover data/landcover/lc100_wildfire_case.tif
 ```
 
-## Step 1 alternative: Prepare wind with an existing WRF file
-
-```bash
-python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
-  --wrf data/wrf/wrf5_d03_20240731Z0000.nc \
-  --output data/output/wildfire_case/wrf_100m_wind.nc \
-  --center-lat 40.827 \
-  --center-lon 14.518 \
-  --dem data/dem/cop30_wildfire_case.tif \
-  --land-cover data/landcover/lc100_wildfire_case.tif
-```
 
 ## Step 2: Build the fire configuration
 
@@ -108,7 +97,7 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --end 20240803Z0000 \
   --duration-s 86400 \
   --area-m2 2500 \
-  --field-z-levels 1.5,10,25,50,100
+  --field-z-levels 1.5,10,25,50,100,150,200,250
 ```
 
 For the default single-fire case, `--center-lat 40.827 --center-lon 14.518`
@@ -134,7 +123,9 @@ python usecases/02_wildfire_arson_effects/step_03_run_model.py \
   --output-dir data/output/wildfire_case/model_compare \
   --backend both \
   --interchange netcdf \
-  --calpuff-binary
+  --calpuff-binary \
+  --overlay-plume-wind \
+  --plume-wind-level-index 0
 ```
 
 This writes separate backend products under:
@@ -149,7 +140,12 @@ stored beside the configuration JSON. Use `--output-interval-s` to override the
 interval inferred from the meteo file. Use `--calpuff-binary` to write a
 clean-room CALPUFF-style concentration binary sidecar,
 `concentration_calpuff.dat`, for each backend. NetCDF-CF remains the canonical
-Sprtz interchange; the binary sidecar is for external comparison workflows.
+Sprtz interchange; the binary sidecar is for external comparison workflows. Use
+`--overlay-plume-wind` to draw unit-length wind direction vectors from the
+backend `meteo.nc` product on plume concentration maps. The vectors are sampled
+at `--plume-wind-level-index` from the meteorological vertical grid; the shaded
+plume field still uses the concentration `field_z` level selected by the
+plotter.
 
 ## Step 4: Plot intermediate and final NetCDF maps
 
@@ -180,19 +176,71 @@ python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concent
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_map.png
 ```
 
-The automatic plotting step also writes `meteo_vertical_profiles.png` for each
-backend. To regenerate the vertical profile figures explicitly, run:
+To create animated GIFs with all plume simulation time frames, add
+`--animate`. For example:
 
 ```bash
-python -c "from usecases.plotting import plot_vertical_profiles_if_available; plot_vertical_profiles_if_available('data/output/wildfire_case/model_compare/particles/meteo.nc', 'data/output/wildfire_case/model_compare/particles/particles_meteo_vertical_profiles.png', variable='wind_speed')"
+python tools/plotter.py data/output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --level-index 0 \
+  --animate \
+  --frame-duration-ms 300 \
+  --output data/output/wildfire_case/model_compare/particles/particles_concentration_animation.gif
 
-python -c "from usecases.plotting import plot_vertical_profiles_if_available; plot_vertical_profiles_if_available('data/output/wildfire_case/model_compare/gaussian/meteo.nc', 'data/output/wildfire_case/model_compare/gaussian/gaussian_meteo_vertical_profiles.png', variable='wind_speed')"
+python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
+  --variable concentration_field \
+  --level-index 0 \
+  --animate \
+  --frame-duration-ms 300 \
+  --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_animation.gif
 ```
 
-The profile figure contains a center-cell time-height wind-speed panel and
-sampled vertical profile curves through the WRF/SpritzMet time axis. When the
-prepared meteo file contains diagnostic `U10M`/`V10M`, the plotted profile
+The automatic plotting step writes `meteo_vertical_profiles.png`,
+`concentration_vertical_profiles.png`, and backend-named plume profile figures
+for each backend. To regenerate the vertical profile figures explicitly, run:
+
+```bash
+python tools/profiler.py data/output/wildfire_case/model_compare/particles/meteo.nc \
+  --variable wind_speed \
+  --output data/output/wildfire_case/model_compare/particles/particles_meteo_vertical_profiles.png
+
+python tools/profiler.py data/output/wildfire_case/model_compare/gaussian/meteo.nc \
+  --variable wind_speed \
+  --output data/output/wildfire_case/model_compare/gaussian/gaussian_meteo_vertical_profiles.png
+
+python tools/profiler.py data/output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --output data/output/wildfire_case/model_compare/particles/particles_concentration_vertical_profiles.png
+
+python tools/profiler.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
+  --variable concentration_field \
+  --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_vertical_profiles.png
+```
+
+To animate the simulation-long plume vertical profile evolution, add
+`--animate`:
+
+```bash
+python tools/profiler.py data/output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --animate \
+  --frame-duration-ms 300 \
+  --output data/output/wildfire_case/model_compare/particles/particles_concentration_profiles_animation.gif
+
+python tools/profiler.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
+  --variable concentration_field \
+  --animate \
+  --frame-duration-ms 300 \
+  --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_profiles_animation.gif
+```
+
+The meteo profile figure contains a center-cell time-height wind-speed panel
+and sampled vertical profile curves through the WRF/SpritzMet time axis. When
+the prepared meteo file contains diagnostic `U10M`/`V10M`, the plotted profile
 prepends the diagnostic 10 m above-ground layer before the aloft model levels.
+The plume profile figure shows the time-varying vertical
+`concentration_field` at the selected center grid column for both the particle
+and Gaussian backends.
 
 ## Event timing, materials, and source height
 
@@ -223,7 +271,9 @@ Step 2 also writes time-dependent plume defaults under `run`:
 - `concentration_output`: `both`, so receptor values and gridded plume fields
   are written together;
 - `field_z_levels`: plume-aware metres-above-ground levels from 1.5 m through
-  2000 m by default, or explicit levels from `--field-z-levels`.
+  2000 m by default, or explicit levels from `--field-z-levels`;
+- particle defaults: `particles=10000`, `particle_sigma_h=175 m`,
+  `particle_sigma_z=150 m`, and `particle_advection_steps=12`.
 
 ## Multi-fire event JSON
 
@@ -281,8 +331,15 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   profile figure.
 - `model_compare/*/concentration_vertical_profiles.png` — time-varying vertical
   concentration figure when gridded concentration output is available.
+- `model_compare/*/*_concentration_vertical_profiles.png` — explicit
+  backend-named time-varying plume concentration profile figure, written for
+  both particles and Gaussian outputs.
 - `model_compare/*/concentration_map.png` — gridded plume map for a nonzero
   output time.
+- `model_compare/*/*_concentration_animation.gif` — animated plume map across
+  every concentration output time frame.
+- `model_compare/*/*_concentration_profiles_animation.gif` — animated vertical
+  plume concentration profile across every concentration output time frame.
 
 The particle backend now advects particles through the full
 `time,z,y,x` SpritzMet wind cube. The Gaussian backend samples the same

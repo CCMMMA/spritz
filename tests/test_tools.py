@@ -15,6 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "meteouniparthenope-wrf-download.py"
 PLOTTER_SCRIPT = ROOT / "tools" / "plotter.py"
+PROFILER_SCRIPT = ROOT / "tools" / "profiler.py"
 LC100_SCRIPT = ROOT / "tools" / "copernicus-lc100-download.py"
 
 
@@ -31,6 +32,17 @@ def load_wrf_download_tool():
 
 def load_plotter_tool():
     loader = SourceFileLoader("sprtz_plotter_tool", str(PLOTTER_SCRIPT))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_profiler_tool():
+    loader = SourceFileLoader("sprtz_profiler_tool", str(PROFILER_SCRIPT))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
@@ -401,6 +413,132 @@ def test_plotter_shades_10m_speed_in_knots_with_10m_vectors(tmp_path: Path) -> N
     assert field.vectors is not None
     np.testing.assert_allclose(field.vectors.u, np.full((2, 2), 3.0))
     np.testing.assert_allclose(field.vectors.v, np.full((2, 2), 4.0))
+
+
+def test_plotter_normalizes_wind_vectors_for_quiver() -> None:
+    plotter = load_plotter_tool()
+    u, v = plotter._unit_vector_components(
+        np.asarray([[3.0, 0.0], [5.0, 0.0]], dtype=float),
+        np.asarray([[4.0, 0.0], [0.0, -2.0]], dtype=float),
+    )
+
+    np.testing.assert_allclose(np.hypot(u, v), np.asarray([[1.0, 0.0], [1.0, 1.0]]))
+    np.testing.assert_allclose(u[0, 0], 0.6)
+    np.testing.assert_allclose(v[0, 0], 0.8)
+    assert np.isfinite(u).all()
+    assert np.isfinite(v).all()
+
+
+def test_plotter_animation_time_indexes_follow_selected_variable(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "plume.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 3)
+        ds.createDimension("field_z", 1)
+        ds.createDimension("field_y", 2)
+        ds.createDimension("field_x", 2)
+        concentration = ds.createVariable("concentration_field", "f8", ("time", "field_z", "field_y", "field_x"))
+        concentration[:, :, :, :] = np.zeros((3, 1, 2, 2), dtype=float)
+
+    plotter = load_plotter_tool()
+
+    assert plotter._animation_time_indexes(path, "concentration_field") == [0, 1, 2]
+
+
+def test_plotter_main_animates_selected_variable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    plotter = load_plotter_tool()
+    output = tmp_path / "plume.gif"
+    calls: list[dict[str, object]] = []
+
+    def fake_plot_animation(input_path, output_path, **kwargs):
+        calls.append({"input": input_path, "output": output_path, **kwargs})
+        Path(output_path).write_bytes(b"GIF89a")
+        return Path(output_path)
+
+    monkeypatch.setattr(plotter, "plot_animation", fake_plot_animation)
+
+    result = plotter.main(
+        [
+            "concentration.nc",
+            "--variable",
+            "concentration_field",
+            "--output",
+            str(output),
+            "--animate",
+            "--frame-duration-ms",
+            "125",
+        ]
+    )
+
+    assert result == 0
+    assert output.read_bytes() == b"GIF89a"
+    assert calls[0]["variable_name"] == "concentration_field"
+    assert calls[0]["duration_ms"] == 125
+
+
+def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "plume.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 2)
+        ds.createDimension("field_z", 3)
+        ds.createDimension("field_y", 2)
+        ds.createDimension("field_x", 2)
+        ds.createVariable("time", "f8", ("time",))[:] = [3600.0, 7200.0]
+        ds.createVariable("field_z", "f8", ("field_z",))[:] = [1.5, 10.0, 25.0]
+        ds.createVariable("field_y", "f8", ("field_y",))[:] = [-50.0, 50.0]
+        ds.createVariable("field_x", "f8", ("field_x",))[:] = [-50.0, 50.0]
+        concentration = ds.createVariable("concentration_field", "f8", ("time", "field_z", "field_y", "field_x"))
+        concentration.units = "g m-3"
+        concentration.long_name = "gridded mass concentration"
+        values = np.zeros((2, 3, 2, 2), dtype=float)
+        values[:, :, 1, 1] = [[1.0, 2.0, 3.0], [2.0, 4.0, 6.0]]
+        concentration[:, :, :, :] = values
+
+    profiler = load_profiler_tool()
+    profile = profiler.read_profile_data(path, variable_name="concentration_field", x_m=40.0, y_m=40.0)
+
+    assert profile.variable_name == "concentration_field"
+    assert profile.profiles.shape == (2, 3)
+    np.testing.assert_allclose(profile.profiles[1], [2.0, 4.0, 6.0])
+    assert profile.units == "g m-3"
+
+
+def test_profiler_main_animates_selected_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    profiler = load_profiler_tool()
+    output = tmp_path / "profiles.gif"
+    fake_profile = types.SimpleNamespace(values=np.zeros((2, 1, 1, 1), dtype=float))
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(profiler, "read_profile_data", lambda *args, **kwargs: fake_profile)
+
+    def fake_animation(profile, output_path, **kwargs):
+        calls.append({"profile": profile, "output": output_path, **kwargs})
+        Path(output_path).write_bytes(b"GIF89a")
+        return Path(output_path)
+
+    monkeypatch.setattr(profiler, "plot_profile_animation", fake_animation)
+
+    result = profiler.main(
+        [
+            "concentration.nc",
+            "--variable",
+            "concentration_field",
+            "--output",
+            str(output),
+            "--animate",
+            "--frame-duration-ms",
+            "150",
+        ]
+    )
+
+    assert result == 0
+    assert output.read_bytes() == b"GIF89a"
+    assert calls[0]["duration_ms"] == 150
 
 
 def test_plotter_converts_wind_speed_to_knots_and_uses_palette(tmp_path: Path) -> None:

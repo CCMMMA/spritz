@@ -7,6 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOGGER = logging.getLogger(__name__)
+LOG_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+LOG_FORMAT = "%(asctime)s +%(relativeCreated).0fms %(message)s"
 LOCAL_ONLY_DIRS = {
     ".git",
     ".hg",
@@ -86,12 +88,12 @@ def main() -> int:
         if rel.parts[:2] == ("src", "sprtz") and len(rel.parts) > 2 and rel.parts[2] == "usecases":
             errors.append(f"use cases must not be packaged as suite modules: {rel}")
     if errors:
-        logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr, force=True)
+        logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT, stream=sys.stderr, force=True)
         LOGGER.error("release check failed")
         for error in errors:
             LOGGER.error("- %s", error)
         return 1
-    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout, force=True)
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT, stream=sys.stdout, force=True)
     LOGGER.info("release check passed")
     return 0
 

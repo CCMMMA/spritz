@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -59,3 +60,4 @@ def test_release_check_script_passes_clean_tree() -> None:
         capture_output=True,
     )
     assert "release check passed" in completed.stdout
+    assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4} \+\d+ms release check passed", completed.stdout)

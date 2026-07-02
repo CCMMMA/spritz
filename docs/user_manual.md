@@ -353,7 +353,10 @@ Particle options also live under `run`.
 
 For a fixed seed, particle results are deterministic. MPI particle runs use a
 per-source random stream so changing rank count does not change the stream used
-for a given source.
+for a given source. Heat-release plume rise is sampled by particle travel age:
+young particles stay close to release height, while older particles are lifted
+according to the same clean-room plume-rise screening relation used by the
+Gaussian backend.
 
 ## Receptor Tables And 3D Fields
 
@@ -470,6 +473,11 @@ sprtz-plot --input output/concentration.nc --output output/concentration.png --t
 `tools/plotter.py` can render receptor-table NetCDF variables and gridded
 fields such as `concentration_field` by passing `--variable concentration_field`
 and selecting `--time-index` / `--level-index` as needed.
+Use `tools/plotter.py --animate` to create map animations over every available
+time frame. Use `tools/profiler.py` for centralized time-varying vertical
+profiles from `wind_speed(time,z,y,x)` or
+`concentration_field(time,field_z,field_y,field_x)`; add `--animate` to create
+simulation-long profile GIFs.
 
 ## Terrain And GEO Products
 

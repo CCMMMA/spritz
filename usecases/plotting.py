@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,10 @@ def plot_netcdf_if_available(
     dpi: int = 600,
     time_index: int = 0,
     level_index: int = 0,
+    vector_source_path: str | Path | None = None,
+    vector_variable: str | None = "wind_speed",
+    vector_time_index: int | None = None,
+    vector_level_index: int | None = None,
 ) -> Path | None:
     if input_path is None:
         return None
@@ -77,6 +82,25 @@ def plot_netcdf_if_available(
                     center_lat=center_lat,
                     center_lon=center_lon,
                 )
+        if vector_source_path is not None:
+            vector_source = Path(vector_source_path)
+            if vector_source.suffix.lower() in NETCDF_SUFFIXES and vector_source.exists():
+                vector_field = plotter.read_map_field(
+                    vector_source,
+                    variable_name=vector_variable,
+                    time_index=time_index if vector_time_index is None else vector_time_index,
+                    level_index=level_index if vector_level_index is None else vector_level_index,
+                    center_lat=center_lat,
+                    center_lon=center_lon,
+                )
+                if vector_field.vectors is not None and vector_field.vectors.u.shape == field.values.shape:
+                    field = replace(field, vectors=vector_field.vectors)
+                else:
+                    LOGGER.warning(
+                        "could not overlay wind vectors from %s on %s: incompatible vector grid",
+                        vector_source,
+                        source,
+                    )
         return plotter.plot_map(
             field,
             output_path,
@@ -315,6 +339,8 @@ def plot_workflow_netcdfs(
     center_lat: float | None = None,
     center_lon: float | None = None,
     prefix: str = "",
+    overlay_plume_wind_vectors: bool = False,
+    plume_wind_level_index: int = 0,
 ) -> dict[str, str]:
     if not workflow:
         return {}
@@ -338,6 +364,10 @@ def plot_workflow_netcdfs(
             center_lat=center_lat,
             center_lon=center_lon,
             time_index=1 if key == "concentration" else 0,
+            vector_source_path=workflow.get("meteo") if key == "concentration" and overlay_plume_wind_vectors else None,
+            vector_variable="wind_speed",
+            vector_time_index=1 if key == "concentration" else 0,
+            vector_level_index=plume_wind_level_index,
         )
         if plotted is not None:
             products[key] = str(plotted)

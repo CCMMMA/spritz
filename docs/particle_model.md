@@ -31,7 +31,9 @@ control whether each source contributes at a requested output time; during a
 configured firefighter window the source contribution is multiplied by
 `run.firefighters_emission_factor`. When `run.precipitation_washout` is true,
 the backend adds the WRF/SpritzMet `precipitation_rate` wet-removal term to the
-particle loss rate.
+particle loss rate. Heat-release plume rise is evaluated from each particle's
+sampled travel age, so newly released particles remain near the release height
+while older particles rise through the buoyant plume.
 
 When `concentration_output` requests a complete grid, `--format calpuff` writes
 a clean-room CALPUFF-style binary concentration export with the same horizontal,

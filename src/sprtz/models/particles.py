@@ -8,7 +8,7 @@ import numpy as np
 
 from sprtz.config import SuiteConfig
 from sprtz.core.grid import Grid
-from sprtz.core.physics import effective_release_height
+from sprtz.core.physics import stack_tip_downwash
 from sprtz.exceptions import DataFormatError
 from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
@@ -37,6 +37,38 @@ def _wind(meteo: dict[str, Any]) -> tuple[float, float]:
     except (TypeError, ValueError) as exc:
         raise DataFormatError("particle model meteorology u/v must be numeric") from exc
     return u, v
+
+
+def _particle_effective_release_heights(
+    src: Any,
+    *,
+    wind_speed: float,
+    downwind_distances: np.ndarray,
+    ambient_temperature: float,
+    downwash: bool,
+) -> np.ndarray:
+    """Return effective release heights for particle-age travel distances."""
+    u = max(float(wind_speed), 0.1)
+    diameter = max(float(src.stack_diameter), 0.1)
+    delta_t = max(float(src.exit_temperature) - float(ambient_temperature), 0.0)
+    buoyancy = 9.80665 * float(src.exit_velocity) * diameter**2 * delta_t / (
+        4.0 * max(float(ambient_temperature), 1.0)
+    )
+    if src.heat_release > 0.0:
+        buoyancy += 8.8e-6 * float(src.heat_release)
+    x = np.maximum(np.asarray(downwind_distances, dtype=float), 1.0)
+    if buoyancy > 0.0:
+        buoyant_rise = 1.6 * (buoyancy ** (1.0 / 3.0)) * (x ** (2.0 / 3.0)) / u
+    else:
+        buoyant_rise = np.zeros_like(x)
+    momentum = max(float(src.exit_velocity), 0.0) * diameter / u
+    rise = np.maximum(buoyant_rise, 3.0 * momentum)
+    penalty = (
+        stack_tip_downwash(float(src.stack_height), diameter, float(src.exit_velocity), u)
+        if downwash
+        else 0.0
+    )
+    return np.maximum(float(src.z) + float(src.stack_height) + rise - penalty, 0.0)
 
 
 def simulate_particles(
@@ -143,21 +175,15 @@ def simulate_particles(
                 max(float(time_value), 0.0),
             )
             del plume_u, plume_v
-            plume_distance = max(plume_speed * max(sample_window, 1.0), 1.0)
-            plume_height = effective_release_height(
-                stack_height=src.stack_height,
-                source_z=src.z,
-                receptor_z=0.0,
+            plume_distances = np.maximum(plume_speed * np.maximum(travel_np, 1.0), 1.0)
+            plume_heights = _particle_effective_release_heights(
+                src,
                 wind_speed=plume_speed,
-                downwind_distance=plume_distance,
-                stack_diameter=src.stack_diameter,
-                exit_velocity=src.exit_velocity,
-                exit_temperature=src.exit_temperature,
+                downwind_distances=plume_distances,
                 ambient_temperature=ambient_temperature,
-                heat_release=src.heat_release,
                 downwash=bool(config.run.get("stack_tip_downwash", True)),
             )
-            pz_np += plume_height - (src.z + src.stack_height)
+            pz_np += plume_heights - (src.z + src.stack_height)
             for step in range(advection_steps):
                 current_time = release_time + (step + 0.5) * step_dt
                 u_step, v_step = wind_sampler.sample(

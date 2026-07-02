@@ -265,10 +265,12 @@ output/wildfire_case/model_compare/particles/meteo.nc
 output/wildfire_case/model_compare/particles/concentration.nc
 output/wildfire_case/model_compare/particles/concentration_calpuff.dat
 output/wildfire_case/model_compare/particles/meteo_vertical_profiles.png
+output/wildfire_case/model_compare/particles/concentration_vertical_profiles.png
 output/wildfire_case/model_compare/gaussian/meteo.nc
 output/wildfire_case/model_compare/gaussian/concentration.nc
 output/wildfire_case/model_compare/gaussian/concentration_calpuff.dat
 output/wildfire_case/model_compare/gaussian/meteo_vertical_profiles.png
+output/wildfire_case/model_compare/gaussian/concentration_vertical_profiles.png
 output/wildfire_case/model_compare/particle_gaussian_comparison.json
 ```
 
