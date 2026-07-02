@@ -185,6 +185,7 @@ python tools/plotter.py data/output/wildfire_case/model_compare/particles/concen
   --level-index 0 \
   --animate \
   --frame-duration-ms 300 \
+  --gif-loop 0 \
   --output data/output/wildfire_case/model_compare/particles/particles_concentration_animation.gif
 
 python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
@@ -192,6 +193,7 @@ python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concent
   --level-index 0 \
   --animate \
   --frame-duration-ms 300 \
+  --gif-loop 0 \
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_animation.gif
 ```
 
@@ -225,12 +227,14 @@ python tools/profiler.py data/output/wildfire_case/model_compare/particles/conce
   --variable concentration_field \
   --animate \
   --frame-duration-ms 300 \
+  --gif-loop 0 \
   --output data/output/wildfire_case/model_compare/particles/particles_concentration_profiles_animation.gif
 
 python tools/profiler.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
   --variable concentration_field \
   --animate \
   --frame-duration-ms 300 \
+  --gif-loop 0 \
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_profiles_animation.gif
 ```
 

@@ -564,6 +564,8 @@ def test_plotter_main_animates_selected_variable(monkeypatch: pytest.MonkeyPatch
             "--animate",
             "--frame-duration-ms",
             "125",
+            "--gif-loop",
+            "2",
         ]
     )
 
@@ -571,6 +573,7 @@ def test_plotter_main_animates_selected_variable(monkeypatch: pytest.MonkeyPatch
     assert output.read_bytes() == b"GIF89a"
     assert calls[0]["variable_name"] == "concentration_field"
     assert calls[0]["duration_ms"] == 125
+    assert calls[0]["loop"] == 2
 
 
 def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
@@ -628,12 +631,15 @@ def test_profiler_main_animates_selected_profile(monkeypatch: pytest.MonkeyPatch
             "--animate",
             "--frame-duration-ms",
             "150",
+            "--gif-loop",
+            "3",
         ]
     )
 
     assert result == 0
     assert output.read_bytes() == b"GIF89a"
     assert calls[0]["duration_ms"] == 150
+    assert calls[0]["loop"] == 3
 
 
 def test_plotter_converts_wind_speed_to_knots_and_uses_palette(tmp_path: Path) -> None:

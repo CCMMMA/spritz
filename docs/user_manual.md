@@ -474,10 +474,11 @@ sprtz-plot --input output/concentration.nc --output output/concentration.png --t
 fields such as `concentration_field` by passing `--variable concentration_field`
 and selecting `--time-index` / `--level-index` as needed.
 Use `tools/plotter.py --animate` to create map animations over every available
-time frame. Use `tools/profiler.py` for centralized time-varying vertical
-profiles from `wind_speed(time,z,y,x)` or
-`concentration_field(time,field_z,field_y,field_x)`; add `--animate` to create
-simulation-long profile GIFs.
+time frame, and set GIF repetition with `--gif-loop` (`0` loops forever). Use
+`tools/profiler.py` for centralized time-varying vertical profiles from
+`wind_speed(time,z,y,x)` or
+`concentration_field(time,field_z,field_y,field_x)`; add `--animate` and
+`--gif-loop` to create simulation-long profile GIFs with explicit loop control.
 
 ## Terrain And GEO Products
 

@@ -128,6 +128,7 @@ MPLBACKEND=Agg python tools/plotter.py \
   --level-index 0 \
   --animate \
   --frame-duration-ms 300 \
+  --gif-loop 0 \
   --output output/wildfire_case/model_compare/particles/concentration_animation.gif
 ```
 
@@ -135,7 +136,8 @@ For map animations, the plotter evaluates the selected variable over all
 animation frames before rendering and fixes one color scale for the whole GIF.
 For nonnegative linear fields, the lower bound is pinned at zero and the upper
 bound is the simulation-wide maximum. With `--log-scale`, the bounds come from
-the simulation-wide positive minimum and maximum.
+the simulation-wide positive minimum and maximum. Use `--gif-loop 0` to loop
+forever, or a positive integer for a finite loop count.
 
 `tools/profiler.py` can render a simulation-long animated GIF from every
 vertical-profile time frame:
@@ -146,6 +148,7 @@ MPLBACKEND=Agg python tools/profiler.py \
   --variable concentration_field \
   --animate \
   --frame-duration-ms 300 \
+  --gif-loop 0 \
   --output output/wildfire_case/model_compare/particles/concentration_profiles_animation.gif
 ```
 

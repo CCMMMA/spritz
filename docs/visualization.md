@@ -59,5 +59,6 @@ near-surface profile matches dispersion sampling.
 Use `tools/profiler.py` to create the same style of vertical profile figure from
 any compatible Sprtz NetCDF product. It supports meteo wind profiles and plume
 concentration profiles, uses `--x`/`--y` to select the sampled local grid
-column, and supports `--animate` for simulation-long profile GIFs. Use
-`tools/plotter.py --animate` for simulation-long map GIFs.
+column, and supports `--animate` plus `--gif-loop` for simulation-long profile
+GIFs. Use `tools/plotter.py --animate --gif-loop 0` for endlessly looping
+simulation-long map GIFs.
