@@ -1,7 +1,7 @@
 # meteo@uniparthenope WRF downloader
 
 `tools/meteouniparthenope-wrf-download` downloads WRF5 `history` NetCDF files from
-meteo@uniparthenope into the repository data tree. It is a
+meteo@uniparthenope into a selected data directory. It is a
 miscellaneous developer/operator tool, not an installed `sprtz` console command.
 
 The script uses only the Python standard library, logs operational messages with
@@ -34,7 +34,7 @@ tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03
 ```
 
 This requests 24 hourly files starting at `2026-06-28 00:00`, using domain
-`d03`. By default, files are written under:
+`d03`. By default, when `--data-root` is omitted, files are written under:
 
 ```text
 data/wrf/d03/
@@ -73,9 +73,9 @@ INFO https://data.meteo.uniparthenope.it/files/wrf5/d03/history/2026/06/28/wrf5_
 : Required. WRF domain to download. Must be `d01`, `d02`, or `d03`.
 
 `--data-root PATH`
-: Root directory for downloaded data. Defaults to `data`, so files go to
-  `data/wrf/<domain>/`. Use this only when a workflow explicitly needs a
-  different data root.
+: Destination directory for downloaded files. When omitted, files go to
+  `data/wrf/<domain>/`. When supplied, the value is used directly; for example,
+  `--data-root data/wrf/d03` writes files into `data/wrf/d03/`.
 
 `--timeout-s SECONDS`
 : Per-file network timeout. Defaults to `120.0`.
@@ -100,7 +100,7 @@ INFO https://data.meteo.uniparthenope.it/files/wrf5/d03/history/2026/06/28/wrf5_
 For each hour, the script:
 
 1. Builds the archive URL from the timestamp and domain.
-2. Creates `data/wrf/<domain>/` or the equivalent directory under `--data-root`.
+2. Creates the selected destination directory.
 3. Skips an existing non-empty target file unless `--force` is set.
 4. Downloads to `<filename>.nc.part`.
 5. Atomically replaces the final `.nc` file when the download succeeds.
@@ -143,10 +143,10 @@ Download one day using four parallel workers:
 tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03 --workers 4
 ```
 
-Download into a custom root:
+Download into a custom destination directory:
 
 ```bash
-tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03 --data-root /tmp/sprtz-wrf
+tools/meteouniparthenope-wrf-download.py 20260628Z0000 --hours 24 --domain d03 --data-root /tmp/sprtz-wrf/d03
 ```
 
 ## Relationship to SpritzWRF

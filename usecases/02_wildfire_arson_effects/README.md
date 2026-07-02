@@ -25,7 +25,7 @@ Prepare WRF forcing before the run:
 tools/meteouniparthenope-wrf-download.py 20240731Z1000 \
   --hours 120 \
   --domain d03 \
-  --data-root data/wrf/d03/
+  --data-root data/wrf/d03
 ```
 
 Prepare the optional COP30 terrain source for ground elevation and terrain/GEO

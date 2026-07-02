@@ -143,8 +143,11 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
     v = _as_wind_4d(meteo.get("v", meteo.get("northward_wind", [[0.0]])), name="v")
     if u.shape != v.shape:
         raise DataFormatError("meteorology u/v arrays must have matching shapes")
+    wind_speed = np.hypot(u, v)
+    wind_from_direction = (270.0 - np.rad2deg(np.arctan2(v, u))) % 360.0
     ntime, nz, ny, nx = u.shape
     surface_shape = (ntime, ny, nx)
+    grid = meteo.get("grid", {}) if isinstance(meteo.get("grid", {}), dict) else {}
     temp = _as_surface_3d(meteo.get("temperature", np.full((ny, nx), 293.15)), name="temperature", shape=surface_shape)
     mh = _as_surface_3d(meteo.get("mixing_height", np.full((ny, nx), 1000.0)), name="mixing_height", shape=surface_shape)
     precip = _as_surface_3d(
@@ -180,23 +183,56 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
         x.standard_name = "projection_x_coordinate"
         y.standard_name = "projection_y_coordinate"
         x.units = y.units = "m"
-        x[:] = np.arange(nx, dtype=float)
-        y[:] = np.arange(ny, dtype=float)
+        x_values = float(grid.get("x0", 0.0)) + np.arange(nx, dtype=float) * float(grid.get("dx", 1.0))
+        y_values = float(grid.get("y0", 0.0)) + np.arange(ny, dtype=float) * float(grid.get("dy", 1.0))
+        x[:] = x_values
+        y[:] = y_values
         z = ds.createVariable("z", "f8", ("z",))
         z.standard_name = "height"
         z.long_name = "height above ground"
         z.units = "m"
         z.positive = "up"
         z[:] = np.asarray(meteo.get("z", meteo.get("height_m", [10.0] * nz)), dtype=float)
+        center_lat = metadata.get("center_lat")
+        center_lon = metadata.get("center_lon")
+        if center_lat is not None and center_lon is not None:
+            try:
+                from pyproj import CRS, Transformer
+
+                local = CRS.from_proj4(
+                    f"+proj=aeqd +lat_0={float(center_lat):.12f} +lon_0={float(center_lon):.12f} "
+                    "+datum=WGS84 +units=m +no_defs"
+                )
+                transformer = Transformer.from_crs(local, CRS.from_epsg(4326), always_xy=True)
+                xx, yy = np.meshgrid(x_values, y_values)
+                lon_values, lat_values = transformer.transform(xx, yy)
+                lat = ds.createVariable("latitude", "f8", ("y", "x"), zlib=True)
+                lon = ds.createVariable("longitude", "f8", ("y", "x"), zlib=True)
+                lat.units = "degrees_north"
+                lon.units = "degrees_east"
+                lat.standard_name = "latitude"
+                lon.standard_name = "longitude"
+                lat[:, :] = np.asarray(lat_values, dtype=float)
+                lon[:, :] = np.asarray(lon_values, dtype=float)
+                ds.center_latitude = float(center_lat)
+                ds.center_longitude = float(center_lon)
+            except Exception:
+                pass
         for name, values, standard_name, units in [
             ("eastward_wind", u, "eastward_wind", "m s-1"),
             ("northward_wind", v, "northward_wind", "m s-1"),
+            ("wind_speed", wind_speed, "wind_speed", "m s-1"),
+            ("wind_from_direction", wind_from_direction, "wind_from_direction", "degree"),
             ("air_temperature", temp, "air_temperature", "K"),
             ("atmosphere_boundary_layer_thickness", mh, "atmosphere_boundary_layer_thickness", "m"),
             ("precipitation_rate", precip, "precipitation_rate", "mm h-1"),
             ("fmc", fmc, "", "1"),
         ]:
-            dims = ("time", "z", "y", "x") if name in {"eastward_wind", "northward_wind"} else ("time", "y", "x")
+            dims = (
+                ("time", "z", "y", "x")
+                if name in {"eastward_wind", "northward_wind", "wind_speed", "wind_from_direction"}
+                else ("time", "y", "x")
+            )
             var = ds.createVariable(name, "f8", dims, zlib=True)
             if standard_name:
                 var.standard_name = standard_name

@@ -77,6 +77,26 @@ def meteo_uniparthenope_wrf_url(run_date: str | date | datetime, cycle_hour: int
     return f"{METEO_UNIPARTHENOPE_HISTORY_BASE}/{d:%Y/%m/%d}/wrf5_d03_{ymd}Z{hh}00.nc"
 
 
+def readable_netcdf(path: str | Path) -> bool:
+    """Return whether an existing NetCDF file can be opened.
+
+    In minimal environments without netCDF4, this falls back to the non-empty
+    file check used by the downloader.
+    """
+    p = Path(path)
+    if not p.exists() or p.stat().st_size <= 0:
+        return False
+    if not netcdf_available():
+        return True
+    from netCDF4 import Dataset  # type: ignore
+
+    try:
+        with Dataset(p):
+            return True
+    except Exception:
+        return False
+
+
 def download_meteo_uniparthenope_wrf(
     destination_dir: str | Path,
     *,
@@ -95,7 +115,7 @@ def download_meteo_uniparthenope_wrf(
     out_dir = Path(destination_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / name
-    if target.exists() and target.stat().st_size > 0 and not force:
+    if target.exists() and readable_netcdf(target) and not force:
         return target
     tmp = target.with_suffix(target.suffix + ".part")
     try:

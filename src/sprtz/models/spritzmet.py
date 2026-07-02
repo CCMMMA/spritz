@@ -346,6 +346,11 @@ def build_meteorology(
             "parallel": "mpi-domain" if ctx.enabled else "serial",
             "gpu_backend": gpu.backend,
             "gpu_device_id": gpu.device_id if gpu.enabled else None,
+            **{
+                key: value
+                for key, value in config.raw.get("metadata", {}).items()
+                if key in {"center_lat", "center_lon"}
+            },
         },
     }
 

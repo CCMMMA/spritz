@@ -11,7 +11,7 @@ SpritzWRF/SpritzMet WRF/CF metadata, not from filenames.
 Prepare meteorology and terrain for the fire-origin analysis area:
 
 ```bash
-tools/meteouniparthenope-wrf-download.py 20260601Z0000 --hours 6 --domain d03 --data-root data
+tools/meteouniparthenope-wrf-download.py 20260601Z0000 --hours 6 --domain d03 --data-root data/wrf/d03
 python3 tools/copernicus-cop30-dem-download.py \
   --south 40.40 --north 41.10 \
   --west 13.80 --east 14.80 \

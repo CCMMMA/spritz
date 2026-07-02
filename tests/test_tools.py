@@ -4,6 +4,7 @@ import importlib.util
 import logging
 import sys
 import types
+from io import BytesIO
 from importlib.machinery import SourceFileLoader
 from datetime import datetime
 from pathlib import Path
@@ -58,7 +59,7 @@ def test_plan_downloads_expands_hourly_duration_under_data_root() -> None:
         datetime(2026, 5, 27, 23, 0),
         hours=3,
         domain="d03",
-        output_root="data",
+        output_root=None,
     )
 
     assert [item.timestamp for item in downloads] == [
@@ -68,6 +69,19 @@ def test_plan_downloads_expands_hourly_duration_under_data_root() -> None:
     ]
     assert all("/history/" in item.url and "/archive/" not in item.url for item in downloads)
     assert downloads[-1].path == Path("data/wrf/d03/wrf5_d03_20260528Z0100.nc")
+
+
+def test_plan_downloads_uses_explicit_data_root_as_destination() -> None:
+    tool = load_wrf_download_tool()
+
+    downloads = tool.plan_downloads(
+        datetime(2026, 5, 27, 23, 0),
+        hours=1,
+        domain="d03",
+        output_root="data/wrf/d03",
+    )
+
+    assert downloads[0].path == Path("data/wrf/d03/wrf5_d03_20260527Z2300.nc")
 
 
 def test_plan_downloads_rejects_non_positive_hours() -> None:
@@ -90,7 +104,7 @@ def test_run_downloads_rejects_non_positive_workers() -> None:
         datetime(2026, 5, 27),
         hours=1,
         domain="d01",
-        output_root="data",
+        output_root=None,
     )
 
     with pytest.raises(ValueError, match="workers"):
@@ -103,7 +117,7 @@ def test_run_downloads_preserves_planned_order(monkeypatch: pytest.MonkeyPatch) 
         datetime(2026, 5, 27),
         hours=3,
         domain="d03",
-        output_root="data",
+        output_root=None,
     )
 
     def fake_download(item, *, timeout_s: float, force: bool):
@@ -134,7 +148,42 @@ def test_main_uses_data_root_for_dry_run(caplog: pytest.LogCaptureFixture) -> No
     )
 
     assert result == 0
-    assert "custom-data/wrf/d03/wrf5_d03_20260628Z0000.nc" in caplog.text
+    assert "custom-data/wrf5_d03_20260628Z0000.nc" in caplog.text
+
+
+def test_download_file_redownloads_unreadable_existing_netcdf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pytest.importorskip("netCDF4")
+    tool = load_wrf_download_tool()
+    caplog.set_level(logging.WARNING)
+    target = tmp_path / "wrf5_d03_20260628Z0000.nc"
+    target.write_bytes(b"not a netcdf file")
+    item = tool.WRFDownload(
+        timestamp=datetime(2026, 6, 28),
+        domain="d03",
+        url="https://example.test/wrf5_d03_20260628Z0000.nc",
+        path=target,
+    )
+
+    class FakeResponse(BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.close()
+            return False
+
+    def fake_urlopen(url: str, timeout: float):
+        return FakeResponse(b"replacement")
+
+    monkeypatch.setattr(tool, "urlopen", fake_urlopen)
+
+    assert tool.download_file(item, timeout_s=1.0, force=False) == target
+    assert target.read_bytes() == b"replacement"
+    assert "not readable NetCDF" in caplog.text
 
 
 def test_main_handles_keyboard_interrupt_softly(

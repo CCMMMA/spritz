@@ -42,6 +42,7 @@ from sailing_forecast import (  # noqa: E402
 from wildfire import (  # noqa: E402
     _load_fire_events,
     build_wildfire_config,
+    ensure_wildfire_receptor_coordinates,
     run_wildfire_event,
 )
 
@@ -262,6 +263,13 @@ def test_build_wildfire_config(tmp_path: Path) -> None:
     assert config["sources"][0]["heat_release"] > 0
     assert config["sources"][0]["emission_rate"] > 0
     assert len(config["receptors"]) > 0
+    assert all("latitude" in receptor and "longitude" in receptor for receptor in config["receptors"])
+    center_receptor = min(
+        config["receptors"],
+        key=lambda receptor: abs(float(receptor["x"])) + abs(float(receptor["y"])),
+    )
+    assert center_receptor["latitude"] == pytest.approx(40.85)
+    assert center_receptor["longitude"] == pytest.approx(14.27)
 
 
 def test_build_wildfire_config_supports_multi_fire_materials_and_windows(tmp_path: Path) -> None:
@@ -307,6 +315,24 @@ def test_build_wildfire_config_supports_multi_fire_materials_and_windows(tmp_pat
     assert config["sources"][1]["stack_height"] == 2.0
     assert config["run"]["firefighters_emission_factor"] == 0.4
     assert config["run"]["precipitation_washout"] is True
+
+
+def test_wildfire_config_upgrade_adds_receptor_coordinates(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "legacy_wildfire.json"
+    config = build_wildfire_config(
+        cfg_path,
+        center_lat=40.85,
+        center_lon=14.27,
+        burning_temperature_k=1000.0,
+    )
+    for receptor in config["receptors"]:
+        receptor.pop("latitude", None)
+        receptor.pop("longitude", None)
+    write_json(cfg_path, config)
+
+    assert ensure_wildfire_receptor_coordinates(cfg_path) is True
+    upgraded = read_json(cfg_path)
+    assert all("latitude" in receptor and "longitude" in receptor for receptor in upgraded["receptors"])
 
 
 def test_wildfire_cli_fire_events_json_accepts_inline_and_file(tmp_path: Path) -> None:
@@ -810,6 +836,19 @@ def test_high_resolution_wind_vertical_level_preset_points_to_config() -> None:
     module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
     with pytest.raises(ValueError, match="config.json"):
         module._parse_vertical_levels_m("usecase01-exponential")
+
+
+def test_high_resolution_wind_hourly_resolver_skips_unreadable_netcdf(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pytest.importorskip("netCDF4")
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    bad_wrf = tmp_path / "wrf5_d03_20240731Z1000.nc"
+    bad_wrf.write_bytes(b"not a netcdf file")
+
+    assert module._local_hourly_wrf_path(tmp_path, module.parse_script_datetime("20240731Z1000")) is None
+    assert "ignoring unreadable WRF file" in caplog.text
 
 
 def test_high_resolution_wind_vertical_levels_expand_single_level_wrf() -> None:

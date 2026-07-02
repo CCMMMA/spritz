@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -55,11 +56,15 @@ def plan_downloads(
     *,
     hours: int,
     domain: str,
-    output_root: str | Path,
+    output_root: str | Path | None,
 ) -> list[WRFDownload]:
     if hours < 1:
         raise ValueError("--hours must be at least 1")
-    output_dir = Path(output_root) / "wrf" / domain
+    output_dir = (
+        Path(output_root)
+        if output_root is not None
+        else Path("data") / "wrf" / domain
+    )
     downloads: list[WRFDownload] = []
     for offset in range(hours):
         timestamp = start + timedelta(hours=offset)
@@ -75,12 +80,30 @@ def plan_downloads(
     return downloads
 
 
+def readable_netcdf(path: str | Path) -> bool:
+    """Return whether a local NetCDF file can be reused."""
+    p = Path(path)
+    if not p.exists() or p.stat().st_size <= 0:
+        return False
+    if importlib.util.find_spec("netCDF4") is None:
+        return True
+    from netCDF4 import Dataset  # type: ignore
+
+    try:
+        with Dataset(p):
+            return True
+    except Exception:
+        return False
+
+
 def download_file(item: WRFDownload, *, timeout_s: float, force: bool) -> Path:
     """Download one WRF history file atomically."""
     item.path.parent.mkdir(parents=True, exist_ok=True)
-    if item.path.exists() and item.path.stat().st_size > 0 and not force:
+    if item.path.exists() and readable_netcdf(item.path) and not force:
         LOGGER.info("reusing existing file: %s", item.path)
         return item.path
+    if item.path.exists() and not force:
+        LOGGER.warning("existing file is not readable NetCDF; downloading again: %s", item.path)
 
     tmp = item.path.with_suffix(item.path.suffix + ".part")
     LOGGER.info("downloading %s", item.url)
@@ -136,7 +159,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("date", type=parse_cycle, help="start timestamp as YYYYMMDDZhhmm")
     parser.add_argument("--hours", type=int, required=True, help="duration in hourly files")
     parser.add_argument("--domain", type=validate_domain, required=True, help="WRF domain: d01, d02, d03")
-    parser.add_argument("--data-root", default="data", help="repository data root for downloads")
+    parser.add_argument(
+        "--data-root",
+        default=None,
+        help="destination directory for downloads; defaults to data/wrf/<domain>",
+    )
     parser.add_argument("--timeout-s", type=float, default=120.0, help="per-file download timeout")
     parser.add_argument("--workers", type=int, default=1, help="parallel download workers")
     parser.add_argument("--force", action="store_true", help="download even when files already exist")

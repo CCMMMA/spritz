@@ -13,7 +13,7 @@ import numpy as np
 from pyproj import CRS, Transformer
 
 from sprtz.config import from_mapping
-from sprtz.io.jsonio import write_json
+from sprtz.io.jsonio import read_json, write_json
 from high_resolution_wind import downscale_wrf_to_100m
 from sprtz.workflow import run_workflow
 from sprtz.logging import configure_logging
@@ -108,6 +108,48 @@ def _local_transformer(center_lat: float, center_lon: float) -> Transformer:
         "+datum=WGS84 +units=m +no_defs"
     )
     return Transformer.from_crs(CRS.from_epsg(4326), local, always_xy=True)
+
+
+def _local_to_wgs84(center_lat: float, center_lon: float, x: float, y: float) -> tuple[float, float]:
+    local = CRS.from_proj4(
+        f"+proj=aeqd +lat_0={center_lat:.12f} +lon_0={center_lon:.12f} "
+        "+datum=WGS84 +units=m +no_defs"
+    )
+    transformer = Transformer.from_crs(local, CRS.from_epsg(4326), always_xy=True)
+    lon, lat = transformer.transform(x, y)
+    return float(lat), float(lon)
+
+
+def ensure_wildfire_receptor_coordinates(config_path: str | Path) -> bool:
+    """Add receptor latitude/longitude to older wildfire configs when possible."""
+    path = Path(config_path)
+    config = read_json(path)
+    receptors = config.get("receptors")
+    metadata = config.get("metadata", {})
+    if not isinstance(receptors, list) or not receptors:
+        return False
+    if all("latitude" in receptor and "longitude" in receptor for receptor in receptors):
+        return False
+    if "center_lat" not in metadata or "center_lon" not in metadata:
+        return False
+    center_lat = float(metadata["center_lat"])
+    center_lon = float(metadata["center_lon"])
+    changed = False
+    for receptor in receptors:
+        if not isinstance(receptor, dict):
+            continue
+        if "latitude" in receptor and "longitude" in receptor:
+            continue
+        if "x" not in receptor or "y" not in receptor:
+            continue
+        lat, lon = _local_to_wgs84(center_lat, center_lon, float(receptor["x"]), float(receptor["y"]))
+        receptor["latitude"] = lat
+        receptor["longitude"] = lon
+        changed = True
+    if changed:
+        from_mapping(config).validate()
+        write_json(path, config)
+    return changed
 
 
 def _load_fire_events(value: str | None) -> list[dict[str, Any]] | None:
@@ -299,7 +341,17 @@ def build_wildfire_config(
             x = start + ix * receptor_spacing_m
             y = start + iy * receptor_spacing_m
             if math.hypot(x, y) <= receptor_radius_m:
-                receptors.append({"id": f"R{len(receptors):04d}", "x": x, "y": y, "z": 1.5})
+                lat, lon = _local_to_wgs84(center_lat, center_lon, x, y)
+                receptors.append(
+                    {
+                        "id": f"R{len(receptors):04d}",
+                        "x": x,
+                        "y": y,
+                        "z": 1.5,
+                        "latitude": lat,
+                        "longitude": lon,
+                    }
+                )
     config = {
         "metadata": {
             "title": "Spritz arson/wildfire screening scenario",

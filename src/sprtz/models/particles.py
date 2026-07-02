@@ -139,20 +139,22 @@ def simulate_particles(
                 total += value
                 dry_flux += value * max(src.deposition_velocity, 0.0)
                 wet_flux += value * (max(src.wet_scavenging, 0.0) + washout_rate)
-            rows.append(
-                {
-                    "time": time_value,
-                    **({} if sample_dt is None else {"datetime": sample_dt.isoformat()}),
-                    "receptor": rec.id,
-                    "output_kind": "field" if rec.id in field_ids else "receptor",
-                    "x": rec.x,
-                    "y": rec.y,
-                    "z": rec.z,
-                    "concentration": total,
-                    "dry_flux": dry_flux,
-                    "wet_flux": wet_flux,
-                }
-            )
+            row: dict[str, float | str] = {
+                "time": time_value,
+                **({} if sample_dt is None else {"datetime": sample_dt.isoformat()}),
+                "receptor": rec.id,
+                "output_kind": "field" if rec.id in field_ids else "receptor",
+                "x": rec.x,
+                "y": rec.y,
+                "z": rec.z,
+                "concentration": total,
+                "dry_flux": dry_flux,
+                "wet_flux": wet_flux,
+            }
+            if rec.latitude is not None and rec.longitude is not None:
+                row["latitude"] = float(rec.latitude)
+                row["longitude"] = float(rec.longitude)
+            rows.append(row)
     return rows
 
 

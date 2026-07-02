@@ -59,7 +59,7 @@ Prepare WRF input with the repository downloader:
 tools/meteouniparthenope-wrf-download.py 20260621Z0000 \
   --hours 1 \
   --domain d03 \
-  --data-root data
+  --data-root data/wrf/d03
 ```
 
 Prepare terrain for workflows that also need surface elevation:

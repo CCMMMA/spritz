@@ -414,8 +414,10 @@ def _local_hourly_wrf_path(download_dir: str | Path, timestamp) -> Path | None:
         root / "d03" / _wrf_filename(timestamp),
     ]
     for candidate in candidates:
-        if candidate.exists() and candidate.stat().st_size > 0:
+        if candidate.exists() and spritzwrf.readable_netcdf(candidate):
             return candidate
+        if candidate.exists():
+            LOGGER.warning("step 1/4 input: ignoring unreadable WRF file %s", candidate)
     return None
 
 
