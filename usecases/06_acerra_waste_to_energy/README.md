@@ -40,15 +40,15 @@ when standalone operational terrain/GEO products are required.
 
 ```bash
 python usecases/06_acerra_waste_to_energy/step_01_build_config.py \
-  --output output/acerra_wte/acerra_waste_to_energy.json
+  --output data/output/acerra_wte/acerra_waste_to_energy.json
 ```
 
 ## Step 2: Run the model
 
 ```bash
 python usecases/06_acerra_waste_to_energy/step_02_run_model.py \
-  --config output/acerra_wte/acerra_waste_to_energy.json \
-  --output-dir output/acerra_wte/model \
+  --config data/output/acerra_wte/acerra_waste_to_energy.json \
+  --output-dir data/output/acerra_wte/model \
   --interchange netcdf
 ```
 
