@@ -268,6 +268,7 @@ def test_build_wildfire_config(tmp_path: Path) -> None:
     assert config["sources"][0]["longitude"] == pytest.approx(14.27)
     assert config["grid"]["x0"] + ((config["grid"]["nx"] - 1) / 2.0) * config["grid"]["dx"] == pytest.approx(0.0)
     assert config["grid"]["y0"] + ((config["grid"]["ny"] - 1) / 2.0) * config["grid"]["dy"] == pytest.approx(0.0)
+    assert config["run"]["field_z_levels"][-1] >= 2000.0
     assert len(config["receptors"]) > 0
     assert all("latitude" in receptor and "longitude" in receptor for receptor in config["receptors"])
     center_receptor = min(

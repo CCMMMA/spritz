@@ -22,6 +22,7 @@ from plotting import plot_netcdf_if_available, plot_workflow_netcdfs
 
 
 LOGGER = logging.getLogger(__name__)
+DEFAULT_WILDFIRE_FIELD_Z_LEVELS = [1.5, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 1500.0, 2000.0]
 
 
 def _center_value(values: Any, *, level_index: int = 0) -> float:
@@ -268,7 +269,7 @@ def build_wildfire_config(
     x0 = -((grid_cells - 1) / 2.0) * grid_spacing_m
     y0 = x0
     concentration_field_z_levels = list(
-        parse_field_z_levels([1.5] if field_z_levels is None else field_z_levels)
+        parse_field_z_levels(DEFAULT_WILDFIRE_FIELD_Z_LEVELS if field_z_levels is None else field_z_levels)
     )
     theta = math.radians(270.0 - wind_from_direction_deg)
     station_speed = max(0.1, wind_speed_m_s)

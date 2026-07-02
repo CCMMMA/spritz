@@ -72,6 +72,60 @@ def test_spritz_output_interval_csv_and_netcdf(tmp_path):
     assert sorted({row["time"] for row in reread}) == [600.0, 1200.0, 1800.0]
 
 
+def test_gaussian_puff_integrates_continuous_output_window():
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "grid": {
+                **base.raw["grid"],
+                "nx": 5,
+                "ny": 5,
+                "dx": 100.0,
+                "dy": 100.0,
+                "x0": -200.0,
+                "y0": -200.0,
+            },
+            "sources": [
+                {
+                    **base.raw["sources"][0],
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                    "stack_height": 0.0,
+                    "height": 1.0,
+                    "heat_release": 0.0,
+                    "exit_temperature": 293.15,
+                    "exit_velocity": 0.0,
+                    "emission_rate": 1.0,
+                }
+            ],
+            "receptors": [],
+            "run": {
+                **base.raw["run"],
+                "output_interval_s": 600.0,
+                "output_duration_s": 600.0,
+                "concentration_output": "grid",
+                "field_z_levels": [0.0],
+                "gaussian_puff_samples": 12,
+            },
+        }
+    )
+    meteo = {
+        "u": [[1.0]],
+        "v": [[0.0]],
+        "temperature": [[293.15]],
+        "mixing_height": [[1000.0]],
+        "precipitation_rate": [[0.0]],
+    }
+
+    rows = spritz.compute_concentrations(cfg, meteo)
+    centerline = {row["x"]: row["concentration"] for row in rows if row["y"] == 0.0 and row["z"] == 0.0}
+
+    assert centerline[200.0] > 0.0
+    assert centerline[-100.0] == 0.0
+
+
 def test_spritz_can_write_3d_concentration_field(tmp_path):
     base = load_config("examples/minimal.json")
     cfg = from_mapping(

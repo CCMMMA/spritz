@@ -491,6 +491,7 @@ def compute_concentrations(
     output_interval = config.run.get("output_interval_s", config.run.get("OUTPUT_INTERVAL_S"))
     interval_mass_time = float(output_interval) if output_interval is not None else averaging_time
     legacy_steady_output = output_interval is None
+    puff_samples = max(1, int(config.run.get("gaussian_puff_samples", config.run.get("GAUSSIAN_PUFF_SAMPLES", 6))))
     ambient_temperature = float(np.nanmean(np.asarray(meteo.get("temperature", [[293.15]]), dtype=float)))
     mixing_height = float(np.nanmean(np.asarray(meteo.get("mixing_height", [[1000.0]]), dtype=float)))
     washout_rate = precipitation_washout_rate(config, meteo)
@@ -559,31 +560,79 @@ def compute_concentrations(
                         stability=stability,
                     )
                 else:
-                    # Time-resolved puff output advects the puff center with the
-                    # mean wind. This lets output cadence differ from the
-                    # meteorological cadence while the default path below keeps
-                    # the legacy steady representative concentration unchanged.
-                    sigmas = dispersion_parameters(
-                        max(puff_center_x, 1.0),
-                        stability,
-                        elapsed_s=elapsed_s,
-                        source_width=src.width,
-                        source_length=src.length,
-                        source_height=max(src.height, 0.0),
-                    )
-                    emission_window = min(interval_mass_time, max(elapsed_s, 1.0))
-                    mass = emission_rate * emission_window * depletion
-                    conc = gaussian_puff(
-                        mass=mass,
-                        x_receptor=xdown,
-                        y_receptor=ycross,
-                        z_receptor=0.0,
-                        x_center=puff_center_x,
-                        y_center=0.0,
-                        z_center=eff_h,
-                        sigmas=sigmas,
-                    )
-                    conc = conc / max(emission_window, 1.0)
+                    if legacy_steady_output:
+                        sigmas = dispersion_parameters(
+                            max(puff_center_x, 1.0),
+                            stability,
+                            elapsed_s=elapsed_s,
+                            source_width=src.width,
+                            source_length=src.length,
+                            source_height=max(src.height, 0.0),
+                        )
+                        emission_window = min(interval_mass_time, max(elapsed_s, 1.0))
+                        mass = emission_rate * emission_window * depletion
+                        conc = gaussian_puff(
+                            mass=mass,
+                            x_receptor=xdown,
+                            y_receptor=ycross,
+                            z_receptor=0.0,
+                            x_center=puff_center_x,
+                            y_center=0.0,
+                            z_center=eff_h,
+                            sigmas=sigmas,
+                        )
+                        conc = conc / max(emission_window, 1.0)
+                    else:
+                        # Continuous sources emit throughout each output
+                        # window. Average a clean-room Gaussian puff kernel
+                        # over release ages instead of representing the whole
+                        # window with one aged puff center.
+                        emission_window = min(interval_mass_time, max(sample_time, 1.0))
+                        dt = emission_window / float(puff_samples)
+                        conc = 0.0
+                        for sample_index in range(puff_samples):
+                            age_s = (sample_index + 0.5) * dt
+                            center_x = speed * age_s
+                            age_eff_h = effective_release_height(
+                                stack_height=src.stack_height,
+                                source_z=src.z,
+                                receptor_z=rec.z,
+                                wind_speed=speed,
+                                downwind_distance=max(center_x, xdown, 1.0),
+                                stack_diameter=src.stack_diameter,
+                                exit_velocity=src.exit_velocity,
+                                exit_temperature=src.exit_temperature,
+                                ambient_temperature=ambient_temperature,
+                                heat_release=src.heat_release,
+                                downwash=bool(config.run.get("stack_tip_downwash", True)),
+                            )
+                            age_depletion = depletion_factor(
+                                travel_time_s=age_s,
+                                decay_rate_s=src.decay_rate,
+                                deposition_velocity_m_s=src.deposition_velocity,
+                                mixing_height_m=mixing_height,
+                                wet_scavenging_s=source_wet_rate,
+                                settling_velocity_m_s=src.settling_velocity,
+                            )
+                            sigmas = dispersion_parameters(
+                                max(center_x, 1.0),
+                                stability,
+                                elapsed_s=age_s,
+                                source_width=src.width,
+                                source_length=src.length,
+                                source_height=max(src.height, 0.0),
+                            )
+                            conc += gaussian_puff(
+                                mass=emission_rate * dt * age_depletion,
+                                x_receptor=xdown,
+                                y_receptor=ycross,
+                                z_receptor=0.0,
+                                x_center=center_x,
+                                y_center=0.0,
+                                z_center=age_eff_h,
+                                sigmas=sigmas,
+                            )
+                        conc = conc / max(emission_window, 1.0)
                 total += conc
                 dry_total += conc * max(src.deposition_velocity, 0.0)
                 wet_total += conc * source_wet_rate * mixing_height

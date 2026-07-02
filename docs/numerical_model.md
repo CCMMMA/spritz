@@ -86,8 +86,10 @@ Omit `output_interval_s` to keep the legacy single output at `time=0`. When it
 is set, Spritz emits concentration/deposition rows at that interval, independent
 of the meteorological input cadence. Puff-mode time-resolved output samples the
 SpritzMet `time,z,y,x` wind cube along each source/receptor path and treats
-active wildfire sources as continuous output-window emissions; plume mode
-remains steady at each requested output time.
+active wildfire sources as continuous output-window emissions by averaging
+Gaussian puffs over release ages in the output window. The optional
+`gaussian_puff_samples` run key controls that clean-room quadrature count
+(`6` by default); plume mode remains steady at each requested output time.
 
 When weather start/end datetimes are supplied, `output_interval_s` defaults to
 covering the weather period. Output rows carry absolute `datetime` values. The

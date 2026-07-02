@@ -14,7 +14,7 @@ USECASES_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(USECASES_ROOT))
 
 from plotting import plot_workflow_netcdfs
-from wildfire import ensure_wildfire_receptor_coordinates
+from wildfire import DEFAULT_WILDFIRE_FIELD_Z_LEVELS, ensure_wildfire_receptor_coordinates
 
 
 LOGGER = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def _ensure_time_dependent_plume_config(config_path: str | Path, meteo_path: str
         run["concentration_output"] = "both"
         changed = True
     if "field_z_levels" not in run:
-        run["field_z_levels"] = [1.5]
+        run["field_z_levels"] = list(DEFAULT_WILDFIRE_FIELD_Z_LEVELS)
         changed = True
     if changed:
         config = {**config, "run": run}

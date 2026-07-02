@@ -260,11 +260,26 @@ def plot_concentration_vertical_profiles_if_available(
                 time_labels = [f"{float(value):g} s" for value in time_axis]
         ix = int(np.argmin(np.abs(x_axis - float(x_m))))
         iy = int(np.argmin(np.abs(y_axis - float(y_m))))
+        selected = values[:, :, iy, ix]
+        global_max = float(np.nanmax(values)) if np.isfinite(values).any() else 0.0
+        if (not np.isfinite(selected).any() or float(np.nanmax(selected)) <= 0.0) and global_max > 0.0:
+            column_max = np.nanmax(values, axis=(0, 1))
+            iy, ix = (int(index) for index in np.unravel_index(int(np.nanargmax(column_max)), column_max.shape))
         profiles = values[:, :, iy, ix]
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         fig, (ax_heat, ax_profiles) = plt.subplots(1, 2, figsize=(10.5, 5.2), dpi=dpi, constrained_layout=True)
-        mesh = ax_heat.pcolormesh(np.arange(profiles.shape[0]), z_axis, profiles.T, shading="auto", cmap="viridis")
+        finite_profiles = profiles[np.isfinite(profiles)]
+        profile_max = float(np.nanmax(finite_profiles)) if finite_profiles.size else 0.0
+        color_kwargs = {"vmin": 0.0, "vmax": profile_max} if profile_max > 0.0 else {"vmin": 0.0, "vmax": 1.0}
+        mesh = ax_heat.pcolormesh(
+            np.arange(profiles.shape[0]),
+            z_axis,
+            profiles.T,
+            shading="auto",
+            cmap="viridis",
+            **color_kwargs,
+        )
         cbar = fig.colorbar(mesh, ax=ax_heat)
         cbar.set_label(f"{long_name}{f' [{units}]' if units else ''}")
         ax_heat.set_title("Time-height concentration")
@@ -280,6 +295,8 @@ def plot_concentration_vertical_profiles_if_available(
         ax_profiles.set_title(f"Concentration profiles at x={x_axis[ix]:.0f} m, y={y_axis[iy]:.0f} m")
         ax_profiles.set_xlabel(f"{long_name}{f' [{units}]' if units else ''}")
         ax_profiles.set_ylabel("field height above local ground [m]")
+        if profile_max > 0.0:
+            ax_profiles.set_xlim(left=0.0, right=profile_max * 1.05)
         ax_profiles.grid(True, alpha=0.25)
         ax_profiles.legend(fontsize=6, loc="best")
         fig.suptitle(f"{source.name}: time-varying vertical concentration")

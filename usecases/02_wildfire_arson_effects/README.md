@@ -126,7 +126,7 @@ profile plots for both Gaussian and particle outputs.
 By default, step 3 looks for `wrf_100m_wind.nc` beside the configuration file,
 copies it into each backend output directory as `meteo.nc`, derives the
 concentration output interval from the NetCDF `time` axis, and enables gridded
-plume output with a near-surface field level.
+plume output with plume-aware vertical field levels.
 
 ```bash
 python usecases/02_wildfire_arson_effects/step_03_run_model.py \
@@ -222,8 +222,8 @@ Step 2 also writes time-dependent plume defaults under `run`:
   different interval is inferred or supplied;
 - `concentration_output`: `both`, so receptor values and gridded plume fields
   are written together;
-- `field_z_levels`: `[1.5]` by default, or multiple metres-above-ground levels
-  from `--field-z-levels` for vertical concentration profiles.
+- `field_z_levels`: plume-aware metres-above-ground levels from 1.5 m through
+  2000 m by default, or explicit levels from `--field-z-levels`.
 
 ## Multi-fire event JSON
 
