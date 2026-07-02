@@ -790,6 +790,7 @@ def plot_map(
     vector_scale: float | None,
     coastline_source: str = "naturalearth",
     color_limits: tuple[float, float] | None = None,
+    warn_missing_geographic: bool = True,
 ) -> Path:
     try:
         import matplotlib
@@ -908,7 +909,8 @@ def plot_map(
         ax.set_xlabel("x [m]")
         ax.set_ylabel("y [m]")
         ax.grid(True, linewidth=0.25, alpha=0.45)
-        LOGGER.warning("geographic coordinates unavailable; coastlines require latitude/longitude")
+        if warn_missing_geographic:
+            LOGGER.warning("geographic coordinates unavailable; coastlines require latitude/longitude")
 
     title_text = title or field.title
     detail_labels = [label for label in (field.time_label, field.level_label) if label]
@@ -1039,6 +1041,8 @@ def plot_animation(
             color_limits[0],
             color_limits[1],
         )
+    if fields and not fields[0].geographic:
+        LOGGER.warning("geographic coordinates unavailable; coastlines require latitude/longitude")
     with tempfile.TemporaryDirectory(prefix="sprtz_plotter_frames_") as tmp:
         frame_paths: list[Path] = []
         for time_index, field in zip(time_indexes, fields):
@@ -1059,6 +1063,7 @@ def plot_animation(
                 vector_density=vector_density,
                 vector_scale=vector_scale,
                 color_limits=color_limits,
+                warn_missing_geographic=False,
             )
             frame_paths.append(frame_path)
             LOGGER.info("animation frame %d/%d time_index=%d", len(frame_paths), len(time_indexes), time_index)

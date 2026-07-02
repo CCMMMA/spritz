@@ -501,12 +501,14 @@ def test_plotter_animation_passes_fixed_color_limits(monkeypatch: pytest.MonkeyP
         ),
     }
     captured_limits: list[tuple[float, float] | None] = []
+    captured_warnings: list[bool] = []
 
     monkeypatch.setattr(plotter, "_animation_time_indexes", lambda *args, **kwargs: [0, 1])
     monkeypatch.setattr(plotter, "read_map_field", lambda *args, time_index, **kwargs: fields[time_index])
 
     def fake_plot_map(field, output_path, **kwargs):
         captured_limits.append(kwargs["color_limits"])
+        captured_warnings.append(kwargs["warn_missing_geographic"])
         Path(output_path).write_bytes(b"PNG")
         return Path(output_path)
 
@@ -537,6 +539,7 @@ def test_plotter_animation_passes_fixed_color_limits(monkeypatch: pytest.MonkeyP
     )
 
     assert captured_limits == [(0.0, 10.0), (0.0, 10.0)]
+    assert captured_warnings == [False, False]
 
 
 def test_plotter_main_animates_selected_variable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
