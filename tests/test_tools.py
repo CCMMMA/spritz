@@ -15,6 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "meteouniparthenope-wrf-download.py"
 PLOTTER_SCRIPT = ROOT / "tools" / "plotter.py"
+LC100_SCRIPT = ROOT / "tools" / "copernicus-lc100-download.py"
 
 
 def load_wrf_download_tool():
@@ -39,6 +40,17 @@ def load_plotter_tool():
     return module
 
 
+def load_lc100_download_tool():
+    loader = SourceFileLoader("copernicus_lc100_download", str(LC100_SCRIPT))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_wrf_history_url_uses_domain_and_timestamp_path() -> None:
     tool = load_wrf_download_tool()
 
@@ -50,6 +62,84 @@ def test_wrf_history_url_uses_domain_and_timestamp_path() -> None:
     )
     assert "/history/" in url
     assert "/archive/" not in url
+
+
+def test_lc100_download_replaces_existing_output_via_temporary_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tool = load_lc100_download_tool()
+    output = tmp_path / "landcover" / "lc100.tif"
+    output.parent.mkdir()
+    output.write_text("old")
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], check: bool) -> None:
+        calls.append(command)
+        Path(command[-1]).write_text("new")
+
+    monkeypatch.setattr(tool.shutil, "which", lambda name: "/usr/bin/gdalwarp")
+    monkeypatch.setattr(tool.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "copernicus-lc100-download.py",
+            "--south",
+            "40.0",
+            "--north",
+            "41.0",
+            "--west",
+            "14.0",
+            "--east",
+            "15.0",
+            "--output",
+            str(output),
+        ],
+    )
+
+    tool.main()
+
+    assert output.read_text() == "new"
+    assert calls
+    assert calls[0][-1] != str(output)
+    assert calls[0][-1].endswith(".tmp.tif")
+    assert not Path(calls[0][-1]).exists()
+
+
+def test_lc100_download_overwrite_passes_gdal_overwrite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tool = load_lc100_download_tool()
+    output = tmp_path / "lc100.tif"
+    output.write_text("old")
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], check: bool) -> None:
+        calls.append(command)
+        Path(command[-1]).write_text("new")
+
+    monkeypatch.setattr(tool.shutil, "which", lambda name: "/usr/bin/gdalwarp")
+    monkeypatch.setattr(tool.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "copernicus-lc100-download.py",
+            "--south",
+            "40.0",
+            "--north",
+            "41.0",
+            "--west",
+            "14.0",
+            "--east",
+            "15.0",
+            "--output",
+            str(output),
+            "--overwrite",
+        ],
+    )
+
+    tool.main()
+
+    assert output.read_text() == "new"
+    assert calls[0][-1] == str(output)
+    assert "-overwrite" in calls[0]
 
 
 def test_plan_downloads_expands_hourly_duration_under_data_root() -> None:

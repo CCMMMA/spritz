@@ -53,7 +53,10 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_naples.tif
 ```
 
-Use `--overwrite` to replace an existing output file.
+If the output path already exists, the script writes the new crop to a
+temporary file in the same directory and replaces the target only after
+`gdalwarp` succeeds. Use `--overwrite` to pass GDAL's direct `-overwrite` mode
+instead.
 
 ## Bounding Box
 

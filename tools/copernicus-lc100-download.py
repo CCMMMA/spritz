@@ -22,9 +22,11 @@ Conda:
 """
 
 import argparse
+from pathlib import Path
 import shutil
 import subprocess
 import sys
+import uuid
 
 COPERNICUS_LC100_2019_URL = (
     "https://zenodo.org/records/3939050/files/"
@@ -87,6 +89,14 @@ def main():
         )
         sys.exit(1)
 
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    target = output
+    replace_target = False
+    if output.exists() and not args.overwrite:
+        target = output.with_name(f".{output.name}.{uuid.uuid4().hex}.tmp{output.suffix}")
+        replace_target = True
+
     source = f"/vsicurl/{args.source_url}"
 
     command = [
@@ -116,7 +126,7 @@ def main():
     command.extend(
         [
             source,
-            args.output,
+            str(target),
         ]
     )
 
@@ -126,13 +136,18 @@ def main():
     try:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as exc:
+        if replace_target and target.exists():
+            target.unlink()
         print(
             f"ERROR: gdalwarp failed with exit code {exc.returncode}",
             file=sys.stderr,
         )
         sys.exit(exc.returncode)
 
-    print(f"Written: {args.output}")
+    if replace_target:
+        target.replace(output)
+
+    print(f"Written: {output}")
 
 
 if __name__ == "__main__":
