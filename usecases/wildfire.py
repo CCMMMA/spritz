@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 from pyproj import CRS, Transformer
 
-from sprtz.config import from_mapping
+from sprtz.config import from_mapping, parse_field_z_levels
 from sprtz.io.jsonio import read_json, write_json
 from high_resolution_wind import downscale_wrf_to_100m
 from sprtz.workflow import run_workflow
@@ -233,6 +233,7 @@ def build_wildfire_config(
     wind_from_direction_deg: float = 270.0,
     grid_cells: int = 101,
     grid_spacing_m: float = 100.0,
+    field_z_levels: Any = None,
 ) -> dict[str, Any]:
     """Create a Spritz config for one or more arson/wildfire release events."""
     burn_lat = center_lat if burning_lat is None else burning_lat
@@ -266,6 +267,9 @@ def build_wildfire_config(
         ]
     x0 = -((grid_cells - 1) / 2.0) * grid_spacing_m
     y0 = x0
+    concentration_field_z_levels = list(
+        parse_field_z_levels([1.5] if field_z_levels is None else field_z_levels)
+    )
     theta = math.radians(270.0 - wind_from_direction_deg)
     station_speed = max(0.1, wind_speed_m_s)
     transformer = _local_transformer(center_lat, center_lon)
@@ -396,7 +400,7 @@ def build_wildfire_config(
             "averaging_time_s": burning_duration_s,
             "output_interval_s": 3600.0,
             "concentration_output": "both",
-            "field_z_levels": [1.5],
+            "field_z_levels": concentration_field_z_levels,
             "weather_start_datetime": weather_start or burning_start,
             "weather_end_datetime": weather_end or event_end,
             "event_start_datetime": burning_start,

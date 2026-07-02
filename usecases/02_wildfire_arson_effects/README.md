@@ -106,9 +106,9 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --material plastic \
   --start 20240731Z1000 \
   --end 20240803Z0000 \
-  --duration-s 3600 \
+  --duration-s 86400 \
   --area-m2 2500 \
-  --precipitation-washout
+  --field-z-levels 1.5,10,25,50,100
 ```
 
 For the default single-fire case, `--center-lat 40.827 --center-lon 14.518`
@@ -117,6 +117,9 @@ defines both the local projection origin and the fire location. With
 `x=-5000..5000 m`, `y=-5000..5000 m`, and field cell `G50_50` is the center at
 `x=0, y=0`, mapping back to `40.827 N, 14.518 E`. The particle and Gaussian
 gridded concentration outputs both use this same center and coordinate contract.
+Use `--field-z-levels` to write one or more concentration-field heights in
+metres above local ground; multiple levels enable vertical concentration
+profile plots for both Gaussian and particle outputs.
 
 ## Step 3: Run the model
 
@@ -160,18 +163,35 @@ python tools/plotter.py data/output/wildfire_case/wrf_100m_wind.nc \
 
 python tools/plotter.py data/output/wildfire_case/model_compare/particles/meteo.nc \
   --variable wind_speed_10m \
-  --output data/output/wildfire_case/model_compare/particles/meteo_map.png
+  --output data/output/wildfire_case/model_compare/particles/particles_meteo_map.png
+
+python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/meteo.nc \
+  --variable wind_speed_10m \
+  --output data/output/wildfire_case/model_compare/gaussian/gaussian_meteo_map.png
 
 python tools/plotter.py data/output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
-  --time-index 1 \
-  --output data/output/wildfire_case/model_compare/particles/concentration_map.png
+  --time-index 0 \
+  --output data/output/wildfire_case/model_compare/particles/particles_concentration_map.png
+  
+python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
+  --variable concentration_field \
+  --time-index 0 \
+  --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_map.png
 ```
 
 The automatic plotting step also writes `meteo_vertical_profiles.png` for each
-backend. The profile figure contains a center-cell time-height wind-speed panel
-and sampled vertical profile curves through the WRF/SpritzMet time axis. When
-the prepared meteo file contains diagnostic `U10M`/`V10M`, the plotted profile
+backend. To regenerate the vertical profile figures explicitly, run:
+
+```bash
+python -c "from usecases.plotting import plot_vertical_profiles_if_available; plot_vertical_profiles_if_available('data/output/wildfire_case/model_compare/particles/meteo.nc', 'data/output/wildfire_case/model_compare/particles/particles_meteo_vertical_profiles.png', variable='wind_speed')"
+
+python -c "from usecases.plotting import plot_vertical_profiles_if_available; plot_vertical_profiles_if_available('data/output/wildfire_case/model_compare/gaussian/meteo.nc', 'data/output/wildfire_case/model_compare/gaussian/gaussian_meteo_vertical_profiles.png', variable='wind_speed')"
+```
+
+The profile figure contains a center-cell time-height wind-speed panel and
+sampled vertical profile curves through the WRF/SpritzMet time axis. When the
+prepared meteo file contains diagnostic `U10M`/`V10M`, the plotted profile
 prepends the diagnostic 10 m above-ground layer before the aloft model levels.
 
 ## Event timing, materials, and source height
@@ -202,8 +222,8 @@ Step 2 also writes time-dependent plume defaults under `run`:
   different interval is inferred or supplied;
 - `concentration_output`: `both`, so receptor values and gridded plume fields
   are written together;
-- `field_z_levels`: `[1.5]`, a near-surface concentration field in metres above
-  local ground.
+- `field_z_levels`: `[1.5]` by default, or multiple metres-above-ground levels
+  from `--field-z-levels` for vertical concentration profiles.
 
 ## Multi-fire event JSON
 
@@ -259,6 +279,8 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 - `model_compare/*/meteo_map.png` — backend meteo map.
 - `model_compare/*/meteo_vertical_profiles.png` — time-varying vertical wind
   profile figure.
+- `model_compare/*/concentration_vertical_profiles.png` — time-varying vertical
+  concentration figure when gridded concentration output is available.
 - `model_compare/*/concentration_map.png` — gridded plume map for a nonzero
   output time.
 

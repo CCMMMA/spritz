@@ -218,6 +218,79 @@ def plot_vertical_profiles_if_available(
         return None
 
 
+def plot_concentration_vertical_profiles_if_available(
+    input_path: str | Path | None,
+    output_path: str | Path,
+    *,
+    variable: str = "concentration_field",
+    x_m: float = 0.0,
+    y_m: float = 0.0,
+    dpi: int = 300,
+) -> Path | None:
+    if input_path is None:
+        return None
+    source = Path(input_path)
+    if source.suffix.lower() not in NETCDF_SUFFIXES or not source.exists():
+        return None
+    try:
+        from netCDF4 import Dataset  # type: ignore
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        LOGGER.warning("could not plot concentration vertical profiles for %s: %s", source, exc)
+        return None
+    try:
+        with Dataset(source) as ds:
+            if variable not in ds.variables:
+                return None
+            values = np.asarray(ds.variables[variable][:], dtype=float)
+            if values.ndim != 4:
+                return None
+            units = str(getattr(ds.variables[variable], "units", ""))
+            long_name = str(getattr(ds.variables[variable], "long_name", variable))
+            x_axis = np.asarray(ds.variables["field_x"][:], dtype=float)
+            y_axis = np.asarray(ds.variables["field_y"][:], dtype=float)
+            z_axis = np.asarray(ds.variables["field_z"][:], dtype=float)
+            time_axis = np.asarray(ds.variables["time"][:], dtype=float) if "time" in ds.variables else np.arange(values.shape[0])
+            if "time_datetime" in ds.variables:
+                time_labels = _decode_time_labels(ds.variables["time_datetime"][:])
+            else:
+                time_labels = [f"{float(value):g} s" for value in time_axis]
+        ix = int(np.argmin(np.abs(x_axis - float(x_m))))
+        iy = int(np.argmin(np.abs(y_axis - float(y_m))))
+        profiles = values[:, :, iy, ix]
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fig, (ax_heat, ax_profiles) = plt.subplots(1, 2, figsize=(10.5, 5.2), dpi=dpi, constrained_layout=True)
+        mesh = ax_heat.pcolormesh(np.arange(profiles.shape[0]), z_axis, profiles.T, shading="auto", cmap="viridis")
+        cbar = fig.colorbar(mesh, ax=ax_heat)
+        cbar.set_label(f"{long_name}{f' [{units}]' if units else ''}")
+        ax_heat.set_title("Time-height concentration")
+        ax_heat.set_xlabel("time index")
+        ax_heat.set_ylabel("field height above local ground [m]")
+        sample_count = min(6, profiles.shape[0])
+        sample_indexes = np.linspace(0, profiles.shape[0] - 1, sample_count, dtype=int)
+        cmap = plt.get_cmap("viridis")
+        for order, time_index in enumerate(sample_indexes):
+            color = cmap(0.0 if sample_count == 1 else order / (sample_count - 1))
+            label = time_labels[time_index] if time_index < len(time_labels) else f"t={time_index}"
+            ax_profiles.plot(profiles[time_index, :], z_axis, color=color, linewidth=1.7, label=label)
+        ax_profiles.set_title(f"Concentration profiles at x={x_axis[ix]:.0f} m, y={y_axis[iy]:.0f} m")
+        ax_profiles.set_xlabel(f"{long_name}{f' [{units}]' if units else ''}")
+        ax_profiles.set_ylabel("field height above local ground [m]")
+        ax_profiles.grid(True, alpha=0.25)
+        ax_profiles.legend(fontsize=6, loc="best")
+        fig.suptitle(f"{source.name}: time-varying vertical concentration")
+        fig.savefig(out)
+        plt.close(fig)
+        return out
+    except Exception as exc:
+        LOGGER.warning("could not plot concentration vertical profiles for %s: %s", source, exc)
+        return None
+
+
 def plot_workflow_netcdfs(
     workflow: dict[str, Any] | None,
     output_dir: str | Path,
@@ -256,6 +329,13 @@ def plot_workflow_netcdfs(
                 path,
                 out / f"{prefix}{key}_vertical_profiles.png",
                 variable="wind_speed",
+            )
+            if profile is not None:
+                products[f"{key}_vertical_profiles"] = str(profile)
+        if key == "concentration":
+            profile = plot_concentration_vertical_profiles_if_available(
+                path,
+                out / f"{prefix}{key}_vertical_profiles.png",
             )
             if profile is not None:
                 products[f"{key}_vertical_profiles"] = str(profile)

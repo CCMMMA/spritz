@@ -42,3 +42,37 @@ def test_particle_backend_is_deterministic(tmp_path):
     a = particles.run(cfg, meteo_path, tmp_path / "a.csv", "csv", seed=3)
     b = particles.run(cfg, meteo_path, tmp_path / "b.csv", "csv", seed=3)
     assert a == b
+
+
+def test_concentration_vertical_profile_plot(tmp_path):
+    try:
+        import matplotlib  # noqa: F401
+        from netCDF4 import Dataset  # noqa: F401
+    except Exception:
+        return
+    from usecases.plotting import plot_concentration_vertical_profiles_if_available
+
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "receptors": [],
+            "run": {
+                **base.raw["run"],
+                "output_interval_s": 60.0,
+                "output_duration_s": 120.0,
+                "concentration_output": "grid",
+                "field_z_levels": [1.5, 10.0],
+                "particles": 50,
+                "particle_duration_s": 60.0,
+            },
+        }
+    )
+    meteo_path = tmp_path / "meteo.nc"
+    conc_path = tmp_path / "particles.nc"
+    figure_path = tmp_path / "particles_concentration_vertical_profiles.png"
+    spritzmet.run(cfg, meteo_path, "netcdf")
+    particles.run(cfg, meteo_path, conc_path, "netcdf", seed=9)
+
+    assert plot_concentration_vertical_profiles_if_available(conc_path, figure_path) == figure_path
+    assert figure_path.exists()

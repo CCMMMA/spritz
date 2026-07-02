@@ -278,6 +278,20 @@ def test_build_wildfire_config(tmp_path: Path) -> None:
     assert center_receptor["longitude"] == pytest.approx(14.27)
 
 
+def test_build_wildfire_config_supports_multiple_field_z_levels(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "wildfire_vertical.json"
+    config = build_wildfire_config(
+        cfg_path,
+        center_lat=40.85,
+        center_lon=14.27,
+        burning_temperature_k=1000.0,
+        field_z_levels=[1.5, 10.0, 50.0, 100.0],
+    )
+
+    assert config["run"]["field_z_levels"] == [1.5, 10.0, 50.0, 100.0]
+    assert read_json(cfg_path)["run"]["field_z_levels"] == [1.5, 10.0, 50.0, 100.0]
+
+
 def test_build_wildfire_config_supports_multi_fire_materials_and_windows(tmp_path: Path) -> None:
     cfg_path = tmp_path / "multi_fire.json"
     config = build_wildfire_config(
@@ -399,11 +413,15 @@ def test_wildfire_run_entrypoint_synthetic(tmp_path: Path) -> None:
                 "600",
                 "--area-m2",
                 "500",
+                "--field-z-levels",
+                "1.5,10,50",
             ]
         )
         == 0
     )
     assert config.exists()
+    payload = read_json(config)
+    assert payload["run"]["field_z_levels"] == [1.5, 10.0, 50.0]
 
 
 def test_acerra_waste_to_energy_config(tmp_path: Path) -> None:

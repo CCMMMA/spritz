@@ -182,6 +182,61 @@ def test_particles_emit_time_dependent_grid_field():
     assert first != second
 
 
+def test_particle_backend_honors_heat_release_plume_rise():
+    base = load_config("examples/minimal.json")
+    cfg_base = {
+        **base.raw,
+        "grid": {
+            **base.raw["grid"],
+            "nx": 5,
+            "ny": 5,
+            "dx": 100.0,
+            "dy": 100.0,
+            "x0": -200.0,
+            "y0": -200.0,
+        },
+        "sources": [
+            {
+                **base.raw["sources"][0],
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "stack_height": 0.0,
+                "height": 1.0,
+                "heat_release": 0.0,
+            }
+        ],
+        "receptors": [],
+        "run": {
+            **base.raw["run"],
+            "output_interval_s": 600.0,
+            "output_duration_s": 600.0,
+            "concentration_output": "grid",
+            "field_z_levels": [1.5],
+            "particles": 800,
+            "particle_duration_s": 600.0,
+            "particle_sigma_h": 20.0,
+            "particle_sigma_z": 10.0,
+            "particle_advection_steps": 2,
+        },
+    }
+    meteo = {
+        "u": [[1.0]],
+        "v": [[0.0]],
+        "temperature": [[293.15]],
+        "mixing_height": [[1000.0]],
+        "precipitation_rate": [[0.0]],
+    }
+    cool_rows = particles.simulate_particles(from_mapping(cfg_base), meteo, seed=4)
+    hot_raw = {
+        **cfg_base,
+        "sources": [{**cfg_base["sources"][0], "heat_release": 10_000_000.0, "exit_temperature": 1123.15}],
+    }
+    hot_rows = particles.simulate_particles(from_mapping(hot_raw), meteo, seed=4)
+
+    assert max(row["concentration"] for row in hot_rows) < max(row["concentration"] for row in cool_rows)
+
+
 def test_gaussian_and_particles_grid_fields_keep_config_center_coordinates():
     base = load_config("examples/minimal.json")
     cfg = from_mapping(

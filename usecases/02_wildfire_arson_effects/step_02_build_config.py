@@ -12,6 +12,20 @@ from datetime_args import script_datetime_to_iso
 from wildfire import BURNING_MATERIALS, _load_fire_events, build_wildfire_config
 
 
+def _parse_field_z_levels(values: list[str] | None) -> list[float] | None:
+    if not values:
+        return None
+    levels: list[float] = []
+    for value in values:
+        for part in value.split(","):
+            text = part.strip()
+            if text:
+                levels.append(float(text))
+    if not levels:
+        raise ValueError("--field-z-levels must include at least one non-negative height")
+    return levels
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the wildfire/arson Spritz configuration")
     parser.add_argument("--output", required=True)
@@ -34,7 +48,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--precipitation-rate-mm-h", type=float, default=0.0)
     parser.add_argument("--wind-speed-m-s", type=float, default=4.0)
     parser.add_argument("--wind-from-direction-deg", type=float, default=270.0)
+    parser.add_argument(
+        "--field-z-levels",
+        action="append",
+        default=None,
+        help="comma-separated concentration field heights in metres AGL; may be repeated",
+    )
     args = parser.parse_args(argv)
+    try:
+        field_z_levels = _parse_field_z_levels(args.field_z_levels)
+    except ValueError as exc:
+        parser.error(str(exc))
     build_wildfire_config(
         args.output,
         center_lat=args.center_lat,
@@ -56,6 +80,7 @@ def main(argv: list[str] | None = None) -> int:
         precipitation_rate_mm_h=args.precipitation_rate_mm_h,
         wind_speed_m_s=args.wind_speed_m_s,
         wind_from_direction_deg=args.wind_from_direction_deg,
+        field_z_levels=field_z_levels,
     )
     return 0
 

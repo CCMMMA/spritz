@@ -8,6 +8,7 @@ import numpy as np
 
 from sprtz.config import SuiteConfig
 from sprtz.core.grid import Grid
+from sprtz.core.physics import effective_release_height
 from sprtz.exceptions import DataFormatError
 from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
@@ -65,6 +66,7 @@ def simulate_particles(
     sigma_z = float(config.run.get("particle_sigma_z", 80.0))
     receptor_radius = float(config.run.get("particle_receptor_radius", 400.0))
     washout_rate = precipitation_washout_rate(config, meteo)
+    ambient_temperature = float(np.nanmean(np.asarray(meteo.get("temperature", [[293.15]]), dtype=float)))
     receptors = model_receptors(config)
     output_mode = concentration_output_mode(config)
     field_levels = field_z_levels(config)
@@ -134,6 +136,28 @@ def simulate_particles(
             pz_np = gpu.asnumpy(pz) if gpu.enabled else pz
             release_time = np.maximum(float(time_value) - travel_np, 0.0)
             step_dt = travel_np / float(advection_steps)
+            plume_u, plume_v, plume_speed = wind_sampler.vector(
+                src.x,
+                src.y,
+                max(src.z + src.stack_height, 0.0),
+                max(float(time_value), 0.0),
+            )
+            del plume_u, plume_v
+            plume_distance = max(plume_speed * max(sample_window, 1.0), 1.0)
+            plume_height = effective_release_height(
+                stack_height=src.stack_height,
+                source_z=src.z,
+                receptor_z=0.0,
+                wind_speed=plume_speed,
+                downwind_distance=plume_distance,
+                stack_diameter=src.stack_diameter,
+                exit_velocity=src.exit_velocity,
+                exit_temperature=src.exit_temperature,
+                ambient_temperature=ambient_temperature,
+                heat_release=src.heat_release,
+                downwash=bool(config.run.get("stack_tip_downwash", True)),
+            )
+            pz_np += plume_height - (src.z + src.stack_height)
             for step in range(advection_steps):
                 current_time = release_time + (step + 0.5) * step_dt
                 u_step, v_step = wind_sampler.sample(
