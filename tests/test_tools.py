@@ -447,6 +447,98 @@ def test_plotter_animation_time_indexes_follow_selected_variable(tmp_path: Path)
     assert plotter._animation_time_indexes(path, "concentration_field") == [0, 1, 2]
 
 
+def test_plotter_animation_color_limits_use_all_frames() -> None:
+    plotter = load_plotter_tool()
+    x = np.asarray([[0.0, 1.0], [0.0, 1.0]])
+    y = np.asarray([[0.0, 0.0], [1.0, 1.0]])
+    fields = [
+        plotter.MapField(
+            name="concentration_field",
+            values=np.asarray([[0.0, 1.0], [2.0, 3.0]]),
+            x=x,
+            y=y,
+            geographic=False,
+            label="concentration [g m-3]",
+            title="Concentration",
+        ),
+        plotter.MapField(
+            name="concentration_field",
+            values=np.asarray([[0.0, 4.0], [5.0, 10.0]]),
+            x=x,
+            y=y,
+            geographic=False,
+            label="concentration [g m-3]",
+            title="Concentration",
+        ),
+    ]
+
+    assert plotter._animation_color_limits(fields, log_scale=False) == (0.0, 10.0)
+    assert plotter._animation_color_limits(fields, log_scale=True) == (1.0, 10.0)
+
+
+def test_plotter_animation_passes_fixed_color_limits(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    plotter = load_plotter_tool()
+    x = np.asarray([[0.0, 1.0], [0.0, 1.0]])
+    y = np.asarray([[0.0, 0.0], [1.0, 1.0]])
+    fields = {
+        0: plotter.MapField(
+            name="concentration_field",
+            values=np.asarray([[0.0, 1.0], [2.0, 3.0]]),
+            x=x,
+            y=y,
+            geographic=False,
+            label="concentration [g m-3]",
+            title="Concentration",
+        ),
+        1: plotter.MapField(
+            name="concentration_field",
+            values=np.asarray([[0.0, 4.0], [5.0, 10.0]]),
+            x=x,
+            y=y,
+            geographic=False,
+            label="concentration [g m-3]",
+            title="Concentration",
+        ),
+    }
+    captured_limits: list[tuple[float, float] | None] = []
+
+    monkeypatch.setattr(plotter, "_animation_time_indexes", lambda *args, **kwargs: [0, 1])
+    monkeypatch.setattr(plotter, "read_map_field", lambda *args, time_index, **kwargs: fields[time_index])
+
+    def fake_plot_map(field, output_path, **kwargs):
+        captured_limits.append(kwargs["color_limits"])
+        Path(output_path).write_bytes(b"PNG")
+        return Path(output_path)
+
+    monkeypatch.setattr(plotter, "plot_map", fake_plot_map)
+    monkeypatch.setattr(plotter, "_write_gif", lambda frame_paths, output_path, **kwargs: Path(output_path))
+
+    plotter.plot_animation(
+        "concentration.nc",
+        tmp_path / "plume.gif",
+        variable_name="concentration_field",
+        level_index=0,
+        center_lat=None,
+        center_lon=None,
+        title=None,
+        dpi=100,
+        cmap="viridis",
+        coastline_source="naturalearth",
+        coastline_resolution="10m",
+        allow_cartopy_download=False,
+        figure_size=(4.0, 3.0),
+        log_scale=False,
+        vector_overlay=False,
+        vector_stride=8,
+        vector_density=None,
+        vector_scale=None,
+        duration_ms=300,
+        loop=0,
+    )
+
+    assert captured_limits == [(0.0, 10.0), (0.0, 10.0)]
+
+
 def test_plotter_main_animates_selected_variable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     plotter = load_plotter_tool()
     output = tmp_path / "plume.gif"

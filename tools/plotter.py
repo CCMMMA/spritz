@@ -789,13 +789,14 @@ def plot_map(
     vector_density: int | None,
     vector_scale: float | None,
     coastline_source: str = "naturalearth",
+    color_limits: tuple[float, float] | None = None,
 ) -> Path:
     try:
         import matplotlib
 
         matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
-        from matplotlib.colors import BoundaryNorm, ListedColormap, LogNorm
+        from matplotlib.colors import BoundaryNorm, ListedColormap, LogNorm, Normalize
     except Exception as exc:  # pragma: no cover - depends on optional extra
         raise RuntimeError("matplotlib is required for plotting; install sprtz[viz]") from exc
 
@@ -815,16 +816,20 @@ def plot_map(
     ax = fig.add_subplot(1, 1, 1, projection=projection)
     norm = None
     if log_scale:
-        positive = field.values[np.isfinite(field.values) & (field.values > 0)]
-        if positive.size == 0:
-            raise ValueError("--log-scale requires at least one positive value")
-        norm = LogNorm(vmin=float(np.nanmin(positive)), vmax=float(np.nanmax(positive)))
+        if color_limits is None:
+            positive = field.values[np.isfinite(field.values) & (field.values > 0)]
+            if positive.size == 0:
+                raise ValueError("--log-scale requires at least one positive value")
+            color_limits = (float(np.nanmin(positive)), float(np.nanmax(positive)))
+        norm = LogNorm(vmin=color_limits[0], vmax=color_limits[1])
     plot_cmap: Any = cmap
     if field.color_levels is not None and field.color_palette is not None:
         rgba = np.asarray(field.color_palette, dtype=float) / 255.0
         plot_cmap = ListedColormap(rgba)
         if not log_scale:
             norm = BoundaryNorm(field.color_levels, ncolors=plot_cmap.N, clip=False)
+    elif color_limits is not None and not log_scale:
+        norm = Normalize(vmin=color_limits[0], vmax=color_limits[1])
 
     if min(field.values.shape) == 1:
         scatter_kwargs: dict[str, Any] = {
@@ -934,6 +939,39 @@ def _animation_time_indexes(input_path: str | Path, variable_name: str | None) -
         return [0]
 
 
+def _expanded_color_limits(low: float, high: float, *, log_scale: bool) -> tuple[float, float]:
+    if high > low:
+        return low, high
+    if log_scale:
+        lower = low / 10.0 if low > 0.0 else 1.0e-12
+        upper = high * 10.0 if high > 0.0 else 1.0e-11
+        if upper <= lower:
+            upper = lower * 10.0
+        return lower, upper
+    pad = max(abs(low) * 0.01, 1.0)
+    return low - pad, high + pad
+
+
+def _animation_color_limits(fields: Sequence[MapField], *, log_scale: bool) -> tuple[float, float] | None:
+    samples: list[np.ndarray] = []
+    for field in fields:
+        values = np.asarray(field.values, dtype=float)
+        if log_scale:
+            sample = values[np.isfinite(values) & (values > 0.0)]
+        else:
+            sample = values[np.isfinite(values)]
+        if sample.size:
+            samples.append(sample)
+    if not samples:
+        return None
+    combined = np.concatenate(samples)
+    low = float(np.nanmin(combined))
+    high = float(np.nanmax(combined))
+    if not log_scale and low >= 0.0:
+        low = 0.0
+    return _expanded_color_limits(low, high, log_scale=log_scale)
+
+
 def _write_gif(frame_paths: Sequence[Path], output_path: str | Path, *, duration_ms: int, loop: int) -> Path:
     if not frame_paths:
         raise ValueError("animation requires at least one frame")
@@ -982,17 +1020,28 @@ def plot_animation(
     loop: int,
 ) -> Path:
     time_indexes = _animation_time_indexes(input_path, variable_name)
+    fields = [
+        read_map_field(
+            input_path,
+            variable_name=variable_name,
+            time_index=time_index,
+            level_index=level_index,
+            center_lat=center_lat,
+            center_lon=center_lon,
+        )
+        for time_index in time_indexes
+    ]
+    color_limits = _animation_color_limits(fields, log_scale=log_scale)
+    if color_limits is not None:
+        LOGGER.info(
+            "animation color scale fixed across %d frames: vmin=%g vmax=%g",
+            len(fields),
+            color_limits[0],
+            color_limits[1],
+        )
     with tempfile.TemporaryDirectory(prefix="sprtz_plotter_frames_") as tmp:
         frame_paths: list[Path] = []
-        for time_index in time_indexes:
-            field = read_map_field(
-                input_path,
-                variable_name=variable_name,
-                time_index=time_index,
-                level_index=level_index,
-                center_lat=center_lat,
-                center_lon=center_lon,
-            )
+        for time_index, field in zip(time_indexes, fields):
             frame_path = Path(tmp) / f"frame_{time_index:05d}.png"
             plot_map(
                 field,
@@ -1009,6 +1058,7 @@ def plot_animation(
                 vector_stride=vector_stride,
                 vector_density=vector_density,
                 vector_scale=vector_scale,
+                color_limits=color_limits,
             )
             frame_paths.append(frame_path)
             LOGGER.info("animation frame %d/%d time_index=%d", len(frame_paths), len(time_indexes), time_index)
