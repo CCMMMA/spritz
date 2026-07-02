@@ -123,9 +123,7 @@ python usecases/02_wildfire_arson_effects/step_03_run_model.py \
   --output-dir data/output/wildfire_case/model_compare \
   --backend both \
   --interchange netcdf \
-  --calpuff-binary \
-  --overlay-plume-wind \
-  --plume-wind-level-index 0
+  --calpuff-binary
 ```
 
 This writes separate backend products under:
@@ -140,12 +138,7 @@ stored beside the configuration JSON. Use `--output-interval-s` to override the
 interval inferred from the meteo file. Use `--calpuff-binary` to write a
 clean-room CALPUFF-style concentration binary sidecar,
 `concentration_calpuff.dat`, for each backend. NetCDF-CF remains the canonical
-Sprtz interchange; the binary sidecar is for external comparison workflows. Use
-`--overlay-plume-wind` to draw unit-length wind direction vectors from the
-backend `meteo.nc` product on plume concentration maps. The vectors are sampled
-at `--plume-wind-level-index` from the meteorological vertical grid; the shaded
-plume field still uses the concentration `field_z` level selected by the
-plotter.
+Sprtz interchange; the binary sidecar is for external comparison workflows.
 
 ## Step 4: Plot intermediate and final NetCDF maps
 
@@ -197,9 +190,8 @@ python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concent
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_animation.gif
 ```
 
-The automatic plotting step writes `meteo_vertical_profiles.png`,
-`concentration_vertical_profiles.png`, and backend-named plume profile figures
-for each backend. To regenerate the vertical profile figures explicitly, run:
+Step 3 writes backend-named plume profile figures for each backend. To
+regenerate vertical profile figures explicitly, run:
 
 ```bash
 python tools/profiler.py data/output/wildfire_case/model_compare/particles/meteo.nc \
@@ -330,18 +322,9 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   metrics, including min/max, mean absolute difference, RMS difference, and max
   absolute difference.
 - `wrf_100m_wind_map.png` — horizontal wind map for the prepared forcing.
-- `model_compare/*/meteo_map.png` — backend meteo map.
-- `model_compare/*/meteo_vertical_profiles.png` — time-varying vertical wind
-  profile figure.
-- `model_compare/*/concentration_vertical_profiles.png` — time-varying vertical
-  concentration figure when gridded concentration output is available.
 - `model_compare/*/*_concentration_vertical_profiles.png` — explicit
   backend-named time-varying plume concentration profile figure, written for
   both particles and Gaussian outputs.
-- `model_compare/*/concentration_map.png` — gridded plume map for a nonzero
-  output time.
-- `model_compare/*/*_concentration_animation.gif` — animated plume map across
-  every concentration output time frame.
 - `model_compare/*/*_concentration_profiles_animation.gif` — animated vertical
   plume concentration profile across every concentration output time frame.
 

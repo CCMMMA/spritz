@@ -126,6 +126,63 @@ def test_gaussian_puff_integrates_continuous_output_window():
     assert centerline[-100.0] == 0.0
 
 
+def test_gaussian_puff_time_integral_keeps_concentration_units():
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "grid": {
+                **base.raw["grid"],
+                "nx": 1,
+                "ny": 1,
+                "dx": 100.0,
+                "dy": 100.0,
+                "x0": 300.0,
+                "y0": 0.0,
+            },
+            "sources": [
+                {
+                    **base.raw["sources"][0],
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                    "stack_height": 0.0,
+                    "height": 1.0,
+                    "heat_release": 0.0,
+                    "exit_temperature": 293.15,
+                    "exit_velocity": 0.0,
+                    "emission_rate": 1.0,
+                    "deposition_velocity": 0.0,
+                    "wet_scavenging": 0.0,
+                    "settling_velocity": 0.0,
+                }
+            ],
+            "receptors": [],
+            "run": {
+                **base.raw["run"],
+                "output_interval_s": 600.0,
+                "output_duration_s": 600.0,
+                "concentration_output": "grid",
+                "field_z_levels": [0.0],
+                "gaussian_puff_samples": 3,
+                "stability": "D",
+            },
+        }
+    )
+    meteo = {
+        "u": [[1.0]],
+        "v": [[0.0]],
+        "temperature": [[293.15]],
+        "mixing_height": [[1000.0]],
+        "precipitation_rate": [[0.0]],
+    }
+
+    rows = spritz.compute_concentrations(cfg, meteo)
+
+    assert len(rows) == 1
+    assert rows[0]["concentration"] > 1.0e-7
+
+
 def test_spritz_can_write_3d_concentration_field(tmp_path):
     base = load_config("examples/minimal.json")
     cfg = from_mapping(

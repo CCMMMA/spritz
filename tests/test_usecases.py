@@ -392,8 +392,6 @@ def test_wildfire_step3_writes_explicit_plume_profile(monkeypatch: pytest.Monkey
         "_run_workflow_with_performance_log",
         lambda **kwargs: {"concentration": str(concentration), "meteo": str(output_dir / "meteo.nc"), "post": str(output_dir / "post.json")},
     )
-    monkeypatch.setattr(module, "plot_workflow_netcdfs", lambda *args, **kwargs: {})
-
     plotted: list[Path] = []
 
     def fake_plot_concentration(input_path, output_path, **kwargs):

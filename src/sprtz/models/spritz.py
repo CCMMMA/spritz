@@ -584,7 +584,7 @@ def compute_concentrations(
                         conc = conc / max(emission_window, 1.0)
                     else:
                         # Continuous sources emit throughout each output
-                        # window. Average a clean-room Gaussian puff kernel
+                        # window. Integrate clean-room Gaussian puff kernels
                         # over release ages instead of representing the whole
                         # window with one aged puff center.
                         emission_window = min(interval_mass_time, max(sample_time, 1.0))
@@ -632,7 +632,6 @@ def compute_concentrations(
                                 z_center=age_eff_h,
                                 sigmas=sigmas,
                             )
-                        conc = conc / max(emission_window, 1.0)
                 total += conc
                 dry_total += conc * max(src.deposition_velocity, 0.0)
                 wet_total += conc * source_wet_rate * mixing_height

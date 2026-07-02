@@ -14,7 +14,7 @@ from sprtz.logging import configure_logging
 USECASES_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(USECASES_ROOT))
 
-from plotting import plot_concentration_vertical_profiles_if_available, plot_workflow_netcdfs
+from plotting import plot_concentration_vertical_profiles_if_available
 from wildfire import (
     DEFAULT_WILDFIRE_FIELD_Z_LEVELS,
     DEFAULT_WILDFIRE_PARTICLE_ADVECTION_STEPS,
@@ -225,12 +225,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--meteo", default=None, help="prepared meteorology file; defaults to wrf_100m_wind.nc beside the config")
     parser.add_argument("--output-interval-s", type=float, default=None, help="concentration output interval in seconds")
     parser.add_argument("--calpuff-binary", action="store_true", help="write clean-room CALPUFF-style binary concentration sidecars")
-    parser.add_argument("--overlay-plume-wind", action="store_true", help="overlay unit-length meteo wind vectors on concentration plume maps")
-    parser.add_argument("--plume-wind-level-index", type=int, default=0, help="meteo z-level index used for plume-map wind-vector overlays")
     parser.add_argument("--verbose", action="store_true", help="enable debug logging")
     args = parser.parse_args(argv)
-    if args.plume_wind_level_index < 0:
-        parser.error("--plume-wind-level-index must be non-negative")
     configure_logging(args.verbose)
     LOGGER.info("step 3/3 input: config=%s output_dir=%s", args.config, args.output_dir)
     LOGGER.info("step 3/3 model: backend=%s interchange=%s parallel=serial", args.backend, args.interchange)
@@ -246,11 +242,6 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.info("step 3/3 config: enabled time-dependent gridded plume output in %s", args.config)
     if output_interval_s is not None:
         LOGGER.info("step 3/3 timing: concentration output interval %.0f s", output_interval_s)
-    metadata = config.get("metadata", {})
-    center_lat = metadata.get("center_lat")
-    center_lon = metadata.get("center_lon")
-    if center_lat is not None and center_lon is not None:
-        LOGGER.info("step 3/3 plotting: using geographic center lat=%s lon=%s", center_lat, center_lon)
     workflows: dict[str, dict] = {}
     if args.backend == "both":
         for backend in ("particles", "gaussian"):
@@ -294,19 +285,6 @@ def main(argv: list[str] | None = None) -> int:
     plots: dict[str, str] = {}
     for backend, backend_workflow in workflows.items():
         backend_output_dir = Path(args.output_dir) / backend if args.backend == "both" else Path(args.output_dir)
-        plots.update(
-            {
-                f"{backend}_{key}": value
-                for key, value in plot_workflow_netcdfs(
-                    backend_workflow,
-                    backend_output_dir,
-                    center_lat=None if center_lat is None else float(center_lat),
-                    center_lon=None if center_lon is None else float(center_lon),
-                    overlay_plume_wind_vectors=args.overlay_plume_wind,
-                    plume_wind_level_index=args.plume_wind_level_index,
-                ).items()
-            }
-        )
         plume_profile = plot_concentration_vertical_profiles_if_available(
             backend_workflow.get("concentration"),
             backend_output_dir / f"{backend}_concentration_vertical_profiles.png",
@@ -316,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     if plots:
         LOGGER.info("step 3/3 plotting: wrote %s", plots)
     else:
-        LOGGER.info("step 3/3 plotting: no NetCDF maps were generated")
+        LOGGER.info("step 3/3 plotting: no vertical profile figures were generated")
     LOGGER.info("step 3/3 complete")
     return 0
 
