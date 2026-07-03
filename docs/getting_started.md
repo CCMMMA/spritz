@@ -1,5 +1,9 @@
 # Getting started: from WRF download to visualization
 
+## Scientific Scope
+
+This document provides a reproducible pathway from meteorological input through Sprtz dispersion and visualization. The examples are didactic and preserve the distinction between runnable workflows and scientific validation.
+
 This guide walks through a complete, reproducible Spritz workflow starting with a WRF 1 km file from the meteo@uniparthenope archive and ending with a publication-ready concentration figure.
 
 The guide is intentionally didactic. Each step produces an inspectable file that can be reused by the next step.
@@ -493,3 +497,10 @@ Then verify that the requested date and cycle exist in the archive. The download
 ### The use cases are not importable as `sprtz.usecases`
 
 That is intentional. The use cases are educational workflows under the repository root. Reusable production code stays in `src/sprtz/`.
+
+## References
+
+- Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
+- Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285
+- Hanna, S. R. (1989). Confidence limits for air quality model evaluations, as estimated by bootstrap and jackknife resampling methods. Journal of the Air and Waste Management Association, 39(9), 1170-1175.
+- Chang, J. C., and Hanna, S. R. (2004). Air quality model performance evaluation. Meteorology and Atmospheric Physics, 87, 167-196.

@@ -1,5 +1,9 @@
 # SpritzWRF and SpritzMet interoperability
 
+## Scientific Scope
+
+This document describes SpritzWRF and SpritzMet interoperability. It focuses on dimension-aware WRF ingestion, local-grid downscaling, vertical wind-profile constraints, and reproducible meteorological metadata.
+
 Spritz uses clean-room module names for the WRF-to-meteorology part of the workflow:
 
 - **SpritzWRF** (`sprtz.models.spritzwrf`) reads WRF/WRF-like NetCDF data, extracts near-surface wind, precipitation, 2 m temperature, and 2 m relative humidity, and can download WRF5 d03 history files from the meteo@uniparthenope archive.
@@ -181,3 +185,11 @@ Gaussian and particle concentration backends.
 For station-driven configurations, station records may include
 `precipitation_rate` in `mm h-1`. If no station precipitation is supplied,
 `run.default_precipitation_rate` provides the uniform fallback.
+
+## References
+
+- Powers, J. G., Klemp, J. B., Skamarock, W. C., Davis, C. A., Dudhia, J., Gill, D. O., Coen, J. L., Gochis, D. J., Ahmadov, R., Peckham, S. E., Grell, G. A., Michalakes, J., Trahan, S., Benjamin, S. G., Alexander, C. R., Dimego, G. J., Wang, W., Schwartz, C. S., Romine, G. S., Liu, Z., Snyder, C., Chen, F., Barlage, M. J., Yu, W., and Duda, M. G. (2017). The Weather Research and Forecasting Model: overview, system efforts, and future directions. Bulletin of the American Meteorological Society, 98(8), 1717-1737. https://doi.org/10.1175/BAMS-D-15-00308.1
+- Hong, S.-Y., Dudhia, J., and Chen, S.-H. (2004). A revised approach to ice microphysical processes for the bulk parameterization of clouds and precipitation. Monthly Weather Review, 132(1), 103-120.
+- Weil, J. C., Sykes, R. I., and Venkatram, A. (1992). Evaluating air-quality models: review and outlook. Journal of Applied Meteorology, 31(10), 1121-1145.
+- Draxler, R. R., and Hess, G. D. (1998). An overview of the HYSPLIT_4 modelling system for trajectories, dispersion, and deposition. Australian Meteorological Magazine, 47(4), 295-308.
+- Stohl, A., Forster, C., Frank, A., Seibert, P., and Wotawa, G. (2005). Technical note: The Lagrangian particle dispersion model FLEXPART version 6.2. Atmospheric Chemistry and Physics, 5, 2461-2474.

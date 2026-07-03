@@ -1,5 +1,9 @@
 # Publishing-quality visualization
 
+## Scientific Scope
+
+This document describes visualization practices for Sprtz outputs. It emphasizes units, coordinates, temporal metadata, and reproducible figure generation suitable for scientific review.
+
 `sprtz.models.visualization` provides figure generation for suite outputs. The production scatter plot supports local x/y or WGS84 longitude/latitude coordinates, labelled axes, colorbars, high-DPI output, CSV/JSON/NetCDF-CF concentration inputs, optional local raster basemaps, and explicit opt-in web tile basemaps. For NetCDF concentration files that contain `concentration_field(time, field_z, field_y, field_x)`, `tools/plotter.py` can render the gridded field directly with `--variable concentration_field`.
 
 Install visualization dependencies:
@@ -62,3 +66,10 @@ concentration profiles, uses `--x`/`--y` to select the sampled local grid
 column, and supports `--animate` plus `--gif-loop` for simulation-long profile
 GIFs. Use `tools/plotter.py --animate --gif-loop 0` for endlessly looping
 simulation-long map GIFs.
+
+## References
+
+- Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. Computing in Science & Engineering, 9(3), 90-95. https://doi.org/10.1109/MCSE.2007.55
+- Waskom, M. L. (2021). seaborn: statistical data visualization. Journal of Open Source Software, 6(60), 3021. https://doi.org/10.21105/joss.03021
+- Rew, R., and Davis, G. (1990). NetCDF: an interface for scientific data access. IEEE Computer Graphics and Applications, 10(4), 76-82. https://doi.org/10.1109/38.56302
+- Balaji, V., Taylor, K. E., Juckes, M., Lawrence, B. N., Durack, P. J., Lautenschlager, M., Blanton, C., Cinquini, L., Denvil, S., Elkington, M., Guglielmo, F., Guilyardi, E., Hassell, D., Kharin, S., Kindermann, S., Nikonov, S., Radhakrishnan, A., Stockhause, M., and Weigel, T. (2018). Requirements for a global data infrastructure in support of CMIP6. Geoscientific Model Development, 11, 3659-3680. https://doi.org/10.5194/gmd-11-3659-2018

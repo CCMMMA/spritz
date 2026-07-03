@@ -1,5 +1,9 @@
 # Backward Simulations
 
+## Scientific Scope
+
+This document describes backward source-estimation workflows as screening tools grounded in receptor-footprint and Lagrangian inverse-transport literature. The emphasis is on traceable assumptions, deterministic configuration, and transparent uncertainty limits.
+
 Backward simulation estimates where an observed plume, odor episode, smoke trace, or fire may have originated. It is a screening and attribution aid, not proof of source identity.
 
 ## Plume Source Attribution
@@ -52,3 +56,11 @@ Use backward outputs as ranked candidate maps. Review the highest-likelihood cel
 - Chemical transformation and source intermittency are not inferred.
 - Firefront backward mode is a screening footprint, not a full inverse stochastic CA calibration.
 - Multiple source events can create ambiguous likelihood maps.
+
+## References
+
+- Lin, J. C., Gerbig, C., Wofsy, S. C., Andrews, A. E., Daube, B. C., Davis, K. J., and Grainger, C. A. (2003). A near-field tool for simulating the upstream influence of atmospheric observations: the Stochastic Time-Inverted Lagrangian Transport model. Journal of Geophysical Research: Atmospheres, 108(D16), 4493.
+- Seibert, P., and Frank, A. (2004). Source-receptor matrix calculation with a Lagrangian particle dispersion model in backward mode. Atmospheric Chemistry and Physics, 4, 51-63.
+- Weil, J. C., Sykes, R. I., and Venkatram, A. (1992). Evaluating air-quality models: review and outlook. Journal of Applied Meteorology, 31(10), 1121-1145.
+- Draxler, R. R., and Hess, G. D. (1998). An overview of the HYSPLIT_4 modelling system for trajectories, dispersion, and deposition. Australian Meteorological Magazine, 47(4), 295-308.
+- Stohl, A., Forster, C., Frank, A., Seibert, P., and Wotawa, G. (2005). Technical note: The Lagrangian particle dispersion model FLEXPART version 6.2. Atmospheric Chemistry and Physics, 5, 2461-2474.

@@ -1,5 +1,9 @@
 # Particle-based Spritz alternative
 
+## Scientific Scope
+
+This document describes the particle-based Sprtz alternative to the Gaussian backend. It frames the method as a stochastic Lagrangian screening model with deterministic seeds and comparable gridded outputs.
+
 `sprtz.models.particles` implements a Lagrangian particle screening backend that accepts the same `SuiteConfig`, the same SpritzMet meteorology files, and writes the same receptor table and optional gridded field schema as the Gaussian Spritz backend. For SpritzMet NetCDF inputs, particles are advected through the full `eastward_wind(time,z,y,x)` / `northward_wind(time,z,y,x)` cube with deterministic substeps; when diagnostic `U10M/V10M` is available and the first physical `z` level is aloft, that 10 m above-ground wind is used as the lower-boundary layer. 2D legacy meteorology still uses a deterministic fallback.
 
 CLI:
@@ -41,3 +45,11 @@ vertical, and temporal axes as NetCDF-CF output. NetCDF-CF remains the canonical
 Sprtz interchange.
 
 Scientific scope: this is an interoperability-ready particle module for teaching, sensitivity tests, and migration scaffolding. Operational use needs independent validation and a documented acceptance envelope.
+
+## References
+
+- Weil, J. C., Sykes, R. I., and Venkatram, A. (1992). Evaluating air-quality models: review and outlook. Journal of Applied Meteorology, 31(10), 1121-1145.
+- Draxler, R. R., and Hess, G. D. (1998). An overview of the HYSPLIT_4 modelling system for trajectories, dispersion, and deposition. Australian Meteorological Magazine, 47(4), 295-308.
+- Stohl, A., Forster, C., Frank, A., Seibert, P., and Wotawa, G. (2005). Technical note: The Lagrangian particle dispersion model FLEXPART version 6.2. Atmospheric Chemistry and Physics, 5, 2461-2474.
+- Courant, R., Friedrichs, K., and Lewy, H. (1928). Uber die partiellen Differenzengleichungen der mathematischen Physik. Mathematische Annalen, 100, 32-74.
+- LeVeque, R. J. (1997). Wave propagation algorithms for multidimensional hyperbolic systems. Journal of Computational Physics, 131(2), 327-353.

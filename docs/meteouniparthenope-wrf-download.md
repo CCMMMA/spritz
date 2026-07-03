@@ -1,5 +1,9 @@
 # meteo@uniparthenope WRF downloader
 
+## Scientific Scope
+
+This document describes acquisition of WRF products for local Sprtz use cases. It focuses on reproducible time selection, explicit source provenance, and downstream compatibility with SpritzWRF and SpritzMet.
+
 `tools/meteouniparthenope-wrf-download` downloads WRF5 `history` NetCDF files from
 meteo@uniparthenope into a selected data directory. It is a
 miscellaneous developer/operator tool, not an installed `sprtz` console command.
@@ -180,3 +184,11 @@ meteorological downscaling workflow.
   the network is unavailable, or the remote service did not respond before
   `--timeout-s`.
 - Use `--dry-run` first when validating long download windows.
+
+## References
+
+- Powers, J. G., Klemp, J. B., Skamarock, W. C., Davis, C. A., Dudhia, J., Gill, D. O., Coen, J. L., Gochis, D. J., Ahmadov, R., Peckham, S. E., Grell, G. A., Michalakes, J., Trahan, S., Benjamin, S. G., Alexander, C. R., Dimego, G. J., Wang, W., Schwartz, C. S., Romine, G. S., Liu, Z., Snyder, C., Chen, F., Barlage, M. J., Yu, W., and Duda, M. G. (2017). The Weather Research and Forecasting Model: overview, system efforts, and future directions. Bulletin of the American Meteorological Society, 98(8), 1717-1737. https://doi.org/10.1175/BAMS-D-15-00308.1
+- Hong, S.-Y., Dudhia, J., and Chen, S.-H. (2004). A revised approach to ice microphysical processes for the bulk parameterization of clouds and precipitation. Monthly Weather Review, 132(1), 103-120.
+- Weil, J. C., Sykes, R. I., and Venkatram, A. (1992). Evaluating air-quality models: review and outlook. Journal of Applied Meteorology, 31(10), 1121-1145.
+- Draxler, R. R., and Hess, G. D. (1998). An overview of the HYSPLIT_4 modelling system for trajectories, dispersion, and deposition. Australian Meteorological Magazine, 47(4), 295-308.
+- Stohl, A., Forster, C., Frank, A., Seibert, P., and Wotawa, G. (2005). Technical note: The Lagrangian particle dispersion model FLEXPART version 6.2. Atmospheric Chemistry and Physics, 5, 2461-2474.

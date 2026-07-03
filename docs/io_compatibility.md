@@ -1,5 +1,9 @@
 # Input, output, and configuration compatibility
 
+## Scientific Scope
+
+This document specifies input, output, and configuration compatibility boundaries for Sprtz. It prioritizes NetCDF-CF interchange, tolerant legacy-style parsing, and clean-room data semantics.
+
 The suite has one configuration model shared by SpritzWRF, CTGPROC, MakeGeo, SpritzMet, unified Spritz Gaussian/particle dispersion, SpritzPost, and visualization tools.
 
 ## Legacy Suite Files
@@ -160,3 +164,10 @@ those fields into the NetCDF-CF local product used by the rest of Spritz.
 ## Terrain Preprocessing
 
 Terrain is included as `sprtz.models.terrain` and the `terrain` CLI. It provides clean-room terrain resampling and NetCDF-CF/JSON terrain outputs for SpritzMet, MakeGeo, and dispersion workflows.
+
+## References
+
+- Rew, R., and Davis, G. (1990). NetCDF: an interface for scientific data access. IEEE Computer Graphics and Applications, 10(4), 76-82. https://doi.org/10.1109/38.56302
+- Balaji, V., Taylor, K. E., Juckes, M., Lawrence, B. N., Durack, P. J., Lautenschlager, M., Blanton, C., Cinquini, L., Denvil, S., Elkington, M., Guglielmo, F., Guilyardi, E., Hassell, D., Kharin, S., Kindermann, S., Nikonov, S., Radhakrishnan, A., Stockhause, M., and Weigel, T. (2018). Requirements for a global data infrastructure in support of CMIP6. Geoscientific Model Development, 11, 3659-3680. https://doi.org/10.5194/gmd-11-3659-2018
+- Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
+- Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285

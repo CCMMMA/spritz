@@ -1,5 +1,9 @@
 # Architecture
 
+## Scientific Scope
+
+This document summarizes Sprtz as a clean-room scientific software architecture for atmospheric dispersion, meteorological preprocessing, terrain coupling, fire-front dynamics, and reproducible model evaluation. It is written as a technical design record rather than a regulatory validation claim.
+
 ![Spritz architecture](assets/spritz_architecture.svg)
 
 Spritz is organized as a clean-room Python suite with one shared configuration
@@ -92,3 +96,10 @@ write shared outputs only on rank 0 to avoid multi-writer NetCDF corruption.
 The repository implements behavior from first principles and public component
 roles. It does not translate proprietary routines, redistribute proprietary data,
 or claim regulatory equivalence without independent validation.
+
+## References
+
+- Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
+- Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285
+- Hanna, S. R. (1989). Confidence limits for air quality model evaluations, as estimated by bootstrap and jackknife resampling methods. Journal of the Air and Waste Management Association, 39(9), 1170-1175.
+- Chang, J. C., and Hanna, S. R. (2004). Air quality model performance evaluation. Meteorology and Atmospheric Physics, 87, 167-196.

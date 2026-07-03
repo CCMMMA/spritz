@@ -1,5 +1,9 @@
 # Copernicus LC100 land-cover downloader
 
+## Scientific Scope
+
+This document describes land-cover acquisition for Sprtz surface-parameter derivation. It distinguishes categorical land cover from continuous fields and emphasizes nearest-neighbor or documented aggregation semantics.
+
 `tools/copernicus-lc100-download.py` crops the Copernicus Global Land Cover
 100 m discrete classification product to a WGS84 latitude-longitude bounding
 box. It writes a categorical GeoTIFF that can be used by `sprtz-terrain fetch`
@@ -201,3 +205,9 @@ After `sprtz-terrain fetch`, inspect the output `land_cover` and
   discrete-classification codes.
 - Misaligned land-cover classes usually mean the LC100 bbox, DEM bbox, and Sprtz
   domain/buffer do not cover the same area.
+
+## References
+
+- Yamazaki, D., Ikeshima, D., Tawatari, R., Yamaguchi, T., O'Loughlin, F., Neal, J. C., Sampson, C. C., Kanae, S., and Bates, P. D. (2017). A high-accuracy map of global terrain elevations. Geophysical Research Letters, 44(11), 5844-5853. https://doi.org/10.1002/2017GL072874
+- Farr, T. G., Rosen, P. A., Caro, E., Crippen, R., Duren, R., Hensley, S., Kobrick, M., Paller, M., Rodriguez, E., Roth, L., Seal, D., Shaffer, S., Shimada, J., Umland, J., Werner, M., Oskin, M., Burbank, D., and Alsdorf, D. (2007). The Shuttle Radar Topography Mission. Reviews of Geophysics, 45(2), RG2004. https://doi.org/10.1029/2005RG000183
+- Buchhorn, M., Smets, B., Bertels, L., De Roo, B., Lesiv, M., Tsendbazar, N.-E., Herold, M., and Fritz, S. (2020). Copernicus Global Land Cover Layers - Collection 2. Remote Sensing, 12(6), 1044. https://doi.org/10.3390/rs12061044

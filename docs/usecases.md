@@ -1,5 +1,9 @@
 # Operational use cases
 
+## Scientific Scope
+
+This document catalogs Sprtz use cases as didactic scientific workflows. Each use case is treated as an executable example with explicit data requirements, assumptions, and production-readiness limits.
+
 The root-level `usecases/` directory contains documented operational templates. They are meant to be copied into project-specific case folders and version-controlled with event metadata. Each folder exposes explicit `step_*.py` scripts rather than one script that runs the whole case.
 
 ## Data Preparation
@@ -134,3 +138,10 @@ mpiexec -n $SLURM_NTASKS python usecases/10_backward_plume_origin/step_02_estima
 ```
 
 See `docs/hpc.md` for full SLURM templates.
+
+## References
+
+- Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
+- Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285
+- Hanna, S. R. (1989). Confidence limits for air quality model evaluations, as estimated by bootstrap and jackknife resampling methods. Journal of the Air and Waste Management Association, 39(9), 1170-1175.
+- Chang, J. C., and Hanna, S. R. (2004). Air quality model performance evaluation. Meteorology and Atmospheric Physics, 87, 167-196.

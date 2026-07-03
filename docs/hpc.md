@@ -1,5 +1,9 @@
 # HPC And SLURM
 
+## Scientific Scope
+
+This document describes batch and SLURM execution of Sprtz workflows. It emphasizes reproducibility, optional parallelism, deterministic serial fallback, and audit-friendly logs for scientific computing environments.
+
 This guide shows how to submit Spritz modules on an HPC system with SLURM. The commands assume the package is installed in `.venv` and optional MPI dependencies are available.
 
 ## Environment
@@ -85,3 +89,11 @@ mpiexec -n $SLURM_NTASKS sprtz-backward --config examples/backward_plume.json --
 - Keep output directories per job to avoid concurrent writes.
 - Run `sprtz doctor --require-mpi` on the target node before production jobs.
 - Prefer NetCDF-CF for chained HPC workflows.
+
+## References
+
+- Message Passing Interface Forum. (1994). MPI: A message-passing interface standard. International Journal of Supercomputer Applications, 8(3-4), 159-416.
+- Gropp, W., Lusk, E., Doss, N., and Skjellum, A. (1996). A high-performance, portable implementation of the MPI message passing interface standard. Parallel Computing, 22(6), 789-828.
+- Owens, J. D., Houston, M., Luebke, D., Green, S., Stone, J. E., and Phillips, J. C. (2008). GPU computing. Proceedings of the IEEE, 96(5), 879-899. https://doi.org/10.1109/JPROC.2008.917757
+- Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
+- Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285

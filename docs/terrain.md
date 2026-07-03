@@ -1,5 +1,9 @@
 # Terrain Preprocessing
 
+## Scientific Scope
+
+This document describes Sprtz terrain preprocessing. It emphasizes DEM and land-cover provenance, grid alignment, categorical resampling discipline, and metadata sufficient for audit or reproduction.
+
 Terrain is the clean-room Spritz component for preparing terrain elevations,
 land-use classes, and surface parameters on the Spritz modeling grid.
 
@@ -145,3 +149,9 @@ Derived GEO products include:
 
 NetCDF-CF is preferred when `netCDF4` is installed. JSON fallback keeps local
 tests and teaching examples portable.
+
+## References
+
+- Yamazaki, D., Ikeshima, D., Tawatari, R., Yamaguchi, T., O'Loughlin, F., Neal, J. C., Sampson, C. C., Kanae, S., and Bates, P. D. (2017). A high-accuracy map of global terrain elevations. Geophysical Research Letters, 44(11), 5844-5853. https://doi.org/10.1002/2017GL072874
+- Farr, T. G., Rosen, P. A., Caro, E., Crippen, R., Duren, R., Hensley, S., Kobrick, M., Paller, M., Rodriguez, E., Roth, L., Seal, D., Shaffer, S., Shimada, J., Umland, J., Werner, M., Oskin, M., Burbank, D., and Alsdorf, D. (2007). The Shuttle Radar Topography Mission. Reviews of Geophysics, 45(2), RG2004. https://doi.org/10.1029/2005RG000183
+- Buchhorn, M., Smets, B., Bertels, L., De Roo, B., Lesiv, M., Tsendbazar, N.-E., Herold, M., and Fritz, S. (2020). Copernicus Global Land Cover Layers - Collection 2. Remote Sensing, 12(6), 1044. https://doi.org/10.3390/rs12061044

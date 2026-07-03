@@ -1,5 +1,9 @@
 # Numerical model notes
 
+## Scientific Scope
+
+This document records the numerical model assumptions used by Sprtz dispersion components. It is a scientific-method note: coefficients, limits, and approximations are stated explicitly for review and regression testing.
+
 Spritz v0.4.0 improves the numerical core while keeping the clean-room boundary. The implementation is guided by public atmospheric-dispersion concepts and component roles, but it does not translate or embed proprietary Fortran source code.
 
 ## Feature alignment
@@ -73,6 +77,8 @@ Run-level numerical keys:
   "firefighters_emission_factor": 0.5,
   "precipitation_washout": true,
   "precipitation_washout_coefficient_s_per_mm_h": 0.00001,
+  "gaussian_initial_sigma_h": 175.0,
+  "gaussian_initial_sigma_z": 150.0,
   "concentration_output": "receptors | grid | both",
   "field_z_levels": [0.0, 25.0, 50.0],
   "stack_tip_downwash": true
@@ -90,6 +96,15 @@ active wildfire sources as continuous output-window emissions by averaging
 Gaussian puffs over release ages in the output window. The optional
 `gaussian_puff_samples` run key controls that clean-room quadrature count
 (`6` by default); plume mode remains steady at each requested output time.
+`gaussian_initial_sigma_h` and `gaussian_initial_sigma_z` add explicit initial
+horizontal and vertical puff spread in metres, combined in quadrature with
+Pasquill-Gifford and finite-source spreads. When those Gaussian-specific keys
+are absent but `particle_sigma_h` or `particle_sigma_z` are present, the
+Gaussian backend reuses those spread values so side-by-side particle/Gaussian
+screening runs do not compare a broad particle initialization against a
+near-point Gaussian initialization. Elevated gridded field levels are evaluated
+with absolute release height and the receptor's physical `z` coordinate, so a
+low plume is not clipped onto every elevated receptor plane.
 
 When weather start/end datetimes are supplied, `output_interval_s` defaults to
 covering the weather period. Output rows carry absolute `datetime` values. The
@@ -172,6 +187,14 @@ projection; for odd grids such as `101 x 101` with `x0=y0=-5000 m` and
 can also be exported as a clean-room CALPUFF-style concentration binary with
 `spritz --format calpuff` or use case 02 `--calpuff-binary`.
 
-## Scientific scope
+## Review Limits
 
 The numerical methods are transparent, deterministic, unit-tested approximations suitable for research software infrastructure, migration scaffolding, education, sensitivity testing, and early-stage workflow development. Regulatory equivalence or operational acceptance requires independent validation against accepted cases and an explicit acceptance envelope.
+
+## References
+
+- Weil, J. C., Sykes, R. I., and Venkatram, A. (1992). Evaluating air-quality models: review and outlook. Journal of Applied Meteorology, 31(10), 1121-1145.
+- Draxler, R. R., and Hess, G. D. (1998). An overview of the HYSPLIT_4 modelling system for trajectories, dispersion, and deposition. Australian Meteorological Magazine, 47(4), 295-308.
+- Stohl, A., Forster, C., Frank, A., Seibert, P., and Wotawa, G. (2005). Technical note: The Lagrangian particle dispersion model FLEXPART version 6.2. Atmospheric Chemistry and Physics, 5, 2461-2474.
+- Courant, R., Friedrichs, K., and Lewy, H. (1928). Uber die partiellen Differenzengleichungen der mathematischen Physik. Mathematische Annalen, 100, 32-74.
+- LeVeque, R. J. (1997). Wave propagation algorithms for multidimensional hyperbolic systems. Journal of Computational Physics, 131(2), 327-353.

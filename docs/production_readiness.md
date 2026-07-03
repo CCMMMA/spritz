@@ -1,5 +1,9 @@
 # Production readiness
 
+## Scientific Scope
+
+This document identifies production-readiness criteria for Sprtz deployments. It is oriented toward scientific reproducibility, operational traceability, optional-dependency isolation, and validation transparency.
+
 This repository is production-ready as Python software infrastructure: it is installable, typed, deterministic for a given input, covered by unit tests, has explicit exceptions, atomic writes for core outputs, CLI error handling, CI, and coherent documentation.
 
 It is not claimed to be a regulatory replacement for any third-party modeling system. Production scientific use requires project-specific verification, validation against accepted reference cases, and review by qualified atmospheric-science practitioners.
@@ -69,3 +73,10 @@ Terrain is included as `sprtz.models.terrain`, the backward-compatible `terrain`
 ## Use-case packaging boundary
 
 The root-level didactic use cases are not package modules and are not exposed as installed CLI entry points. This keeps production suite APIs separated from educational scenario orchestration.
+
+## References
+
+- Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
+- Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285
+- Hanna, S. R. (1989). Confidence limits for air quality model evaluations, as estimated by bootstrap and jackknife resampling methods. Journal of the Air and Waste Management Association, 39(9), 1170-1175.
+- Chang, J. C., and Hanna, S. R. (2004). Air quality model performance evaluation. Meteorology and Atmospheric Physics, 87, 167-196.

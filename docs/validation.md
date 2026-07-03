@@ -1,5 +1,9 @@
 # Validation plan
 
+## Scientific Scope
+
+This document defines the Sprtz validation strategy. It combines unit tests, numerical invariants, inter-model comparisons, and literature-aligned performance diagnostics without claiming regulatory equivalence.
+
 This implementation is deterministic and production-hardened as software, but scientific equivalence requires a validation campaign.
 
 Required validation levels:
@@ -32,3 +36,10 @@ suppression-action emission factors.
 ## Production acceptance gate
 
 A deployment should not be accepted only because the software tests pass. For operational studies, define acceptance cases with fixed input meteorology, emission parameters, receptors, and post-processing metrics. Archive the Spritz version, git commit, command line, configuration file, NetCDF-CF interchange files, and generated figures. Use `sprtz doctor` to capture the runtime environment in the run dossier.
+
+## References
+
+- Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
+- Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285
+- Hanna, S. R. (1989). Confidence limits for air quality model evaluations, as estimated by bootstrap and jackknife resampling methods. Journal of the Air and Waste Management Association, 39(9), 1170-1175.
+- Chang, J. C., and Hanna, S. R. (2004). Air quality model performance evaluation. Meteorology and Atmospheric Physics, 87, 167-196.

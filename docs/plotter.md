@@ -1,5 +1,9 @@
 # Plotter
 
+## Scientific Scope
+
+This document describes publication-oriented plotting utilities for Sprtz outputs. It emphasizes scientifically meaningful coordinates, units, time labels, and reproducible rendering from NetCDF products.
+
 `tools/plotter.py` creates publication-oriented maps from Sprtz NetCDF outputs.
 `tools/profiler.py` creates centralized time-varying vertical profile figures
 from the same NetCDF products. They are intended for use-case figures, reports,
@@ -201,3 +205,10 @@ map can be derived locally:
 If optional plotting dependencies are unavailable, use-case scripts log a warning
 and keep the numerical workflow result. JSON, CSV, and GeoJSON products remain
 available but are not plotted by `tools/plotter.py`.
+
+## References
+
+- Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. Computing in Science & Engineering, 9(3), 90-95. https://doi.org/10.1109/MCSE.2007.55
+- Waskom, M. L. (2021). seaborn: statistical data visualization. Journal of Open Source Software, 6(60), 3021. https://doi.org/10.21105/joss.03021
+- Rew, R., and Davis, G. (1990). NetCDF: an interface for scientific data access. IEEE Computer Graphics and Applications, 10(4), 76-82. https://doi.org/10.1109/38.56302
+- Balaji, V., Taylor, K. E., Juckes, M., Lawrence, B. N., Durack, P. J., Lautenschlager, M., Blanton, C., Cinquini, L., Denvil, S., Elkington, M., Guglielmo, F., Guilyardi, E., Hassell, D., Kharin, S., Kindermann, S., Nikonov, S., Radhakrishnan, A., Stockhause, M., and Weigel, T. (2018). Requirements for a global data infrastructure in support of CMIP6. Geoscientific Model Development, 11, 3659-3680. https://doi.org/10.5194/gmd-11-3659-2018

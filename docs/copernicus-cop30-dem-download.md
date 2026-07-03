@@ -1,5 +1,9 @@
 # Copernicus COP30 DEM downloader
 
+## Scientific Scope
+
+This document describes DEM acquisition for Sprtz terrain preprocessing. It focuses on reproducible elevation provenance, grid alignment, and conservative use of remote-sensing products in atmospheric dispersion workflows.
+
 `tools/copernicus-cop30-dem-download.py` downloads a Copernicus DEM GLO-30
 (`COP30`) elevation tile for a WGS84 latitude-longitude bounding box from the
 OpenTopography Global DEM API. It writes a GeoTIFF that can be used as a local
@@ -203,3 +207,9 @@ viewer.
 - Missing or suspicious terrain values in the GEO product usually mean the DEM
   does not cover the configured domain, the bbox was too tight, or the terrain
   domain settings differ from the downstream Sprtz run.
+
+## References
+
+- Yamazaki, D., Ikeshima, D., Tawatari, R., Yamaguchi, T., O'Loughlin, F., Neal, J. C., Sampson, C. C., Kanae, S., and Bates, P. D. (2017). A high-accuracy map of global terrain elevations. Geophysical Research Letters, 44(11), 5844-5853. https://doi.org/10.1002/2017GL072874
+- Farr, T. G., Rosen, P. A., Caro, E., Crippen, R., Duren, R., Hensley, S., Kobrick, M., Paller, M., Rodriguez, E., Roth, L., Seal, D., Shaffer, S., Shimada, J., Umland, J., Werner, M., Oskin, M., Burbank, D., and Alsdorf, D. (2007). The Shuttle Radar Topography Mission. Reviews of Geophysics, 45(2), RG2004. https://doi.org/10.1029/2005RG000183
+- Buchhorn, M., Smets, B., Bertels, L., De Roo, B., Lesiv, M., Tsendbazar, N.-E., Herold, M., and Fritz, S. (2020). Copernicus Global Land Cover Layers - Collection 2. Remote Sensing, 12(6), 1044. https://doi.org/10.3390/rs12061044
