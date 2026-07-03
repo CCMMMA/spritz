@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -28,6 +29,8 @@ from sprtz.models.spritz import (
     write_csv,
 )
 from sprtz.parallel import get_gpu_context, get_mpi_context
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _wind(meteo: dict[str, Any]) -> tuple[float, float]:
@@ -79,6 +82,7 @@ def simulate_particles(
     seed: int | None = None,
     parallel: str = "serial",
     gpu_backend: str | None = None,
+    progress_callback: Callable[[int, float], None] | None = None,
 ) -> list[dict[str, float | str]]:
     """Run a deterministic Lagrangian particle screening alternative to Spritz.
 
@@ -128,7 +132,7 @@ def simulate_particles(
     xp = gpu.xp
     local_sources = [(i, config.sources[i]) for i in ctx.partition(len(config.sources))]
     rows: list[dict[str, float | str]] = []
-    for time_value in output_times(config):
+    for time_index, time_value in enumerate(output_times(config), start=1):
         sample_dt = sample_datetime(config, time_value)
         firefighter_factor = _firefighters_emission_factor(config, sample_dt)
         receptor_values = {rec.id: {"concentration": 0.0, "dry_flux": 0.0, "wet_flux": 0.0} for rec in receptors}
@@ -257,6 +261,15 @@ def simulate_particles(
                 row["latitude"] = float(rec.latitude)
                 row["longitude"] = float(rec.longitude)
             rows.append(row)
+        if ctx.is_root:
+            if progress_callback is not None:
+                progress_callback(time_index, time_value)
+            else:
+                LOGGER.info(
+                    "Spritz particles: concentration output interval reached index=%d output_time_s=%.0f",
+                    time_index,
+                    time_value,
+                )
     return rows
 
 
@@ -281,6 +294,7 @@ def run(
     *,
     parallel: str = "serial",
     gpu_backend: str | None = None,
+    progress_callback: Callable[[int, float], None] | None = None,
 ) -> list[dict[str, float | str]]:
     ctx = get_mpi_context(parallel)
     rows = simulate_particles(
@@ -289,6 +303,7 @@ def run(
         seed=seed,
         parallel=parallel,
         gpu_backend=gpu_backend,
+        progress_callback=progress_callback,
     )
     if ctx.is_root:
         write_particle_output(output, rows, output_format)

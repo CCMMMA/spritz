@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from dataclasses import replace
 
 from .config import configured_backend, from_mapping, load_config
@@ -26,6 +26,7 @@ def run_workflow(
     output_interval_s: float | None = None,
     meteo_input: str | Path | None = None,
     calpuff_binary: bool = False,
+    concentration_progress_callback: Callable[[int, float], None] | None = None,
 ) -> dict[str, Any]:
     ctx = get_mpi_context(parallel)
     out = Path(output_dir)
@@ -108,10 +109,26 @@ def run_workflow(
         meteo = {"component": "spritzmet.external_meteorology", "source": str(source_meteo_path)}
     ctx.barrier()
     if model_backend == "particles":
-        conc = particles.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel, gpu_backend=gpu_backend)
+        conc = particles.run(
+            config,
+            meteo_path,
+            conc_path,
+            "netcdf" if use_netcdf else "csv",
+            parallel=parallel,
+            gpu_backend=gpu_backend,
+            progress_callback=concentration_progress_callback,
+        )
         model_component = "particles"
     elif model_backend == "gaussian":
-        conc = spritz.run(config, meteo_path, conc_path, "netcdf" if use_netcdf else "csv", parallel=parallel, gpu_backend=gpu_backend)
+        conc = spritz.run(
+            config,
+            meteo_path,
+            conc_path,
+            "netcdf" if use_netcdf else "csv",
+            parallel=parallel,
+            gpu_backend=gpu_backend,
+            progress_callback=concentration_progress_callback,
+        )
         model_component = "spritz"
     else:
         raise ValueError("backend must be gaussian or particles")

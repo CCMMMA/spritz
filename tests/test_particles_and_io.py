@@ -1,5 +1,5 @@
 from sprtz.config import from_mapping, load_config
-from sprtz.io.netcdf_cf import read_cf_concentration, read_cf_meteorology
+from sprtz.io.netcdf_cf import read_cf_concentration, read_cf_meteorology, write_cf_concentration
 from sprtz.models import spritzmet, particles
 
 
@@ -33,6 +33,39 @@ def test_netcdf_cf_fallback_and_particle_backend(tmp_path):
     reread = read_cf_concentration(conc_path)
     assert len(reread) == 2
     assert all("latitude" in row and "longitude" in row for row in reread)
+
+
+def test_concentration_netcdf_writes_field_lat_lon_coordinates(tmp_path):
+    try:
+        from netCDF4 import Dataset  # type: ignore
+    except Exception:
+        return
+    rows = []
+    for y, lat in [(-50.0, 39.9995), (50.0, 40.0005)]:
+        for x, lon in [(-50.0, 13.9995), (50.0, 14.0005)]:
+            rows.append(
+                {
+                    "time": 0.0,
+                    "receptor": f"G0_{int(y)}_{int(x)}",
+                    "output_kind": "field",
+                    "x": x,
+                    "y": y,
+                    "z": 2.5,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "concentration": 1.0,
+                    "dry_flux": 0.0,
+                    "wet_flux": 0.0,
+                }
+            )
+    path = tmp_path / "concentration.nc"
+    write_cf_concentration(path, rows)
+
+    with Dataset(path) as ds:
+        assert ds.variables["latitude"].dimensions == ("receptor",)
+        assert ds.variables["field_latitude"].dimensions == ("field_y", "field_x")
+        assert ds.variables["field_longitude"].dimensions == ("field_y", "field_x")
+        assert ds.variables["concentration_field"].coordinates.endswith("field_latitude field_longitude")
 
 
 def test_particle_backend_is_deterministic(tmp_path):

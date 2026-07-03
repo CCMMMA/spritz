@@ -114,21 +114,28 @@ def _time_labels(ds: Any, count: int, time_axis: np.ndarray) -> list[str]:
     return [f"{float(value):g} s" for value in time_axis[:count]]
 
 
-def _axis_values(ds: Any, names: Sequence[str], size: int) -> np.ndarray:
+def _axis_values(ds: Any, names: Sequence[str], size: int, dimension_name: str | None = None) -> np.ndarray:
+    if dimension_name is not None:
+        exact = ds.variables.get(dimension_name)
+        if exact is not None:
+            values = np.asarray(exact[:], dtype=float)
+            if values.ndim == 1 and values.size == size:
+                return values
     variable = _find_variable(ds, names)
     if variable is None:
         return np.arange(size, dtype=float)
     values = np.asarray(variable[:], dtype=float)
-    if values.ndim == 1:
+    if values.ndim == 1 and values.size == size:
         return values
     return np.arange(size, dtype=float)
 
 
-def _as_time_z_y_x(ds: Any, variable_name: str) -> tuple[np.ndarray, str, str]:
+def _as_time_z_y_x(ds: Any, variable_name: str) -> tuple[np.ndarray, tuple[str | None, str | None, str | None, str | None], str, str]:
     variable = ds.variables[variable_name]
     values = _variable_array(variable)
+    variable_dimensions = tuple(str(dim) for dim in getattr(variable, "dimensions", ()))
     if values.ndim == 4:
-        dims = [str(dim).lower() for dim in getattr(variable, "dimensions", ())]
+        dims = [dim.lower() for dim in variable_dimensions]
         if dims:
             order: list[int] = []
             for tokens in (TIME_DIMENSION_TOKENS, Z_NAMES, Y_NAMES, X_NAMES):
@@ -137,9 +144,30 @@ def _as_time_z_y_x(ds: Any, variable_name: str) -> tuple[np.ndarray, str, str]:
                     order.append(match)
             if len(order) == 4:
                 values = np.transpose(values, order)
-        return values, str(getattr(variable, "units", "")), str(getattr(variable, "long_name", variable_name))
+                variable_dimensions = tuple(variable_dimensions[index] for index in order)
+        return values, variable_dimensions, str(getattr(variable, "units", "")), str(getattr(variable, "long_name", variable_name))
     if values.ndim == 3:
-        return values[:, np.newaxis, :, :], str(getattr(variable, "units", "")), str(getattr(variable, "long_name", variable_name))
+        dims = [dim.lower() for dim in variable_dimensions]
+        ordered_dimensions: tuple[str | None, str | None, str | None, str | None] = (
+            variable_dimensions[0] if len(variable_dimensions) > 0 else None,
+            None,
+            variable_dimensions[1] if len(variable_dimensions) > 1 else None,
+            variable_dimensions[2] if len(variable_dimensions) > 2 else None,
+        )
+        if len(dims) == 3:
+            time_axis = next((axis for axis, dim in enumerate(dims) if any(token in dim for token in TIME_DIMENSION_TOKENS)), 0)
+            y_axis = next((axis for axis, dim in enumerate(dims) if any(token in dim for token in Y_NAMES)), None)
+            x_axis = next((axis for axis, dim in enumerate(dims) if any(token in dim for token in X_NAMES)), None)
+            order = [axis for axis in (time_axis, y_axis, x_axis) if axis is not None]
+            if len(order) == 3 and len(set(order)) == 3:
+                values = np.transpose(values, order)
+                ordered_dimensions = (
+                    variable_dimensions[order[0]],
+                    None,
+                    variable_dimensions[order[1]],
+                    variable_dimensions[order[2]],
+                )
+        return values[:, np.newaxis, :, :], ordered_dimensions, str(getattr(variable, "units", "")), str(getattr(variable, "long_name", variable_name))
     raise ValueError(f"variable {variable_name!r} must be shaped as time,z,y,x or time,y,x")
 
 
@@ -153,12 +181,12 @@ def read_profile_data(
     Dataset = _load_netcdf4()
     with Dataset(input_path) as ds:
         actual = _candidate_variable_name(ds, variable_name)
-        values, units, long_name = _as_time_z_y_x(ds, actual)
+        values, dimensions, units, long_name = _as_time_z_y_x(ds, actual)
         time_count, z_count, y_count, x_count = values.shape
-        x_axis = _axis_values(ds, X_NAMES, x_count)
-        y_axis = _axis_values(ds, Y_NAMES, y_count)
-        z_axis = _axis_values(ds, Z_NAMES, z_count)
-        time_axis = _axis_values(ds, TIME_NAMES, time_count)
+        x_axis = _axis_values(ds, X_NAMES, x_count, dimensions[3])
+        y_axis = _axis_values(ds, Y_NAMES, y_count, dimensions[2])
+        z_axis = _axis_values(ds, Z_NAMES, z_count, dimensions[1])
+        time_axis = _axis_values(ds, TIME_NAMES, time_count, dimensions[0])
         labels = _time_labels(ds, time_count, time_axis)
     ix = int(np.argmin(np.abs(x_axis - float(x_m))))
     iy = int(np.argmin(np.abs(y_axis - float(y_m))))

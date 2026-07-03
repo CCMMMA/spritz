@@ -23,8 +23,8 @@ from sprtz.logging import LOG_DATE_FORMAT, LOG_FORMAT_VERBOSE
 
 LOGGER = logging.getLogger("sprtz.plotter")
 
-LATITUDE_NAMES = ("latitude", "lat", "XLAT", "XLAT_M")
-LONGITUDE_NAMES = ("longitude", "lon", "long", "lng", "XLONG", "XLONG_M")
+LATITUDE_NAMES = ("field_latitude", "latitude", "lat", "XLAT", "XLAT_M")
+LONGITUDE_NAMES = ("field_longitude", "longitude", "lon", "long", "lng", "XLONG", "XLONG_M")
 X_NAMES = ("x", "field_x", "west_east")
 Y_NAMES = ("y", "field_y", "south_north")
 U_WIND_NAMES = ("eastward_wind", "u", "U", "U10", "U10M")

@@ -583,10 +583,12 @@ def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
     path = tmp_path / "plume.nc"
     with Dataset(path, "w") as ds:
         ds.createDimension("time", 2)
+        ds.createDimension("z", 5)
         ds.createDimension("field_z", 3)
         ds.createDimension("field_y", 2)
         ds.createDimension("field_x", 2)
         ds.createVariable("time", "f8", ("time",))[:] = [3600.0, 7200.0]
+        ds.createVariable("z", "f8", ("z",))[:] = [100.0, 200.0, 300.0, 400.0, 500.0]
         ds.createVariable("field_z", "f8", ("field_z",))[:] = [1.5, 10.0, 25.0]
         ds.createVariable("field_y", "f8", ("field_y",))[:] = [-50.0, 50.0]
         ds.createVariable("field_x", "f8", ("field_x",))[:] = [-50.0, 50.0]
@@ -602,6 +604,7 @@ def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
 
     assert profile.variable_name == "concentration_field"
     assert profile.profiles.shape == (2, 3)
+    np.testing.assert_allclose(profile.z_axis, [1.5, 10.0, 25.0])
     np.testing.assert_allclose(profile.profiles[1], [2.0, 4.0, 6.0])
     assert profile.units == "g m-3"
 

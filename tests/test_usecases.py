@@ -303,6 +303,26 @@ def test_build_wildfire_config_supports_multiple_field_z_levels(tmp_path: Path) 
     assert read_json(cfg_path)["run"]["field_z_levels"] == [1.5, 10.0, 50.0, 100.0]
 
 
+def test_wildfire_step3_preserves_explicit_field_z_levels(tmp_path: Path) -> None:
+    step3 = _load_usecase_step("02_wildfire_arson_effects", "step_03_run_model.py")
+    cfg_path = tmp_path / "wildfire.json"
+    write_json(
+        cfg_path,
+        {
+            "grid": {"nx": 1, "ny": 1, "dx": 100.0, "dy": 100.0, "x0": 0.0, "y0": 0.0},
+            "sources": [{"id": "S", "x": 0.0, "y": 0.0, "z": 0.0, "emission_rate": 1.0}],
+            "receptors": [],
+            "run": {"field_z_levels": [2.5, 5.0, 10.0, 300.0]},
+        },
+    )
+
+    config, _interval, changed = step3._ensure_time_dependent_plume_config(cfg_path, None)
+
+    assert changed is True
+    assert config["run"]["field_z_levels"] == [2.5, 5.0, 10.0, 300.0]
+    assert read_json(cfg_path)["run"]["field_z_levels"] == [2.5, 5.0, 10.0, 300.0]
+
+
 def test_wildfire_step3_logs_seconds_per_simulated_hour(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     if not netcdf_available():
         pytest.skip("netCDF4 unavailable")
@@ -325,7 +345,7 @@ def test_wildfire_step3_logs_seconds_per_simulated_hour(tmp_path: Path, caplog: 
 
     messages = [record.getMessage() for record in caplog.records]
     assert any("seconds_per_simulated_hour=4.000" in message for message in messages)
-    assert sum("step 3/3 progress: backend=particles computed_hour=" in message for message in messages) == 2
+    assert not any("step 3/3 progress: backend=particles computed_hour=" in message for message in messages)
 
 
 def test_plot_netcdf_can_overlay_plume_vectors_from_meteo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

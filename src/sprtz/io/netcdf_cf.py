@@ -335,6 +335,26 @@ def _concentration_field(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
         if np.isnan(values).any():
             return None
         payload[name] = values
+    if all("latitude" in row and "longitude" in row for row in selected):
+        latitude = np.full((len(ys), len(xs)), np.nan, dtype=float)
+        longitude = np.full((len(ys), len(xs)), np.nan, dtype=float)
+        seen: set[tuple[int, int]] = set()
+        for row in selected:
+            yi = indexes["y"][float(row.get("y", 0.0))]
+            xi = indexes["x"][float(row.get("x", 0.0))]
+            key = (yi, xi)
+            lat_value = float(row["latitude"])
+            lon_value = float(row["longitude"])
+            if key in seen:
+                if not (np.isclose(latitude[yi, xi], lat_value) and np.isclose(longitude[yi, xi], lon_value)):
+                    return payload
+                continue
+            latitude[yi, xi] = lat_value
+            longitude[yi, xi] = lon_value
+            seen.add(key)
+        if len(seen) == len(ys) * len(xs) and np.isfinite(latitude).all() and np.isfinite(longitude).all():
+            payload["latitude"] = latitude
+            payload["longitude"] = longitude
     return payload
 
 
@@ -447,6 +467,16 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                 var.units = units
                 var.long_name = long_name
                 var[:] = np.asarray(values, dtype=float)
+            if "latitude" in field and "longitude" in field:
+                for name, source_name, units, long_name, standard_name in [
+                    ("field_latitude", "latitude", "degrees_north", "model grid latitude", "latitude"),
+                    ("field_longitude", "longitude", "degrees_east", "model grid longitude", "longitude"),
+                ]:
+                    var = ds.createVariable(name, "f8", ("field_y", "field_x"), zlib=True)
+                    var.units = units
+                    var.long_name = long_name
+                    var.standard_name = standard_name
+                    var[:, :] = np.asarray(field[source_name], dtype=float)
             for name, units, long_name in [
                 ("concentration_field", "g m-3", "gridded mass concentration"),
                 ("dry_flux_field", "g m-2 s-1", "gridded dry deposition flux"),
@@ -461,7 +491,10 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                 )
                 var.units = units
                 var.long_name = long_name
-                var.coordinates = "time field_z field_y field_x"
+                coordinates = "time field_z field_y field_x"
+                if "latitude" in field and "longitude" in field:
+                    coordinates += " field_latitude field_longitude"
+                var.coordinates = coordinates
                 var[:, :, :, :] = np.asarray(field[source_name], dtype=float)
 
 

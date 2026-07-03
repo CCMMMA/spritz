@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import csv
+import logging
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -24,6 +25,8 @@ from sprtz.io.jsonio import read_json
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
 from sprtz.io.netcdf_cf import read_cf_meteorology, write_cf_concentration
 from sprtz.parallel import get_gpu_context, get_mpi_context
+
+LOGGER = logging.getLogger(__name__)
 
 
 def wildfire_plume_rise(intensity_kw_per_m: float, perimeter_m: float, u_ms: float) -> float:
@@ -474,6 +477,7 @@ def compute_concentrations(
     *,
     parallel: str = "serial",
     gpu_backend: str | None = None,
+    progress_callback: Callable[[int, float], None] | None = None,
 ) -> list[dict[str, float | str]]:
     config.validate()
     rows: list[dict[str, float | str]] = []
@@ -492,6 +496,18 @@ def compute_concentrations(
     interval_mass_time = float(output_interval) if output_interval is not None else averaging_time
     legacy_steady_output = output_interval is None
     puff_samples = max(1, int(config.run.get("gaussian_puff_samples", config.run.get("GAUSSIAN_PUFF_SAMPLES", 6))))
+    initial_sigma_h = float(
+        config.run.get(
+            "gaussian_initial_sigma_h",
+            config.run.get("GAUSSIAN_INITIAL_SIGMA_H", config.run.get("particle_sigma_h", 0.0)),
+        )
+    )
+    initial_sigma_z = float(
+        config.run.get(
+            "gaussian_initial_sigma_z",
+            config.run.get("GAUSSIAN_INITIAL_SIGMA_Z", config.run.get("particle_sigma_z", 0.0)),
+        )
+    )
     ambient_temperature = float(np.nanmean(np.asarray(meteo.get("temperature", [[293.15]]), dtype=float)))
     mixing_height = float(np.nanmean(np.asarray(meteo.get("mixing_height", [[1000.0]]), dtype=float)))
     washout_rate = precipitation_washout_rate(config, meteo)
@@ -500,8 +516,8 @@ def compute_concentrations(
     gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
     local_receptors = [receptors[i] for i in ctx.partition(len(receptors))]
     local_rows: list[dict[str, float | str]] = []
-    for rec in local_receptors:
-        for sample_time in times:
+    for time_index, sample_time in enumerate(times, start=1):
+        for rec in local_receptors:
             sample_dt = sample_datetime(config, sample_time)
             firefighter_factor = _firefighters_emission_factor(config, sample_dt)
             total = 0.0
@@ -520,7 +536,7 @@ def compute_concentrations(
                 dy = rec.y - src.y
                 xdown = dx * (u / speed) + dy * (v / speed)
                 ycross = -dx * (v / speed) + dy * (u / speed)
-                if xdown <= 0:
+                if numerical_mode == "plume" and xdown <= 0:
                     continue
                 source_wet_rate = max(src.wet_scavenging, 0.0) + washout_rate
                 emission_rate = src.emission_rate * firefighter_factor
@@ -531,7 +547,7 @@ def compute_concentrations(
                 eff_h = effective_release_height(
                     stack_height=src.stack_height,
                     source_z=src.z,
-                    receptor_z=rec.z,
+                    receptor_z=0.0,
                     wind_speed=speed,
                     downwind_distance=max(puff_center_x, xdown, 1.0),
                     stack_diameter=src.stack_diameter,
@@ -555,7 +571,7 @@ def compute_concentrations(
                         wind_speed=speed,
                         x_downwind=xdown,
                         y_crosswind=ycross,
-                        z=0.0,
+                        z=rec.z,
                         h=eff_h,
                         stability=stability,
                     )
@@ -565,6 +581,8 @@ def compute_concentrations(
                             max(puff_center_x, 1.0),
                             stability,
                             elapsed_s=elapsed_s,
+                            initial_sigma_y=initial_sigma_h,
+                            initial_sigma_z=initial_sigma_z,
                             source_width=src.width,
                             source_length=src.length,
                             source_height=max(src.height, 0.0),
@@ -575,7 +593,7 @@ def compute_concentrations(
                             mass=mass,
                             x_receptor=xdown,
                             y_receptor=ycross,
-                            z_receptor=0.0,
+                            z_receptor=rec.z,
                             x_center=puff_center_x,
                             y_center=0.0,
                             z_center=eff_h,
@@ -596,7 +614,7 @@ def compute_concentrations(
                             age_eff_h = effective_release_height(
                                 stack_height=src.stack_height,
                                 source_z=src.z,
-                                receptor_z=rec.z,
+                                receptor_z=0.0,
                                 wind_speed=speed,
                                 downwind_distance=max(center_x, xdown, 1.0),
                                 stack_diameter=src.stack_diameter,
@@ -618,6 +636,8 @@ def compute_concentrations(
                                 max(center_x, 1.0),
                                 stability,
                                 elapsed_s=age_s,
+                                initial_sigma_y=initial_sigma_h,
+                                initial_sigma_z=initial_sigma_z,
                                 source_width=src.width,
                                 source_length=src.length,
                                 source_height=max(src.height, 0.0),
@@ -626,7 +646,7 @@ def compute_concentrations(
                                 mass=emission_rate * dt * age_depletion,
                                 x_receptor=xdown,
                                 y_receptor=ycross,
-                                z_receptor=0.0,
+                                z_receptor=rec.z,
                                 x_center=center_x,
                                 y_center=0.0,
                                 z_center=age_eff_h,
@@ -652,6 +672,15 @@ def compute_concentrations(
             if sample_dt is not None:
                 row["datetime"] = sample_dt.isoformat()
             local_rows.append(row)
+        if ctx.is_root:
+            if progress_callback is not None:
+                progress_callback(time_index, sample_time)
+            else:
+                LOGGER.info(
+                    "Spritz: concentration output interval reached index=%d output_time_s=%.0f",
+                    time_index,
+                    sample_time,
+                )
     return ctx.gather_flat(local_rows)
 
 
@@ -700,10 +729,17 @@ def run(
     *,
     parallel: str = "serial",
     gpu_backend: str | None = None,
+    progress_callback: Callable[[int, float], None] | None = None,
 ) -> list[dict[str, float | str]]:
     ctx = get_mpi_context(parallel)
     meteo = read_meteorology(meteo_path)
-    rows = compute_concentrations(config, meteo, parallel=parallel, gpu_backend=gpu_backend)
+    rows = compute_concentrations(
+        config,
+        meteo,
+        parallel=parallel,
+        gpu_backend=gpu_backend,
+        progress_callback=progress_callback,
+    )
     if ctx.is_root:
         write_concentration(output, rows, output_format)
     ctx.barrier()

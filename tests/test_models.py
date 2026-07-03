@@ -72,6 +72,28 @@ def test_spritz_output_interval_csv_and_netcdf(tmp_path):
     assert sorted({row["time"] for row in reread}) == [600.0, 1200.0, 1800.0]
 
 
+def test_spritz_reports_progress_after_each_output_time(tmp_path):
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "run": {
+                **base.raw["run"],
+                "output_interval_s": 600.0,
+                "output_duration_s": 1800.0,
+            },
+        }
+    )
+    meteo_path = tmp_path / "meteo.json"
+    conc_path = tmp_path / "conc.csv"
+    spritzmet.run(cfg, meteo_path)
+    progress: list[tuple[int, float]] = []
+
+    spritz.run(cfg, meteo_path, conc_path, "csv", progress_callback=lambda index, time_s: progress.append((index, time_s)))
+
+    assert progress == [(1, 600.0), (2, 1200.0), (3, 1800.0)]
+
+
 def test_gaussian_puff_integrates_continuous_output_window():
     base = load_config("examples/minimal.json")
     cfg = from_mapping(
@@ -183,6 +205,122 @@ def test_gaussian_puff_time_integral_keeps_concentration_units():
     assert rows[0]["concentration"] > 1.0e-7
 
 
+def test_gaussian_puff_uses_absolute_release_height_for_elevated_field_levels():
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "grid": {
+                **base.raw["grid"],
+                "nx": 1,
+                "ny": 1,
+                "dx": 100.0,
+                "dy": 100.0,
+                "x0": 300.0,
+                "y0": 0.0,
+            },
+            "sources": [
+                {
+                    **base.raw["sources"][0],
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                    "stack_height": 0.0,
+                    "height": 1.0,
+                    "heat_release": 0.0,
+                    "exit_temperature": 293.15,
+                    "exit_velocity": 0.0,
+                    "emission_rate": 1.0,
+                    "deposition_velocity": 0.0,
+                    "wet_scavenging": 0.0,
+                    "settling_velocity": 0.0,
+                }
+            ],
+            "receptors": [],
+            "run": {
+                **base.raw["run"],
+                "output_interval_s": 600.0,
+                "output_duration_s": 600.0,
+                "concentration_output": "grid",
+                "field_z_levels": [0.0, 1000.0],
+                "gaussian_puff_samples": 1,
+                "stability": "D",
+            },
+        }
+    )
+    meteo = {
+        "u": [[1.0]],
+        "v": [[0.0]],
+        "temperature": [[293.15]],
+        "mixing_height": [[1000.0]],
+        "precipitation_rate": [[0.0]],
+    }
+
+    rows = spritz.compute_concentrations(cfg, meteo)
+    by_z = {row["z"]: row["concentration"] for row in rows}
+
+    assert by_z[0.0] > 1.0e-7
+    assert by_z[1000.0] < by_z[0.0] * 1.0e-20
+
+
+def test_gaussian_puff_initial_sigma_z_broadens_vertical_field():
+    base = load_config("examples/minimal.json")
+    raw = {
+        **base.raw,
+        "grid": {
+            **base.raw["grid"],
+            "nx": 1,
+            "ny": 1,
+            "dx": 100.0,
+            "dy": 100.0,
+            "x0": 300.0,
+            "y0": 0.0,
+        },
+        "sources": [
+            {
+                **base.raw["sources"][0],
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "stack_height": 0.0,
+                "height": 1.0,
+                "heat_release": 0.0,
+                "exit_temperature": 293.15,
+                "exit_velocity": 0.0,
+                "emission_rate": 1.0,
+                "deposition_velocity": 0.0,
+                "wet_scavenging": 0.0,
+                "settling_velocity": 0.0,
+            }
+        ],
+        "receptors": [],
+        "run": {
+            **base.raw["run"],
+            "output_interval_s": 600.0,
+            "output_duration_s": 600.0,
+            "concentration_output": "grid",
+            "field_z_levels": [500.0],
+            "gaussian_puff_samples": 1,
+            "stability": "D",
+        },
+    }
+    meteo = {
+        "u": [[1.0]],
+        "v": [[0.0]],
+        "temperature": [[293.15]],
+        "mixing_height": [[1000.0]],
+        "precipitation_rate": [[0.0]],
+    }
+
+    narrow = spritz.compute_concentrations(from_mapping(raw), meteo)[0]["concentration"]
+    broad = spritz.compute_concentrations(
+        from_mapping({**raw, "run": {**raw["run"], "gaussian_initial_sigma_z": 250.0}}),
+        meteo,
+    )[0]["concentration"]
+
+    assert broad > narrow
+
+
 def test_spritz_can_write_3d_concentration_field(tmp_path):
     base = load_config("examples/minimal.json")
     cfg = from_mapping(
@@ -291,6 +429,33 @@ def test_particles_emit_time_dependent_grid_field():
     second = [row["concentration"] for row in rows if row["time"] == 1200.0]
     assert max(second) > 0.0
     assert first != second
+
+
+def test_particles_report_progress_after_each_output_time():
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "run": {
+                **base.raw["run"],
+                "output_interval_s": 600.0,
+                "output_duration_s": 1200.0,
+                "particles": 20,
+            },
+        }
+    )
+    meteo = {
+        "u": [[2.0]],
+        "v": [[0.0]],
+        "temperature": [[293.15]],
+        "mixing_height": [[1000.0]],
+        "precipitation_rate": [[0.0]],
+    }
+    progress: list[tuple[int, float]] = []
+
+    particles.simulate_particles(cfg, meteo, seed=1, progress_callback=lambda index, time_s: progress.append((index, time_s)))
+
+    assert progress == [(1, 600.0), (2, 1200.0)]
 
 
 def test_particle_backend_honors_heat_release_plume_rise():

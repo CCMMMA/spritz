@@ -66,14 +66,6 @@ def _ensure_time_dependent_plume_config(config_path: str | Path, meteo_path: str
     if "field_z_levels" not in run:
         run["field_z_levels"] = list(DEFAULT_WILDFIRE_FIELD_Z_LEVELS)
         changed = True
-    else:
-        try:
-            max_field_z = max(float(value) for value in run["field_z_levels"])
-        except (TypeError, ValueError):
-            max_field_z = 0.0
-        if max_field_z < 1000.0:
-            run["field_z_levels"] = list(DEFAULT_WILDFIRE_FIELD_Z_LEVELS)
-            changed = True
     particle_defaults = {
         "particles": DEFAULT_WILDFIRE_PARTICLE_COUNT,
         "particle_duration_s": 3600.0,
@@ -163,19 +155,7 @@ def _log_backend_hourly_performance(
         simulated_hours,
         seconds_per_hour,
     )
-    if output_times:
-        cumulative_simulated_hours = 0.0
-        for index, output_time_s in enumerate(output_times, start=1):
-            cumulative_simulated_hours += interval_s / 3600.0
-            LOGGER.info(
-                "step 3/3 progress: backend=%s computed_hour=%d output_time_s=%.0f cumulative_simulated_hours=%.3f estimated_seconds_for_hour=%.3f",
-                backend,
-                index,
-                output_time_s,
-                cumulative_simulated_hours,
-                seconds_per_hour,
-            )
-    else:
+    if not output_times:
         LOGGER.info(
             "step 3/3 progress: backend=%s computed_hour=1 output_time_s=unknown cumulative_simulated_hours=%.3f estimated_seconds_for_hour=%.3f",
             backend,
@@ -196,6 +176,22 @@ def _run_workflow_with_performance_log(
 ) -> dict:
     LOGGER.info("step 3/3 workflow: running Sprtz workflow backend=%s", backend)
     started = time.perf_counter()
+
+    def _log_concentration_progress(index: int, output_time_s: float) -> None:
+        elapsed_s = time.perf_counter() - started
+        interval_s = float(output_interval_s or 3600.0)
+        cumulative_simulated_hours = index * interval_s / 3600.0
+        seconds_per_hour = elapsed_s / max(cumulative_simulated_hours, 1.0e-9)
+        LOGGER.info(
+            "step 3/3 progress: backend=%s computed_hour=%d output_time_s=%.0f cumulative_simulated_hours=%.3f estimated_seconds_for_hour=%.3f elapsed_s=%.3f",
+            backend,
+            index,
+            output_time_s,
+            cumulative_simulated_hours,
+            seconds_per_hour,
+            elapsed_s,
+        )
+
     workflow = run_workflow(
         config_path,
         output_dir,
@@ -205,6 +201,7 @@ def _run_workflow_with_performance_log(
         output_interval_s=output_interval_s,
         meteo_input=meteo_input,
         calpuff_binary=calpuff_binary,
+        concentration_progress_callback=_log_concentration_progress,
     )
     elapsed_s = time.perf_counter() - started
     _log_backend_hourly_performance(

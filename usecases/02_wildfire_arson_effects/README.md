@@ -76,8 +76,8 @@ python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
   --output data/output/wildfire_case/wrf_100m_wind.nc \
   --center-lat 40.827 \
   --center-lon 14.518 \
-  --nx 101 \
-  --ny 101 \
+  --nx 201 \
+  --ny 201 \
   --dx 100 \
   --dy 100 \
   --dem data/dem/cop30_wildfire_case.tif \
@@ -97,7 +97,7 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --end 20240803Z0000 \
   --duration-s 86400 \
   --area-m2 2500 \
-  --field-z-levels 1.5,10,25,50,100,150,200,250
+  --field-z-levels 2.5,5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,125,150,175,200,250,300,350,400,450,500,600,700,800,900,1000,1250,1500,1750,2000
 ```
 
 For the default single-fire case, `--center-lat 40.827 --center-lon 14.518`
@@ -148,23 +148,33 @@ regenerate the maps explicitly for a report, run:
 ```bash
 python tools/plotter.py data/output/wildfire_case/wrf_100m_wind.nc \
   --variable wind_speed \
+  --center-lat 40.825 \
+  --center-lon 14.52 \
   --output data/output/wildfire_case/wrf_100m_wind_map.png
 
 python tools/plotter.py data/output/wildfire_case/model_compare/particles/meteo.nc \
   --variable wind_speed_10m \
+  --center-lat 40.825 \
+  --center-lon 14.52 \
   --output data/output/wildfire_case/model_compare/particles/particles_meteo_map.png
 
 python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/meteo.nc \
   --variable wind_speed_10m \
+  --center-lat 40.825 \
+  --center-lon 14.52 \
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_meteo_map.png
 
 python tools/plotter.py data/output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
+  --center-lat 40.825 \
+  --center-lon 14.52 \
   --time-index 0 \
   --output data/output/wildfire_case/model_compare/particles/particles_concentration_map.png
   
 python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
   --variable concentration_field \
+  --center-lat 40.825 \
+  --center-lon 14.52 \
   --time-index 0 \
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_map.png
 ```
@@ -175,6 +185,8 @@ To create animated GIFs with all plume simulation time frames, add
 ```bash
 python tools/plotter.py data/output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
+  --center-lat 40.825 \
+  --center-lon 14.52 \
   --level-index 0 \
   --animate \
   --frame-duration-ms 300 \
@@ -183,6 +195,8 @@ python tools/plotter.py data/output/wildfire_case/model_compare/particles/concen
 
 python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
   --variable concentration_field \
+  --center-lat 40.825 \
+  --center-lon 14.52 \
   --level-index 0 \
   --animate \
   --frame-duration-ms 300 \
@@ -270,6 +284,10 @@ Step 2 also writes time-dependent plume defaults under `run`:
   2000 m by default, or explicit levels from `--field-z-levels`;
 - particle defaults: `particles=10000`, `particle_sigma_h=175 m`,
   `particle_sigma_z=150 m`, and `particle_advection_steps=12`.
+- Gaussian puff initialization reuses the configured horizontal and vertical
+  spread values when `gaussian_initial_sigma_h`/`gaussian_initial_sigma_z` are
+  not supplied, keeping side-by-side backend screening on comparable initial
+  plume widths.
 
 ## Multi-fire event JSON
 

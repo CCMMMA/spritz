@@ -52,6 +52,45 @@ def test_numerical_options_change_results(tmp_path):
     assert puff != plume
     assert "dry_flux" in puff[0]
 
+
+def test_gaussian_puff_keeps_finite_source_near_release(tmp_path):
+    cfg = from_mapping(
+        {
+            "grid": {"nx": 1, "ny": 1, "dx": 100.0, "dy": 100.0, "x0": 0.0, "y0": 0.0},
+            "sources": [
+                {
+                    "id": "S",
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                    "emission_rate": 1.0,
+                    "source_type": "area",
+                    "width": 50.0,
+                    "length": 50.0,
+                    "height": 3.0,
+                    "stack_height": 0.0,
+                    "exit_temperature": 293.15,
+                    "heat_release": 0.0,
+                }
+            ],
+            "receptors": [{"id": "R0", "x": 0.0, "y": 0.0, "z": 1.5}],
+            "run": {
+                "backend": "gaussian",
+                "numerical_mode": "puff",
+                "output_interval_s": 60.0,
+                "output_duration_s": 60.0,
+                "gaussian_initial_sigma_h": 50.0,
+                "gaussian_initial_sigma_z": 20.0,
+            },
+        }
+    )
+    meteo_path = tmp_path / "meteo.json"
+    spritzmet.run(cfg, meteo_path, "json")
+
+    rows = spritz.run(cfg, meteo_path, tmp_path / "puff.csv", "csv")
+
+    assert rows[0]["concentration"] > 0.0
+
 from sprtz.core.stats import block_average, ranked, running_average
 
 
