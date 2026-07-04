@@ -477,12 +477,21 @@ sprtz-plot --input output/concentration.nc --output output/concentration.png --t
 `tools/plotter.py` can render receptor-table NetCDF variables and gridded
 fields such as `concentration_field` by passing `--variable concentration_field`
 and selecting `--time-index` / `--level-index` as needed.
+Zero or negative mass concentration is drawn transparent, and products carrying
+both WGS84 longitude/latitude and local `x/y` axes show both coordinate systems
+on map axes.
 Use `tools/plotter.py --animate` to create map animations over every available
 time frame, and set GIF repetition with `--gif-loop` (`0` loops forever). Use
 `tools/profiler.py` for centralized time-varying vertical profiles from
 `wind_speed(time,z,y,x)` or
 `concentration_field(time,field_z,field_y,field_x)`; add `--animate` and
 `--gif-loop` to create simulation-long profile GIFs with explicit loop control.
+Profiler figures include the longitude/latitude of the local `x=0, y=0` point
+when the NetCDF provides geographic coordinates.
+Use `tools/render3d.py` for static or animated three-dimensional surface and
+voxel views of compatible gridded volume variables. It uses all vertical levels
+by default and labels 3-D horizontal axes with both local metres and WGS84
+coordinates when available.
 
 ## Terrain And GEO Products
 

@@ -27,6 +27,23 @@ Backward outputs should be reviewed against the archived WRF cycle, the
 DEM/LC-aware derived SpritzMet field, COP30 terrain, LC100 land cover, and
 independent observations.
 
+Create the backward-plume GEO product before 3-D likelihood rendering:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_backward_plume_area.tif \
+  --landuse data/landcover/lc100_backward_plume_area.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output_backward_plume/geo.nc
+```
+
 ```bash
 python usecases/10_backward_plume_origin/step_01_prepare_meteorology.py
 python usecases/10_backward_plume_origin/step_02_estimate_source.py
@@ -45,6 +62,17 @@ python tools/plotter.py output_backward_plume/meteo.nc \
 python tools/plotter.py output_backward_plume/source_likelihood.nc \
   --variable source_likelihood \
   --output output_backward_plume/source_likelihood_map.png
+```
+
+If the likelihood sidecar is gridded and a matching GEO file is available,
+render the likelihood surface over DEM-shaped terrain:
+
+```bash
+python tools/render3d.py output_backward_plume/source_likelihood.nc \
+  --variable source_likelihood \
+  --terrain output_backward_plume/geo.nc \
+  --mode surface \
+  --output output_backward_plume/source_likelihood_3d.png
 ```
 
 SLURM sketch:

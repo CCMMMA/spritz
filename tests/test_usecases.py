@@ -394,6 +394,35 @@ def test_plot_netcdf_can_overlay_plume_vectors_from_meteo(monkeypatch: pytest.Mo
     assert out.read_text(encoding="utf-8") == "ok"
 
 
+def test_plot_workflow_netcdfs_writes_3d_concentration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import plotting  # noqa: PLC0415
+
+    concentration = tmp_path / "concentration.nc"
+    terrain = tmp_path / "geo.nc"
+    concentration.write_text("", encoding="utf-8")
+    terrain.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(plotting, "plot_netcdf_if_available", lambda *args, **kwargs: None)
+    monkeypatch.setattr(plotting, "plot_concentration_vertical_profiles_if_available", lambda *args, **kwargs: None)
+    monkeypatch.setattr(plotting, "plot_vertical_profiles_if_available", lambda *args, **kwargs: None)
+    calls: list[dict[str, object]] = []
+
+    def fake_plot_3d(input_path, output_path, **kwargs):
+        calls.append({"input_path": input_path, "output_path": output_path, **kwargs})
+        return Path(output_path)
+
+    monkeypatch.setattr(plotting, "plot_3d_volume_if_available", fake_plot_3d)
+
+    products = plotting.plot_workflow_netcdfs(
+        {"concentration": str(concentration), "terrain": str(terrain)},
+        tmp_path,
+    )
+
+    assert products["concentration_3d"] == str(tmp_path / "concentration_3d.png")
+    assert calls[0]["terrain_path"] == str(terrain)
+    assert calls[0]["variable"] == "concentration_field"
+
+
 def test_wildfire_step3_writes_explicit_plume_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     module = _load_usecase_step("02_wildfire_arson_effects", "step_03_run_model.py")
     config = tmp_path / "wildfire.json"
@@ -419,9 +448,13 @@ def test_wildfire_step3_writes_explicit_plume_profile(monkeypatch: pytest.Monkey
         return Path(output_path)
 
     monkeypatch.setattr(module, "plot_concentration_vertical_profiles_if_available", fake_plot_concentration)
+    monkeypatch.setattr(module, "plot_3d_volume_if_available", fake_plot_concentration)
 
     assert module.main(["--config", str(config), "--output-dir", str(output_dir), "--backend", "particles"]) == 0
-    assert plotted == [output_dir / "particles_concentration_vertical_profiles.png"]
+    assert plotted == [
+        output_dir / "particles_concentration_vertical_profiles.png",
+        output_dir / "particles_concentration_3d.png",
+    ]
 
 
 def test_build_wildfire_config_supports_multi_fire_materials_and_windows(tmp_path: Path) -> None:

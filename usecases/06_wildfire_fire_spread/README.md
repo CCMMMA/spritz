@@ -28,6 +28,23 @@ when preparing WRF-derived wind and precipitation, and as local
 `sprtz-terrain fetch` inputs before coupling terrain-aware fire spread or smoke
 workflows.
 
+Create the fire-domain GEO product before 3-D fire-surface rendering:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_fire_area.tif \
+  --landuse data/landcover/lc100_fire_area.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output_fire/geo.nc
+```
+
 ```bash
 sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire --interchange netcdf
 ```
@@ -38,4 +55,15 @@ sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire --int
 python tools/plotter.py output_fire/firefront.nc \
   --variable fire_probability \
   --output output_fire/firefront_map.png
+```
+
+When a matching terrain/GEO NetCDF is available, render the probability surface
+over DEM-shaped, land-cover-colored ground:
+
+```bash
+python tools/render3d.py output_fire/firefront.nc \
+  --variable fire_probability \
+  --terrain output_fire/geo.nc \
+  --mode surface \
+  --output output_fire/firefront_3d.png
 ```

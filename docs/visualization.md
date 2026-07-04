@@ -52,6 +52,11 @@ pass both `--tile-provider` and `--allow-network-basemap`.
 
 The module imports Matplotlib lazily, so compute-only deployments do not need plotting dependencies.
 
+Concentration plots treat zero or negative mass concentration as transparent
+background. When NetCDF products provide both local projected `x/y` and WGS84
+longitude/latitude coordinates, `tools/plotter.py` labels both coordinate
+systems on horizontal and vertical map axes.
+
 Use-case workflow plotting also writes `meteo_vertical_profiles.png` for
 SpritzMet NetCDF products. The profile figure combines a time-height wind-speed
 section and sampled center-cell vertical profiles, using the same `time,z,y,x`
@@ -64,8 +69,16 @@ Use `tools/profiler.py` to create the same style of vertical profile figure from
 any compatible Sprtz NetCDF product. It supports meteo wind profiles and plume
 concentration profiles, uses `--x`/`--y` to select the sampled local grid
 column, and supports `--animate` plus `--gif-loop` for simulation-long profile
-GIFs. Use `tools/plotter.py --animate --gif-loop 0` for endlessly looping
-simulation-long map GIFs.
+GIFs. When latitude/longitude variables are available, the profile figure shows
+the WGS84 coordinate of the local `x=0, y=0` point. Use `tools/render3d.py` for
+reproducible three-dimensional surface or voxel views of `z,y,x` and
+`time,z,y,x` fields, including animated GIFs. It renders all vertical levels by
+default. When passed `--terrain geo.nc`, it renders DEM-shaped ground from
+`surface_altitude` and colors that surface by `land_cover` or `landuse_class`
+before drawing the plume above the terrain; 3-D horizontal tick labels include
+both local metres and WGS84 coordinates when those axes are present. Use
+`tools/plotter.py --animate --gif-loop 0` for endlessly looping simulation-long
+map GIFs.
 
 ## References
 

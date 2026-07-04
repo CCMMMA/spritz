@@ -28,6 +28,23 @@ The FIRMS key is separate from the OpenTopography key used by the COP30
 downloader. LC100 uses GDAL `/vsicurl/` against a public source URL. Never
 hard-code credentials in configuration files.
 
+Create the FIRMS-domain GEO product before 3-D fire-surface rendering:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_firms_area.tif \
+  --landuse data/landcover/lc100_firms_area.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output_firms/geo.nc
+```
+
 ```bash
 FIRMS_MAP_KEY=... sprtzfire --firms --config examples/wildfire_minimal.json --output-dir output_firms --interchange netcdf
 ```
@@ -38,4 +55,15 @@ FIRMS_MAP_KEY=... sprtzfire --firms --config examples/wildfire_minimal.json --ou
 python tools/plotter.py output_firms/firefront.nc \
   --variable fire_probability \
   --output output_firms/firefront_map.png
+```
+
+With a matching terrain/GEO NetCDF, render the ignition-driven fire surface in
+3-D over DEM and land-cover context:
+
+```bash
+python tools/render3d.py output_firms/firefront.nc \
+  --variable fire_probability \
+  --terrain output_firms/geo.nc \
+  --mode surface \
+  --output output_firms/firefront_3d.png
 ```

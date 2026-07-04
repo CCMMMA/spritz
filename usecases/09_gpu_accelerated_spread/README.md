@@ -28,6 +28,23 @@ when preparing WRF-derived wind and precipitation, and through
 `sprtz-terrain fetch` for fire-spread terrain products. GPU backend detection
 remains lazy and falls back to CPU if optional libraries are unavailable.
 
+Create the GPU fire-domain GEO product before 3-D fire-surface rendering:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_gpu_fire_area.tif \
+  --landuse data/landcover/lc100_gpu_fire_area.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output_fire_gpu/geo.nc
+```
+
 ```bash
 sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire_gpu --interchange netcdf
 ```
@@ -38,4 +55,15 @@ sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire_gpu -
 python tools/plotter.py output_fire_gpu/firefront.nc \
   --variable fire_probability \
   --output output_fire_gpu/firefront_map.png
+```
+
+Use the 3-D renderer to inspect the accelerated fire surface against DEM shape
+and land-cover colors:
+
+```bash
+python tools/render3d.py output_fire_gpu/firefront.nc \
+  --variable fire_probability \
+  --terrain output_fire_gpu/geo.nc \
+  --mode surface \
+  --output output_fire_gpu/firefront_3d.png
 ```

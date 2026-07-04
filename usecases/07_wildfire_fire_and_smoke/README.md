@@ -28,6 +28,23 @@ the SpritzMet downscaling step with `--dem` and `--land-cover`; use the same
 rasters with `sprtz-terrain fetch` and make sure they cover the coupled fire and
 smoke grid.
 
+Create the coupled fire-smoke GEO product before 3-D smoke rendering:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_fire_smoke_area.tif \
+  --landuse data/landcover/lc100_fire_smoke_area.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output_fire_smoke/geo.nc
+```
+
 ```bash
 sprtz run examples/wildfire_minimal.json --backend fire+puff --output-dir output_fire_smoke --interchange netcdf
 ```
@@ -42,4 +59,15 @@ python tools/plotter.py output_fire_smoke/firefront.nc \
 python tools/plotter.py output_fire_smoke/concentration.nc \
   --variable concentration \
   --output output_fire_smoke/concentration_map.png
+```
+
+For three-dimensional smoke inspection, render the plume above the DEM/LC
+terrain surface:
+
+```bash
+python tools/render3d.py output_fire_smoke/concentration.nc \
+  --variable concentration_field \
+  --terrain output_fire_smoke/geo.nc \
+  --mode surface \
+  --output output_fire_smoke/concentration_3d.png
 ```

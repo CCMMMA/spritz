@@ -38,6 +38,24 @@ uses both terrain and land cover for wind and precipitation downscaling. The
 same rasters can also feed `sprtz-terrain fetch` when the evaluated scenario
 includes standalone terrain/GEO products.
 
+If the upstream use case 02 output is under `output/wildfire_case`, create the
+matching GEO product before 3-D plume rendering:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.827 \
+  --center-lon 14.518 \
+  --nx 201 \
+  --ny 201 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_naples.tif \
+  --landuse data/landcover/lc100_naples.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output/wildfire_case/geo.nc
+```
+
 Use case 02 can write particle and Gaussian outputs under `model_compare/`.
 Choose the backend concentration file that matches the satellite product being
 evaluated. When `--calpuff-binary` is used upstream, keep the
@@ -70,6 +88,18 @@ python tools/plotter.py output/wildfire_case/model_compare/particles/concentrati
   --variable concentration_field \
   --time-index 1 \
   --output output/wildfire_case/model_compare/particles/concentration_map.png
+```
+
+For three-dimensional inspection of the evaluated plume, render the same
+NetCDF with the terrain/GEO product used by the upstream wildfire case:
+
+```bash
+python tools/render3d.py output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --time-index 1 \
+  --terrain output/wildfire_case/geo.nc \
+  --mode surface \
+  --output output/wildfire_case/model_compare/particles/concentration_3d.png
 ```
 
 ## Metrics reported

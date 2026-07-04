@@ -14,7 +14,7 @@ from sprtz.logging import configure_logging
 USECASES_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(USECASES_ROOT))
 
-from plotting import plot_concentration_vertical_profiles_if_available
+from plotting import plot_3d_volume_if_available, plot_concentration_vertical_profiles_if_available
 from wildfire import (
     DEFAULT_WILDFIRE_FIELD_Z_LEVELS,
     DEFAULT_WILDFIRE_PARTICLE_ADVECTION_STEPS,
@@ -288,6 +288,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         if plume_profile is not None:
             plots[f"{backend}_plume_vertical_profiles"] = str(plume_profile)
+        plume_3d = plot_3d_volume_if_available(
+            backend_workflow.get("concentration"),
+            backend_output_dir / f"{backend}_concentration_3d.png",
+            terrain_path=backend_workflow.get("terrain") or backend_workflow.get("meteo") or meteo_input,
+            title=f"{backend.title()} concentration 3D",
+        )
+        if plume_3d is not None:
+            plots[f"{backend}_plume_3d"] = str(plume_3d)
     if plots:
         LOGGER.info("step 3/3 plotting: wrote %s", plots)
     else:

@@ -19,6 +19,8 @@ LOGGER = logging.getLogger("sprtz.profiler")
 TIME_DIMENSION_TOKENS = ("time", "date")
 X_NAMES = ("x", "field_x", "west_east")
 Y_NAMES = ("y", "field_y", "south_north")
+LATITUDE_NAMES = ("field_latitude", "latitude", "lat", "XLAT", "XLAT_M")
+LONGITUDE_NAMES = ("field_longitude", "longitude", "lon", "long", "lng", "XLONG", "XLONG_M")
 Z_NAMES = ("z", "field_z", "level", "height", "bottom_top", "lev")
 TIME_NAMES = ("time",)
 DATETIME_NAMES = ("time_datetime", "Times")
@@ -45,6 +47,8 @@ class ProfileData:
     long_name: str
     ix: int
     iy: int
+    origin_lat: float | None = None
+    origin_lon: float | None = None
 
     @property
     def profiles(self) -> np.ndarray:
@@ -130,6 +134,31 @@ def _axis_values(ds: Any, names: Sequence[str], size: int, dimension_name: str |
     return np.arange(size, dtype=float)
 
 
+def _coordinate_value(
+    ds: Any,
+    names: Sequence[str],
+    *,
+    x_axis: np.ndarray,
+    y_axis: np.ndarray,
+    ix: int,
+    iy: int,
+) -> float | None:
+    variable = _find_variable(ds, names)
+    if variable is None:
+        return None
+    values = _variable_array(variable)
+    while values.ndim > 2:
+        values = _take_checked(values, 0, 0, name="time")
+    if values.ndim == 1:
+        if values.size == x_axis.size:
+            return float(values[ix])
+        if values.size == y_axis.size:
+            return float(values[iy])
+    if values.shape == (y_axis.size, x_axis.size):
+        return float(values[iy, ix])
+    return None
+
+
 def _as_time_z_y_x(ds: Any, variable_name: str) -> tuple[np.ndarray, tuple[str | None, str | None, str | None, str | None], str, str]:
     variable = ds.variables[variable_name]
     values = _variable_array(variable)
@@ -179,6 +208,8 @@ def read_profile_data(
     y_m: float,
 ) -> ProfileData:
     Dataset = _load_netcdf4()
+    origin_lat = None
+    origin_lon = None
     with Dataset(input_path) as ds:
         actual = _candidate_variable_name(ds, variable_name)
         values, dimensions, units, long_name = _as_time_z_y_x(ds, actual)
@@ -188,6 +219,10 @@ def read_profile_data(
         z_axis = _axis_values(ds, Z_NAMES, z_count, dimensions[1])
         time_axis = _axis_values(ds, TIME_NAMES, time_count, dimensions[0])
         labels = _time_labels(ds, time_count, time_axis)
+        origin_ix = int(np.argmin(np.abs(x_axis - 0.0)))
+        origin_iy = int(np.argmin(np.abs(y_axis - 0.0)))
+        origin_lat = _coordinate_value(ds, LATITUDE_NAMES, x_axis=x_axis, y_axis=y_axis, ix=origin_ix, iy=origin_iy)
+        origin_lon = _coordinate_value(ds, LONGITUDE_NAMES, x_axis=x_axis, y_axis=y_axis, ix=origin_ix, iy=origin_iy)
     ix = int(np.argmin(np.abs(x_axis - float(x_m))))
     iy = int(np.argmin(np.abs(y_axis - float(y_m))))
     selected = values[:, :, iy, ix]
@@ -208,6 +243,8 @@ def read_profile_data(
         long_name=long_name,
         ix=ix,
         iy=iy,
+        origin_lat=origin_lat,
+        origin_lon=origin_lon,
     )
 
 
@@ -228,6 +265,17 @@ def _profile_color_limits(profiles: np.ndarray) -> dict[str, float]:
     return {"vmin": 0.0, "vmax": maximum if maximum > 0.0 else 1.0}
 
 
+def _is_concentration_profile(profile: ProfileData) -> bool:
+    text = f"{profile.variable_name} {profile.long_name}".lower()
+    return "concentration" in text or "mass" in text
+
+
+def _origin_label(profile: ProfileData) -> str | None:
+    if profile.origin_lat is None or profile.origin_lon is None:
+        return None
+    return f"x=0, y=0: {profile.origin_lat:.6f} degN, {profile.origin_lon:.6f} degE"
+
+
 def plot_profile(
     profile: ProfileData,
     output_path: str | Path,
@@ -238,15 +286,23 @@ def plot_profile(
 ) -> Path:
     plt = _load_matplotlib()
     profiles = profile.profiles
+    plot_profiles = (
+        np.ma.masked_where(np.isfinite(profiles) & (profiles <= 0.0), profiles)
+        if _is_concentration_profile(profile)
+        else profiles
+    )
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig, (ax_heat, ax_profiles) = plt.subplots(1, 2, figsize=(10.5, 5.2), dpi=dpi, constrained_layout=True)
+    heat_cmap = plt.get_cmap("viridis").copy()
+    if _is_concentration_profile(profile):
+        heat_cmap.set_bad((0.0, 0.0, 0.0, 0.0))
     mesh = ax_heat.pcolormesh(
         np.arange(profiles.shape[0]),
         profile.z_axis,
-        profiles.T,
+        plot_profiles.T,
         shading="auto",
-        cmap="viridis",
+        cmap=heat_cmap,
         **_profile_color_limits(profiles),
     )
     cbar = fig.colorbar(mesh, ax=ax_heat)
@@ -266,7 +322,11 @@ def plot_profile(
         color = cmap(0.0 if len(indexes) == 1 else order / (len(indexes) - 1))
         label_text = profile.time_labels[index] if index < len(profile.time_labels) else f"t={index}"
         ax_profiles.plot(profiles[index, :], profile.z_axis, color=color, linewidth=1.7, label=label_text)
-    ax_profiles.set_title(f"Vertical profile at x={profile.x_axis[profile.ix]:.0f} m, y={profile.y_axis[profile.iy]:.0f} m")
+    profile_title = f"Vertical profile at x={profile.x_axis[profile.ix]:.0f} m, y={profile.y_axis[profile.iy]:.0f} m"
+    origin_label = _origin_label(profile)
+    if origin_label:
+        profile_title = f"{profile_title}\n{origin_label}"
+    ax_profiles.set_title(profile_title)
     ax_profiles.set_xlabel(label)
     ax_profiles.set_ylabel("vertical level [m]")
     finite = profiles[np.isfinite(profiles)]

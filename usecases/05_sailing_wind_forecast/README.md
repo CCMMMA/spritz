@@ -67,6 +67,23 @@ COP30 DEM as `--dem` and LC100 land cover as `--land-cover` when preparing
 SpritzMet wind and precipitation products; the same rasters can also be used by
 `sprtz-terrain fetch` for shoreline or terrain-aware preprocessing.
 
+Create the forecast GEO product before 3-D wind-volume rendering:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.815 \
+  --center-lon 14.255 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_bay_of_naples.tif \
+  --landuse data/landcover/lc100_bay_of_naples.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output/sailing/geo.nc
+```
+
 ```bash
 python usecases/05_sailing_wind_forecast/step_01_build_forecast.py \
   --output output/sailing/bay_of_naples_forecast.json
@@ -118,6 +135,18 @@ python tools/plotter.py output/sailing/bay_of_naples_forecast.nc \
   --time-index 0 \
   --level-index 0 \
   --output output/sailing/bay_of_naples_forecast_wind_speed_map.png
+```
+
+For a 3-D wind-volume view above DEM-shaped terrain, render the same NetCDF
+with the forecast GEO product:
+
+```bash
+python tools/render3d.py output/sailing/bay_of_naples_forecast.nc \
+  --variable wind_speed \
+  --time-index 0 \
+  --terrain output/sailing/geo.nc \
+  --mode surface \
+  --output output/sailing/bay_of_naples_forecast_wind_speed_3d.png
 ```
 
 Expected fields include:

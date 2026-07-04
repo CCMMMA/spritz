@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "meteouniparthenope-wrf-download.py"
 PLOTTER_SCRIPT = ROOT / "tools" / "plotter.py"
 PROFILER_SCRIPT = ROOT / "tools" / "profiler.py"
+RENDER3D_SCRIPT = ROOT / "tools" / "render3d.py"
 LC100_SCRIPT = ROOT / "tools" / "copernicus-lc100-download.py"
 
 
@@ -43,6 +44,17 @@ def load_plotter_tool():
 
 def load_profiler_tool():
     loader = SourceFileLoader("sprtz_profiler_tool", str(PROFILER_SCRIPT))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_render3d_tool():
+    loader = SourceFileLoader("sprtz_render3d_tool", str(RENDER3D_SCRIPT))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
@@ -457,6 +469,8 @@ def test_plotter_animation_color_limits_use_all_frames() -> None:
             values=np.asarray([[0.0, 1.0], [2.0, 3.0]]),
             x=x,
             y=y,
+            local_x=None,
+            local_y=None,
             geographic=False,
             label="concentration [g m-3]",
             title="Concentration",
@@ -466,6 +480,8 @@ def test_plotter_animation_color_limits_use_all_frames() -> None:
             values=np.asarray([[0.0, 4.0], [5.0, 10.0]]),
             x=x,
             y=y,
+            local_x=None,
+            local_y=None,
             geographic=False,
             label="concentration [g m-3]",
             title="Concentration",
@@ -486,6 +502,8 @@ def test_plotter_animation_passes_fixed_color_limits(monkeypatch: pytest.MonkeyP
             values=np.asarray([[0.0, 1.0], [2.0, 3.0]]),
             x=x,
             y=y,
+            local_x=None,
+            local_y=None,
             geographic=False,
             label="concentration [g m-3]",
             title="Concentration",
@@ -495,6 +513,8 @@ def test_plotter_animation_passes_fixed_color_limits(monkeypatch: pytest.MonkeyP
             values=np.asarray([[0.0, 4.0], [5.0, 10.0]]),
             x=x,
             y=y,
+            local_x=None,
+            local_y=None,
             geographic=False,
             label="concentration [g m-3]",
             title="Concentration",
@@ -592,6 +612,8 @@ def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
         ds.createVariable("field_z", "f8", ("field_z",))[:] = [1.5, 10.0, 25.0]
         ds.createVariable("field_y", "f8", ("field_y",))[:] = [-50.0, 50.0]
         ds.createVariable("field_x", "f8", ("field_x",))[:] = [-50.0, 50.0]
+        ds.createVariable("latitude", "f8", ("field_y",))[:] = [40.0, 40.1]
+        ds.createVariable("longitude", "f8", ("field_x",))[:] = [14.0, 14.1]
         concentration = ds.createVariable("concentration_field", "f8", ("time", "field_z", "field_y", "field_x"))
         concentration.units = "g m-3"
         concentration.long_name = "gridded mass concentration"
@@ -607,6 +629,8 @@ def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
     np.testing.assert_allclose(profile.z_axis, [1.5, 10.0, 25.0])
     np.testing.assert_allclose(profile.profiles[1], [2.0, 4.0, 6.0])
     assert profile.units == "g m-3"
+    assert profile.origin_lat == pytest.approx(40.0)
+    assert profile.origin_lon == pytest.approx(14.0)
 
 
 def test_profiler_main_animates_selected_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -643,6 +667,129 @@ def test_profiler_main_animates_selected_profile(monkeypatch: pytest.MonkeyPatch
     assert output.read_bytes() == b"GIF89a"
     assert calls[0]["duration_ms"] == 150
     assert calls[0]["loop"] == 3
+
+
+def test_render3d_reads_time_varying_volume(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "plume3d.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 2)
+        ds.createDimension("field_z", 3)
+        ds.createDimension("field_y", 2)
+        ds.createDimension("field_x", 2)
+        time = ds.createVariable("time", "f8", ("time",))
+        time.units = "seconds"
+        time[:] = [0.0, 3600.0]
+        ds.createVariable("field_z", "f8", ("field_z",))[:] = [10.0, 40.0, 90.0]
+        ds.createVariable("field_y", "f8", ("field_y",))[:] = [-50.0, 50.0]
+        ds.createVariable("field_x", "f8", ("field_x",))[:] = [-100.0, 100.0]
+        ds.createVariable("latitude", "f8", ("field_y",))[:] = [40.0, 40.1]
+        ds.createVariable("longitude", "f8", ("field_x",))[:] = [14.0, 14.2]
+        concentration = ds.createVariable("concentration_field", "f8", ("time", "field_z", "field_y", "field_x"))
+        concentration.units = "g m-3"
+        concentration.long_name = "gridded mass concentration"
+        values = np.zeros((2, 3, 2, 2), dtype=float)
+        values[1, :, 1, 1] = [1.0, 2.0, 3.0]
+        concentration[:, :, :, :] = values
+
+    render3d = load_render3d_tool()
+    field = render3d.read_volume_field(path, variable_name="concentration_field", time_index=1)
+
+    assert field.variable_name == "concentration_field"
+    assert field.values.shape == (3, 2, 2)
+    np.testing.assert_allclose(field.z_axis, [10.0, 40.0, 90.0])
+    np.testing.assert_allclose(field.values[:, 1, 1], [1.0, 2.0, 3.0])
+    assert field.label == "gridded mass concentration [g m-3]"
+    assert field.time_label == "Time: 3600 seconds"
+    np.testing.assert_allclose(field.latitude_axis, [40.0, 40.1])
+    np.testing.assert_allclose(field.longitude_axis, [14.0, 14.2])
+
+
+def test_render3d_reads_dem_and_land_cover_terrain(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "geo.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("y", 2)
+        ds.createDimension("x", 3)
+        ds.createVariable("x", "f8", ("x",))[:] = [-100.0, 0.0, 100.0]
+        ds.createVariable("y", "f8", ("y",))[:] = [-50.0, 50.0]
+        ds.createVariable("latitude", "f8", ("y",))[:] = [40.0, 40.1]
+        ds.createVariable("longitude", "f8", ("x",))[:] = [14.0, 14.1, 14.2]
+        dem = ds.createVariable("surface_altitude", "f8", ("y", "x"))
+        dem.units = "m"
+        dem[:, :] = [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]]
+        lc = ds.createVariable("land_cover", "i4", ("y", "x"))
+        lc[:, :] = [[80, 80, 50], [311, 311, 50]]
+
+    render3d = load_render3d_tool()
+    terrain = render3d.read_terrain_field(path)
+
+    assert terrain is not None
+    np.testing.assert_allclose(terrain.elevation_m, [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]])
+    np.testing.assert_allclose(terrain.x_axis, [-100.0, 0.0, 100.0])
+    np.testing.assert_allclose(terrain.latitude_axis, [40.0, 40.1])
+    np.testing.assert_allclose(terrain.longitude_axis, [14.0, 14.1, 14.2])
+    np.testing.assert_allclose(terrain.y_axis, [-50.0, 50.0])
+    np.testing.assert_allclose(terrain.land_cover, [[80, 80, 50], [311, 311, 50]])
+
+
+def test_render3d_animation_time_indexes_follow_selected_variable(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "plume3d.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 4)
+        ds.createDimension("z", 2)
+        ds.createDimension("y", 1)
+        ds.createDimension("x", 1)
+        concentration = ds.createVariable("concentration_field", "f8", ("time", "z", "y", "x"))
+        concentration[:, :, :, :] = np.zeros((4, 2, 1, 1), dtype=float)
+
+    render3d = load_render3d_tool()
+
+    assert render3d._animation_time_indexes(path, "concentration_field") == [0, 1, 2, 3]
+
+
+def test_render3d_main_animates_selected_volume(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    render3d = load_render3d_tool()
+    output = tmp_path / "plume3d.gif"
+    calls: list[dict[str, object]] = []
+
+    def fake_plot_animation(input_path, output_path, **kwargs):
+        calls.append({"input": input_path, "output": output_path, **kwargs})
+        Path(output_path).write_bytes(b"GIF89a")
+        return Path(output_path)
+
+    monkeypatch.setattr(render3d, "plot_animation", fake_plot_animation)
+
+    result = render3d.main(
+        [
+            "concentration.nc",
+            "--variable",
+            "concentration_field",
+            "--output",
+            str(output),
+            "--animate",
+            "--mode",
+            "voxel",
+            "--frame-duration-ms",
+            "175",
+            "--gif-loop",
+            "2",
+        ]
+    )
+
+    assert result == 0
+    assert output.read_bytes() == b"GIF89a"
+    assert calls[0]["variable_name"] == "concentration_field"
+    assert calls[0]["mode"] == "voxel"
+    assert calls[0]["duration_ms"] == 175
+    assert calls[0]["loop"] == 2
 
 
 def test_plotter_converts_wind_speed_to_knots_and_uses_palette(tmp_path: Path) -> None:

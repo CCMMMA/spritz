@@ -40,6 +40,23 @@ GeoTIFF as `--dem` and the LC100 GeoTIFF as `--land-cover`; use the same rasters
 with `sprtz-terrain fetch` when terrain/GEO products are part of the incident
 package.
 
+Create the incident GEO file before rendering 3-D concentration products:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.926506 \
+  --center-lon 14.380875 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_acerra.tif \
+  --landuse data/landcover/lc100_acerra.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output/production_2021_44/geo.nc
+```
+
 ## Step 1: Build the configured incident
 
 ```bash
@@ -72,6 +89,17 @@ python tools/plotter.py output/production_2021_44/model/meteo.nc \
 python tools/plotter.py output/production_2021_44/model/concentration.nc \
   --variable concentration \
   --output output/production_2021_44/model/concentration_map.png
+```
+
+When the incident run writes a gridded vertical concentration field, render a
+3-D plume view over the archived terrain/GEO product:
+
+```bash
+python tools/render3d.py output/production_2021_44/model/concentration.nc \
+  --variable concentration_field \
+  --terrain output/production_2021_44/geo.nc \
+  --mode surface \
+  --output output/production_2021_44/model/concentration_3d.png
 ```
 
 Expected products:

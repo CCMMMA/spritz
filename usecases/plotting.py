@@ -29,6 +29,17 @@ def _load_plotter() -> Any:
     return module
 
 
+def _load_render3d() -> Any:
+    path = _repo_root() / "tools" / "render3d.py"
+    spec = importlib.util.spec_from_file_location("sprtz_tools_render3d", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load render3d tool from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def plot_netcdf_if_available(
     input_path: str | Path | None,
     output_path: str | Path,
@@ -332,6 +343,56 @@ def plot_concentration_vertical_profiles_if_available(
         return None
 
 
+def plot_3d_volume_if_available(
+    input_path: str | Path | None,
+    output_path: str | Path,
+    *,
+    variable: str = "concentration_field",
+    terrain_path: str | Path | None = None,
+    title: str | None = None,
+    time_index: int = 1,
+    dpi: int = 450,
+) -> Path | None:
+    if input_path is None:
+        return None
+    source = Path(input_path)
+    if source.suffix.lower() not in NETCDF_SUFFIXES or not source.exists():
+        return None
+    try:
+        render3d = _load_render3d()
+        try:
+            field = render3d.read_volume_field(source, variable_name=variable, time_index=time_index)
+        except Exception:
+            field = render3d.read_volume_field(source, variable_name=variable, time_index=0)
+        terrain = None
+        for candidate in (terrain_path, source):
+            if candidate is None:
+                continue
+            path = Path(candidate)
+            if path.suffix.lower() in NETCDF_SUFFIXES and path.exists():
+                terrain = render3d.read_terrain_field(path)
+                if terrain is not None:
+                    break
+        return render3d.plot_volume(
+            field,
+            output_path,
+            terrain=terrain,
+            title=title,
+            dpi=dpi,
+            cmap="magma",
+            figure_size=(7.4, 5.8),
+            log_scale=False,
+            mode="surface",
+            threshold_quantile=0.85,
+            max_points=56,
+            elevation=30.0,
+            azimuth=-55.0,
+        )
+    except Exception as exc:
+        LOGGER.warning("could not render 3-D volume for %s with tools/render3d.py: %s", source, exc)
+        return None
+
+
 def plot_workflow_netcdfs(
     workflow: dict[str, Any] | None,
     output_dir: str | Path,
@@ -386,6 +447,15 @@ def plot_workflow_netcdfs(
             )
             if profile is not None:
                 products[f"{key}_vertical_profiles"] = str(profile)
+            volume = plot_3d_volume_if_available(
+                path,
+                out / f"{prefix}{key}_3d.png",
+                variable="concentration_field",
+                terrain_path=workflow.get("terrain") or workflow.get("meteo"),
+                title=f"{key.replace('_', ' ').title()} 3D",
+            )
+            if volume is not None:
+                products[f"{key}_3d"] = str(volume)
     return products
 
 

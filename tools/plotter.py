@@ -148,6 +148,8 @@ class MapField:
     values: np.ndarray
     x: np.ndarray
     y: np.ndarray
+    local_x: np.ndarray | None
+    local_y: np.ndarray | None
     geographic: bool
     label: str
     title: str
@@ -290,7 +292,19 @@ def _coordinate_mesh(
     time_index: int,
     center_lat: float | None,
     center_lon: float | None,
-) -> tuple[np.ndarray, np.ndarray, bool]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None, bool]:
+    local_x: np.ndarray | None = None
+    local_y: np.ndarray | None = None
+    for x_name, y_name in (("field_x", "field_y"), ("x", "y")):
+        if x_name in ds.variables and y_name in ds.variables:
+            x = _select_1d_or_2d(_variable_array(ds.variables[x_name]), time_index=time_index)
+            y = _select_1d_or_2d(_variable_array(ds.variables[y_name]), time_index=time_index)
+            if x.ndim == y.ndim == 1 and x.size == shape[1] and y.size == shape[0]:
+                local_x, local_y = np.meshgrid(x, y)
+                break
+            if x.shape == y.shape == shape:
+                local_x, local_y = x, y
+                break
     lat_var = _find_variable(ds, LATITUDE_NAMES)
     lon_var = _find_variable(ds, LONGITUDE_NAMES)
     if lat_var is not None and lon_var is not None:
@@ -299,11 +313,11 @@ def _coordinate_mesh(
         if lat.ndim == lon.ndim == 1:
             if lat.size == shape[0] and lon.size == shape[1]:
                 lon_grid, lat_grid = np.meshgrid(lon, lat)
-                return lon_grid, lat_grid, True
+                return lon_grid, lat_grid, local_x, local_y, True
             if lat.size == lon.size == shape[0] * shape[1]:
-                return lon.reshape(shape), lat.reshape(shape), True
+                return lon.reshape(shape), lat.reshape(shape), local_x, local_y, True
         if lat.shape == shape and lon.shape == shape:
-            return lon, lat, True
+            return lon, lat, local_x, local_y, True
 
     for x_name, y_name in (("field_x", "field_y"), ("x", "y"), ("lon", "lat")):
         if x_name in ds.variables and y_name in ds.variables:
@@ -312,16 +326,18 @@ def _coordinate_mesh(
             if x.ndim == y.ndim == 1 and x.size == shape[1] and y.size == shape[0]:
                 x_grid, y_grid = np.meshgrid(x, y)
                 if x_name == "lon" and y_name == "lat":
-                    return x_grid, y_grid, True
+                    return x_grid, y_grid, local_x, local_y, True
                 if center_lat is not None and center_lon is not None:
-                    return _local_to_lat_lon(x_grid, y_grid, center_lat=center_lat, center_lon=center_lon)
-                return x_grid, y_grid, False
+                    lon_grid, lat_grid, _ = _local_to_lat_lon(x_grid, y_grid, center_lat=center_lat, center_lon=center_lon)
+                    return lon_grid, lat_grid, x_grid, y_grid, True
+                return x_grid, y_grid, local_x, local_y, False
             if x.shape == y.shape == shape:
                 if x_name == "lon" and y_name == "lat":
-                    return x, y, True
+                    return x, y, local_x, local_y, True
                 if center_lat is not None and center_lon is not None:
-                    return _local_to_lat_lon(x, y, center_lat=center_lat, center_lon=center_lon)
-                return x, y, False
+                    lon_grid, lat_grid, _ = _local_to_lat_lon(x, y, center_lat=center_lat, center_lon=center_lon)
+                    return lon_grid, lat_grid, x, y, True
+                return x, y, local_x, local_y, False
 
     x_var = _find_variable(ds, X_NAMES)
     y_var = _find_variable(ds, Y_NAMES)
@@ -340,11 +356,12 @@ def _coordinate_mesh(
         else:
             x_grid, y_grid = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
         if center_lat is not None and center_lon is not None:
-            return _local_to_lat_lon(x_grid, y_grid, center_lat=center_lat, center_lon=center_lon)
-        return x_grid, y_grid, False
+            lon_grid, lat_grid, _ = _local_to_lat_lon(x_grid, y_grid, center_lat=center_lat, center_lon=center_lon)
+            return lon_grid, lat_grid, x_grid, y_grid, True
+        return x_grid, y_grid, local_x, local_y, False
 
     x_grid, y_grid = np.meshgrid(np.arange(shape[1], dtype=float), np.arange(shape[0], dtype=float))
-    return x_grid, y_grid, False
+    return x_grid, y_grid, local_x, local_y, False
 
 
 def _wind_from_speed_direction(speed: np.ndarray, direction_from_deg: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -559,7 +576,7 @@ def read_map_field(
             time_index=time_index,
             level_index=level_index,
         )
-        x, y, geographic = _coordinate_mesh(
+        x, y, local_x, local_y, geographic = _coordinate_mesh(
             ds,
             values.shape,
             time_index=time_index,
@@ -586,6 +603,8 @@ def read_map_field(
             values,
             x,
             y,
+            local_x,
+            local_y,
             geographic,
             label,
             title,
@@ -610,6 +629,70 @@ def _extent(x: np.ndarray, y: np.ndarray, margin_fraction: float) -> tuple[float
         south - dy * margin_fraction,
         north + dy * margin_fraction,
     )
+
+
+def _is_concentration_field(field: MapField) -> bool:
+    text = f"{field.name} {field.label}".lower()
+    return "concentration" in text or "mass" in text
+
+
+def _transparent_zero_values(field: MapField) -> np.ndarray:
+    values = np.asarray(field.values, dtype=float)
+    if not _is_concentration_field(field):
+        return values
+    return np.ma.masked_where(np.isfinite(values) & (values <= 0.0), values)
+
+
+def _transparent_zero_cmap(plt: Any, cmap: Any, *, transparent: bool) -> Any:
+    if not transparent:
+        return cmap
+    resolved = plt.get_cmap(cmap) if isinstance(cmap, str) else cmap
+    copied = resolved.copy()
+    copied.set_bad((0.0, 0.0, 0.0, 0.0))
+    return copied
+
+
+def _axis_center_line(grid: np.ndarray | None, axis: str) -> np.ndarray | None:
+    if grid is None or grid.ndim != 2:
+        return None
+    if axis == "x":
+        return np.asarray(grid[grid.shape[0] // 2, :], dtype=float)
+    return np.asarray(grid[:, grid.shape[1] // 2], dtype=float)
+
+
+def _add_local_secondary_axes(ax: Any, field: MapField) -> None:
+    if not field.geographic or field.local_x is None or field.local_y is None:
+        return
+    lon_line = _axis_center_line(field.x, "x")
+    x_line = _axis_center_line(field.local_x, "x")
+    lat_line = _axis_center_line(field.y, "y")
+    y_line = _axis_center_line(field.local_y, "y")
+    if lon_line is None or x_line is None or lat_line is None or y_line is None:
+        return
+    if np.ptp(lon_line) > 0.0 and np.ptp(x_line) > 0.0:
+        order = np.argsort(lon_line)
+
+        def lon_to_x(value: Any) -> np.ndarray:
+            return np.interp(value, lon_line[order], x_line[order])
+
+        def x_to_lon(value: Any) -> np.ndarray:
+            reverse = np.argsort(x_line)
+            return np.interp(value, x_line[reverse], lon_line[reverse])
+
+        top = ax.secondary_xaxis("top", functions=(lon_to_x, x_to_lon))
+        top.set_xlabel("x [m]")
+    if np.ptp(lat_line) > 0.0 and np.ptp(y_line) > 0.0:
+        order = np.argsort(lat_line)
+
+        def lat_to_y(value: Any) -> np.ndarray:
+            return np.interp(value, lat_line[order], y_line[order])
+
+        def y_to_lat(value: Any) -> np.ndarray:
+            reverse = np.argsort(y_line)
+            return np.interp(value, y_line[reverse], lat_line[reverse])
+
+        right = ax.secondary_yaxis("right", functions=(lat_to_y, y_to_lat))
+        right.set_ylabel("y [m]")
 
 
 def _download_soest_gshhs(cartopy_config: Any, scale: str, level: int) -> Path:
@@ -823,6 +906,8 @@ def plot_map(
                 raise ValueError("--log-scale requires at least one positive value")
             color_limits = (float(np.nanmin(positive)), float(np.nanmax(positive)))
         norm = LogNorm(vmin=color_limits[0], vmax=color_limits[1])
+    transparent_zero = _is_concentration_field(field)
+    plot_values = _transparent_zero_values(field)
     plot_cmap: Any = cmap
     if field.color_levels is not None and field.color_palette is not None:
         rgba = np.asarray(field.color_palette, dtype=float) / 255.0
@@ -831,10 +916,11 @@ def plot_map(
             norm = BoundaryNorm(field.color_levels, ncolors=plot_cmap.N, clip=False)
     elif color_limits is not None and not log_scale:
         norm = Normalize(vmin=color_limits[0], vmax=color_limits[1])
+    plot_cmap = _transparent_zero_cmap(plt, plot_cmap, transparent=transparent_zero)
 
     if min(field.values.shape) == 1:
         scatter_kwargs: dict[str, Any] = {
-            "c": field.values.ravel(),
+            "c": plot_values.ravel(),
             "cmap": plot_cmap,
             "norm": norm,
             "s": 34.0,
@@ -848,7 +934,7 @@ def plot_map(
         mesh_kwargs: dict[str, Any] = {"cmap": plot_cmap, "shading": "auto", "norm": norm}
         if transform is not None:
             mesh_kwargs["transform"] = transform
-        artist = ax.pcolormesh(field.x, field.y, field.values, **mesh_kwargs)
+        artist = ax.pcolormesh(field.x, field.y, plot_values, **mesh_kwargs)
     colorbar_kwargs: dict[str, Any] = {"shrink": 0.88, "pad": 0.025}
     if field.color_levels is not None:
         colorbar_kwargs["ticks"] = field.color_levels
@@ -896,6 +982,7 @@ def plot_map(
         )
         ax.set_xlabel("Longitude [deg]")
         ax.set_ylabel("Latitude [deg]")
+        _add_local_secondary_axes(ax, field)
         try:
             gl = ax.gridlines(draw_labels=True, linewidth=0.25, color="0.35", alpha=0.45)
             gl.top_labels = False

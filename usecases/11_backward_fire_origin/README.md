@@ -27,6 +27,23 @@ when preparing WRF-derived wind and precipitation, and through
 `sprtz-terrain fetch` with matching domain settings when terrain or land cover
 affects ignition plausibility or spread interpretation.
 
+Create the backward-fire GEO product before 3-D ignition-likelihood rendering:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_backward_fire_area.tif \
+  --landuse data/landcover/lc100_backward_fire_area.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output_backward_fire/geo.nc
+```
+
 ```bash
 python usecases/11_backward_fire_origin/step_01_estimate_ignition.py
 ```
@@ -40,6 +57,17 @@ regenerate the final ignition-likelihood map explicitly, run:
 python tools/plotter.py output_backward_fire/ignition_likelihood.nc \
   --variable ignition_likelihood \
   --output output_backward_fire/ignition_likelihood_map.png
+```
+
+With a matching terrain/GEO NetCDF, render the ignition-likelihood surface over
+DEM-shaped, land-cover-colored ground:
+
+```bash
+python tools/render3d.py output_backward_fire/ignition_likelihood.nc \
+  --variable ignition_likelihood \
+  --terrain output_backward_fire/geo.nc \
+  --mode surface \
+  --output output_backward_fire/ignition_likelihood_3d.png
 ```
 
 SLURM sketch:

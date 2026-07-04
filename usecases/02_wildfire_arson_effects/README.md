@@ -66,6 +66,21 @@ downscaling step can also read the same rasters directly with `--dem` and
 `--land-cover` so SpritzMet adjusts both wind and precipitation on the local
 grid.
 
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.827 \
+  --center-lon 14.518 \
+  --nx 201 \
+  --ny 201 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_wildfire_case.tif \
+  --landuse data/landcover/lc100_wildfire_case.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output data/output/wildfire_case/geo.nc
+```
+
 ## Step 1: Prepare wind with WRF download
 
 ```bash
@@ -204,8 +219,8 @@ python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concent
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_animation.gif
 ```
 
-Step 3 writes backend-named plume profile figures for each backend. To
-regenerate vertical profile figures explicitly, run:
+Step 3 writes backend-named plume profile and 3-D plume figures for each
+backend. To regenerate vertical profile figures explicitly, run:
 
 ```bash
 python tools/profiler.py data/output/wildfire_case/model_compare/particles/meteo.nc \
@@ -251,6 +266,27 @@ prepends the diagnostic 10 m above-ground layer before the aloft model levels.
 The plume profile figure shows the time-varying vertical
 `concentration_field` at the selected center grid column for both the particle
 and Gaussian backends.
+
+To regenerate the 3-D plume-over-ground renders explicitly, pass a terrain/GEO
+NetCDF built from the same DEM and land-cover rasters. `tools/render3d.py`
+draws the DEM as the ground surface, colors it by land-cover class, and renders
+the concentration plume above that ground surface:
+
+```bash
+python tools/render3d.py data/output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --time-index 0 \
+  --terrain data/output/wildfire_case/geo.nc \
+  --mode surface \
+  --output data/output/wildfire_case/model_compare/particles/particles_concentration_3d.png
+
+python tools/render3d.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
+  --variable concentration_field \
+  --time-index 0 \
+  --terrain data/output/wildfire_case/geo.nc \
+  --mode surface \
+  --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_3d.png
+```
 
 ## Event timing, materials, and source height
 

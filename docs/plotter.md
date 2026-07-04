@@ -6,8 +6,15 @@ This document describes publication-oriented plotting utilities for Sprtz output
 
 `tools/plotter.py` creates publication-oriented maps from Sprtz NetCDF outputs.
 `tools/profiler.py` creates centralized time-varying vertical profile figures
-from the same NetCDF products. They are intended for use-case figures, reports,
-and quick quality-control plots of intermediate and final products.
+from the same NetCDF products. `tools/render3d.py` creates high-quality
+three-dimensional volume views from compatible `z,y,x` or `time,z,y,x` fields.
+They are intended for use-case figures, reports, and quick quality-control
+plots of intermediate and final products.
+
+For concentration and gridded mass fields, zero or negative mass concentration
+is rendered transparent in maps, vertical profile heatmaps, and 3-D plume
+views. This keeps no-mass cells from painting artificial background color into
+the figure.
 
 ## Basic usage
 
@@ -98,6 +105,9 @@ MPLBACKEND=Agg python tools/plotter.py \
   --output output_fire/firefront_map.png
 ```
 
+When both local `x/y` and WGS84 longitude/latitude are available, map figures
+show longitude/latitude on the primary axes and local metres on secondary axes.
+
 Use-case plotting helpers also generate `meteo_vertical_profiles.png` beside
 workflow meteo maps and plume concentration profile figures beside concentration
 maps. The centralized CLI for those figures is `tools/profiler.py`:
@@ -119,6 +129,42 @@ input path first, `--variable`, `--output`, `--time-index`, `--dpi`, and
 `--animate`. Use `--x` and `--y` to select the local grid column. Without
 `--time-index`, static figures show a time-height section plus sampled vertical
 profiles through the simulation.
+When the NetCDF also contains latitude/longitude fields, profiler titles include
+the WGS84 coordinate of the local `x=0, y=0` origin point for geographic context.
+
+`tools/render3d.py` follows the same CLI family for three-dimensional fields:
+input path first, `--variable`, `--output`, `--time-index`, `--dpi`, `--cmap`,
+`--log-scale`, and `--animate`. Pass `--terrain path/to/geo.nc` to render a
+DEM-shaped ground surface from `surface_altitude`/`elevation_m` and color that
+surface with `land_cover` or `landuse_class`. Plume and other volume fields are
+rendered above that ground surface, so `field_z` heights are interpreted as
+height above local DEM where terrain is available. Static renders use all
+vertical levels and extract either a threshold surface or a sparse voxel view:
+when longitude/latitude axes are available, the 3-D horizontal tick labels show
+both local metres and WGS84 coordinates.
+
+```bash
+MPLBACKEND=Agg python tools/render3d.py \
+  output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --time-index 3 \
+  --terrain output/wildfire_case/geo.nc \
+  --mode surface \
+  --threshold-quantile 0.85 \
+  --output output/wildfire_case/model_compare/particles/concentration_3d.png
+
+MPLBACKEND=Agg python tools/render3d.py \
+  output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --time-index 3 \
+  --terrain output/wildfire_case/geo.nc \
+  --mode voxel \
+  --threshold-quantile 0.90 \
+  --output output/wildfire_case/model_compare/particles/concentration_voxels.png
+```
+
+Use `--max-points` to limit per-axis sampling for large NetCDF products and
+`--elevation` / `--azimuth` to make camera angles reproducible in manuscripts.
 
 ## Animations
 
@@ -154,6 +200,22 @@ MPLBACKEND=Agg python tools/profiler.py \
   --frame-duration-ms 300 \
   --gif-loop 0 \
   --output output/wildfire_case/model_compare/particles/concentration_profiles_animation.gif
+```
+
+`tools/render3d.py` can render a simulation-long animated GIF from every time
+frame of a selected volume variable. It evaluates all frames first and fixes one
+color scale across the animation:
+
+```bash
+MPLBACKEND=Agg python tools/render3d.py \
+  output/wildfire_case/model_compare/particles/concentration.nc \
+  --variable concentration_field \
+  --terrain output/wildfire_case/geo.nc \
+  --mode surface \
+  --animate \
+  --frame-duration-ms 300 \
+  --gif-loop 0 \
+  --output output/wildfire_case/model_compare/particles/concentration_3d_animation.gif
 ```
 
 ## Coastlines

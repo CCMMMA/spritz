@@ -60,16 +60,41 @@ matching categorical land-cover GeoTIFF. Use both rasters with `--dem` and
 `sprtz-terrain fetch` when generating standalone GEO products. Install
 `sprtz[geo]` when using GeoTIFF inputs.
 
+Before a use case calls `tools/render3d.py --terrain .../geo.nc`, build that
+GEO file from the same DEM and land-cover rasters and with the same grid center,
+spacing, and node count used by the model product:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_naples.tif \
+  --landuse data/landcover/lc100_naples.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output data/output/geo.nc
+```
+
 Use-case scripts plot NetCDF intermediate and final products with
-`tools/plotter.py` whenever a plottable NetCDF is produced. Generated maps are
-written beside the corresponding use-case outputs. See `docs/plotter.md` for
-direct plotter commands, Cartopy Natural Earth/GSHHS coastline behavior, and
-optional dependency notes.
+`tools/plotter.py` whenever a plottable NetCDF is produced. Workflows with
+three-dimensional plume outputs also call `tools/render3d.py` to render the
+plume above a DEM-shaped ground surface, using land-cover classes for ground
+color whenever a terrain/GEO NetCDF is available. Generated maps, profile
+figures, and 3-D renders are written beside the corresponding use-case outputs.
+Zero mass concentration is transparent in plume maps, profile heatmaps, and
+3-D renders; products with both longitude/latitude and local `x/y` coordinates
+show both coordinate systems in visualization axes or tick labels.
+See `docs/plotter.md` for direct plotter commands, Cartopy Natural Earth/GSHHS
+coastline behavior, 3-D terrain/plume rendering, and optional dependency notes.
 
 ## Use-case sequence
 
 1. `01_high_resolution_wind_field` — download or read WRF 1 km data, extract near-surface wind with SpritzWRF, and downscale it to a 100 m SpritzMet grid using both DEM and land cover when supplied.
-2. `02_wildfire_arson_effects` — build single- or multi-fire arson/wildfire source scenarios using DEM/LC-aware WRF/SpritzMet wind and precipitation, material presets, source heights, time windows, firefighter actions, side-by-side particle/Gaussian Spritz dispersion, comparison metrics, vertical profile plots, and optional CALPUFF-style concentration binary sidecars.
+2. `02_wildfire_arson_effects` — build single- or multi-fire arson/wildfire source scenarios using DEM/LC-aware WRF/SpritzMet wind and precipitation, material presets, source heights, time windows, firefighter actions, side-by-side particle/Gaussian Spritz dispersion, comparison metrics, vertical profile plots, 3-D plume-over-terrain renders, and optional CALPUFF-style concentration binary sidecars.
 3. `03_satellite_ai_evaluation` — compare model output with a satellite-derived mask and compute deterministic skill metrics plus a lightweight AI calibration diagnostic.
 4. `04_production_incidents` — build catalog-driven production-style incident cases with receptor latitude/longitude and geographic maps.
 5. `05_sailing_wind_forecast` — build a high-resolution space-height-time wind forecast product for professional sailing race planning.

@@ -36,6 +36,23 @@ meteorology with WRF-derived SpritzMet products prepared with both `--dem` and
 `--land-cover`, and use the same DEM/LC100 pair through `sprtz-terrain fetch`
 when standalone operational terrain/GEO products are required.
 
+Create the GEO product before running 3-D plume visualization:
+
+```bash
+sprtz-terrain fetch \
+  --center-lat 40.978473 \
+  --center-lon 14.384058 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --dem data/dem/cop30_acerra_wte.tif \
+  --landuse data/landcover/lc100_acerra_wte.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir output/terrain-cache \
+  --output output/acerra_wte/geo.nc
+```
+
 ## Step 1: Build the configuration
 
 ```bash
@@ -65,6 +82,17 @@ python tools/plotter.py output/acerra_wte/model/meteo.nc \
 python tools/plotter.py output/acerra_wte/model/concentration.nc \
   --variable concentration \
   --output output/acerra_wte/model/concentration_map.png
+```
+
+If gridded vertical concentration output is enabled, render the plume in 3-D
+over the DEM/land-cover GEO surface:
+
+```bash
+python tools/render3d.py output/acerra_wte/model/concentration.nc \
+  --variable concentration_field \
+  --terrain output/acerra_wte/geo.nc \
+  --mode surface \
+  --output output/acerra_wte/model/concentration_3d.png
 ```
 
 ## Scenario
