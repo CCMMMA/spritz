@@ -490,8 +490,12 @@ Profiler figures include the longitude/latitude of the local `x=0, y=0` point
 when the NetCDF provides geographic coordinates.
 Use `tools/render3d.py` for static or animated three-dimensional surface and
 voxel views of compatible gridded volume variables. It uses all vertical levels
-by default and labels 3-D horizontal axes with both local metres and WGS84
-coordinates when available.
+by default. With `--terrain geo.nc`, it offsets height-above-ground plume levels
+by the local DEM, masks height-above-sea-level plume levels below the DEM, and
+draws the ground with a terrain elevation color scale unless
+`--ground-color land-cover` is selected. Use `--vertical-exaggeration N` with
+`N >= 1` to exaggerate vertical relief in the display; longitude and latitude
+are used for 3-D horizontal tick labels when available.
 
 ## Terrain And GEO Products
 

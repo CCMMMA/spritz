@@ -99,6 +99,7 @@ python tools/render3d.py output/wildfire_case/model_compare/particles/concentrat
   --time-index 1 \
   --terrain output/wildfire_case/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output/wildfire_case/model_compare/particles/concentration_3d.png
 ```
 

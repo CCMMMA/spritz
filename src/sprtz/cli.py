@@ -459,6 +459,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _add_gpu_backend(workflow)
         workflow.add_argument("--auto-terrain", action="store_true", help="run configured terrain acquisition before meteorology")
         workflow.add_argument("--allow-terrain-network", action="store_true", help="allow explicit online terrain providers")
+        workflow.add_argument("--terrain-input", default=None, help="prepared GEO/terrain NetCDF used by dispersion models")
         workflow.add_argument("--output-interval", type=float, default=None, help="optional concentration output interval in seconds")
         validate = sub.add_parser("validate", help="load and validate a configuration file")
         validate.add_argument("config")
@@ -486,6 +487,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 gpu_backend=args.gpu_backend,
                 auto_terrain=args.auto_terrain,
                 allow_terrain_network=args.allow_terrain_network,
+                terrain_input=args.terrain_input,
                 output_interval_s=args.output_interval,
             )
             ctx = get_mpi_context(args.parallel)

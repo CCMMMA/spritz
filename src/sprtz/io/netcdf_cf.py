@@ -18,6 +18,65 @@ def available() -> bool:
     return True
 
 
+def annotate_local_x(var: Any) -> None:
+    var.standard_name = "projection_x_coordinate"
+    var.long_name = getattr(var, "long_name", "local projection x coordinate")
+    var.units = "m"
+    var.axis = "X"
+
+
+def annotate_local_y(var: Any) -> None:
+    var.standard_name = "projection_y_coordinate"
+    var.long_name = getattr(var, "long_name", "local projection y coordinate")
+    var.units = "m"
+    var.axis = "Y"
+
+
+def annotate_latitude(var: Any) -> None:
+    var.standard_name = "latitude"
+    var.long_name = "latitude"
+    var.units = "degrees_north"
+
+
+def annotate_longitude(var: Any) -> None:
+    var.standard_name = "longitude"
+    var.long_name = "longitude"
+    var.units = "degrees_east"
+
+
+def annotate_height(var: Any, *, long_name: str = "height above local ground") -> None:
+    var.standard_name = "height"
+    var.long_name = long_name
+    var.units = "m"
+    var.axis = "Z"
+    var.positive = "up"
+
+
+def annotate_surface_altitude(var: Any) -> None:
+    var.standard_name = "surface_altitude"
+    var.long_name = "surface altitude above mean sea level"
+    var.units = "m"
+    var.positive = "up"
+    var.coordinates = "latitude longitude"
+
+
+def set_spatiotemporal_coordinates(var: Any, dims: tuple[str, ...] | list[str]) -> None:
+    names = list(dims)
+    coords: list[str] = []
+    if "time" in names:
+        coords.append("time")
+    if "z" in names:
+        coords.append("z")
+    if "field_z" in names:
+        coords.append("field_z")
+    if "latitude" not in names and ("y" in names or "field_y" in names):
+        coords.append("latitude" if "y" in names else "field_latitude")
+    if "longitude" not in names and ("x" in names or "field_x" in names):
+        coords.append("longitude" if "x" in names else "field_longitude")
+    if coords:
+        var.coordinates = " ".join(coords)
+
+
 def _as_array(data: Any) -> np.ndarray:
     arr = np.asarray(data, dtype=float)
     if arr.size == 0:
@@ -180,18 +239,14 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
         write_cf_time_coordinate(ds, time_values)
         x = ds.createVariable("x", "f8", ("x",))
         y = ds.createVariable("y", "f8", ("y",))
-        x.standard_name = "projection_x_coordinate"
-        y.standard_name = "projection_y_coordinate"
-        x.units = y.units = "m"
+        annotate_local_x(x)
+        annotate_local_y(y)
         x_values = float(grid.get("x0", 0.0)) + np.arange(nx, dtype=float) * float(grid.get("dx", 1.0))
         y_values = float(grid.get("y0", 0.0)) + np.arange(ny, dtype=float) * float(grid.get("dy", 1.0))
         x[:] = x_values
         y[:] = y_values
         z = ds.createVariable("z", "f8", ("z",))
-        z.standard_name = "height"
-        z.long_name = "height above ground"
-        z.units = "m"
-        z.positive = "up"
+        annotate_height(z, long_name="height above ground")
         z[:] = np.asarray(meteo.get("z", meteo.get("height_m", [10.0] * nz)), dtype=float)
         center_lat = metadata.get("center_lat")
         center_lon = metadata.get("center_lon")
@@ -208,10 +263,8 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
                 lon_values, lat_values = transformer.transform(xx, yy)
                 lat = ds.createVariable("latitude", "f8", ("y", "x"), zlib=True)
                 lon = ds.createVariable("longitude", "f8", ("y", "x"), zlib=True)
-                lat.units = "degrees_north"
-                lon.units = "degrees_east"
-                lat.standard_name = "latitude"
-                lon.standard_name = "longitude"
+                annotate_latitude(lat)
+                annotate_longitude(lon)
                 lat[:, :] = np.asarray(lat_values, dtype=float)
                 lon[:, :] = np.asarray(lon_values, dtype=float)
                 ds.center_latitude = float(center_lat)
@@ -237,6 +290,7 @@ def write_cf_meteorology(path: str | Path, meteo: dict[str, Any]) -> None:
             if standard_name:
                 var.standard_name = standard_name
             var.units = units
+            set_spatiotemporal_coordinates(var, dims)
             if name == "fmc":
                 var.long_name = "dead fine fuel moisture content"
                 var.valid_range = np.asarray([0.01, 0.40], dtype=np.float32)
@@ -355,6 +409,24 @@ def _concentration_field(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
         if len(seen) == len(ys) * len(xs) and np.isfinite(latitude).all() and np.isfinite(longitude).all():
             payload["latitude"] = latitude
             payload["longitude"] = longitude
+    for row_name, payload_name in (("terrain_m", "surface_altitude"), ("land_cover", "land_cover")):
+        if all(row_name in row for row in selected):
+            values = np.full((len(ys), len(xs)), np.nan, dtype=float)
+            seen: set[tuple[int, int]] = set()
+            for row in selected:
+                yi = indexes["y"][float(row.get("y", 0.0))]
+                xi = indexes["x"][float(row.get("x", 0.0))]
+                key = (yi, xi)
+                value = float(row[row_name])
+                if key in seen:
+                    if not np.isclose(values[yi, xi], value):
+                        break
+                    continue
+                values[yi, xi] = value
+                seen.add(key)
+            else:
+                if len(seen) == len(ys) * len(xs) and np.isfinite(values).all():
+                    payload[payload_name] = values
     return payload
 
 
@@ -414,11 +486,9 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
         x = ds.createVariable("x", "f8", ("receptor",), zlib=True)
         y = ds.createVariable("y", "f8", ("receptor",), zlib=True)
         z = ds.createVariable("z", "f8", ("receptor",), zlib=True)
-        x.units = y.units = "m"
-        z.units = "m"
-        x.long_name = "projection_x_coordinate"
-        y.long_name = "projection_y_coordinate"
-        z.long_name = "receptor height above local ground"
+        annotate_local_x(x)
+        annotate_local_y(y)
+        annotate_height(z, long_name="receptor height above local ground")
         x[:] = [float(by_receptor.get(receptor, {}).get("x", 0.0)) for receptor in receptors]
         y[:] = [float(by_receptor.get(receptor, {}).get("y", 0.0)) for receptor in receptors]
         z[:] = [float(by_receptor.get(receptor, {}).get("z", 0.0)) for receptor in receptors]
@@ -448,7 +518,10 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                 ("longitude", "degrees_east", "receptor longitude"),
             ]:
                 var = ds.createVariable(name, "f8", ("receptor",), zlib=True)
-                var.units = units
+                if name == "latitude":
+                    annotate_latitude(var)
+                else:
+                    annotate_longitude(var)
                 var.long_name = long_name
                 var[:] = [
                     float(by_receptor.get(receptor, {}).get(name, np.nan))
@@ -464,8 +537,15 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                 ("field_z", field["z"], "m", "model grid height above local ground"),
             ]:
                 var = ds.createVariable(name, "f8", (name,), zlib=True)
-                var.units = units
                 var.long_name = long_name
+                if name == "field_x":
+                    annotate_local_x(var)
+                    var.long_name = long_name
+                elif name == "field_y":
+                    annotate_local_y(var)
+                    var.long_name = long_name
+                else:
+                    annotate_height(var, long_name=long_name)
                 var[:] = np.asarray(values, dtype=float)
             if "latitude" in field and "longitude" in field:
                 for name, source_name, units, long_name, standard_name in [
@@ -473,10 +553,41 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                     ("field_longitude", "longitude", "degrees_east", "model grid longitude", "longitude"),
                 ]:
                     var = ds.createVariable(name, "f8", ("field_y", "field_x"), zlib=True)
-                    var.units = units
                     var.long_name = long_name
-                    var.standard_name = standard_name
+                    if standard_name == "latitude":
+                        annotate_latitude(var)
+                    else:
+                        annotate_longitude(var)
+                    var.long_name = long_name
                     var[:, :] = np.asarray(field[source_name], dtype=float)
+            if "surface_altitude" in field:
+                var = ds.createVariable("surface_altitude", "f8", ("field_y", "field_x"), zlib=True)
+                annotate_surface_altitude(var)
+                var.coordinates = (
+                    "field_latitude field_longitude"
+                    if "latitude" in field and "longitude" in field
+                    else "field_y field_x"
+                )
+                var[:, :] = np.asarray(field["surface_altitude"], dtype=float)
+                altitude = ds.createVariable("field_altitude", "f8", ("field_z", "field_y", "field_x"), zlib=True)
+                altitude.standard_name = "altitude"
+                altitude.long_name = "model grid altitude above mean sea level"
+                altitude.units = "m"
+                altitude.positive = "up"
+                altitude.coordinates = (
+                    "field_z field_latitude field_longitude"
+                    if "latitude" in field and "longitude" in field
+                    else "field_z field_y field_x"
+                )
+                altitude[:, :, :] = (
+                    np.asarray(field["z"], dtype=float)[:, np.newaxis, np.newaxis]
+                    + np.asarray(field["surface_altitude"], dtype=float)[np.newaxis, :, :]
+                )
+            if "land_cover" in field:
+                var = ds.createVariable("land_cover", "i4", ("field_y", "field_x"), zlib=True)
+                var.long_name = "categorical land-cover class"
+                var.coordinates = "field_latitude field_longitude" if "latitude" in field and "longitude" in field else "field_y field_x"
+                var[:, :] = np.asarray(np.rint(field["land_cover"]), dtype=np.int32)
             for name, units, long_name in [
                 ("concentration_field", "g m-3", "gridded mass concentration"),
                 ("dry_flux_field", "g m-2 s-1", "gridded dry deposition flux"),
@@ -492,6 +603,8 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                 var.units = units
                 var.long_name = long_name
                 coordinates = "time field_z field_y field_x"
+                if "surface_altitude" in field:
+                    coordinates += " field_altitude"
                 if "latitude" in field and "longitude" in field:
                     coordinates += " field_latitude field_longitude"
                 var.coordinates = coordinates

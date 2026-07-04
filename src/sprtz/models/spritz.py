@@ -66,6 +66,102 @@ def _axis_values(meteo: dict[str, Any], name: str, size: int, spacing: float = 1
     return arr
 
 
+def _interp_axis(source_axis: np.ndarray, target_axis: np.ndarray, values: np.ndarray, *, nearest: bool) -> np.ndarray:
+    source = np.asarray(source_axis, dtype=float)
+    target = np.asarray(target_axis, dtype=float)
+    arr = np.asarray(values, dtype=float)
+    order = np.argsort(source)
+    source = source[order]
+    arr = arr[..., order]
+    if source.size != arr.shape[-1] or np.any(np.diff(source) <= 0.0):
+        raise DataFormatError("terrain axes must be one-dimensional, unique, and match terrain shape")
+    if target[0] < source[0] or target[-1] > source[-1]:
+        raise DataFormatError("terrain grid does not cover the Spritz dispersion grid")
+    if nearest:
+        indexes = np.searchsorted(source, target, side="left")
+        indexes = np.clip(indexes, 0, source.size - 1)
+        previous = np.clip(indexes - 1, 0, source.size - 1)
+        choose_previous = np.abs(target - source[previous]) <= np.abs(target - source[indexes])
+        return arr[..., np.where(choose_previous, previous, indexes)]
+    flat = arr.reshape((-1, source.size))
+    interpolated = np.vstack([np.interp(target, source, row) for row in flat])
+    return interpolated.reshape((*arr.shape[:-1], target.size))
+
+
+def _interp_terrain_2d(
+    values: np.ndarray,
+    source_x: np.ndarray,
+    source_y: np.ndarray,
+    target_x: np.ndarray,
+    target_y: np.ndarray,
+    *,
+    nearest: bool,
+) -> np.ndarray:
+    x_values = _interp_axis(source_x, target_x, values, nearest=nearest)
+    return _interp_axis(source_y, target_y, x_values.T, nearest=nearest).T
+
+
+def _terrain_variable(ds: Any, names: tuple[str, ...]) -> Any | None:
+    lowered = {name.lower(): name for name in ds.variables}
+    for name in names:
+        actual = lowered.get(name.lower())
+        if actual is not None:
+            return ds.variables[actual]
+    return None
+
+
+def terrain_fields_for_grid(terrain_path: str | Path | None, config: SuiteConfig) -> dict[str, np.ndarray]:
+    if terrain_path is None:
+        return {}
+    path = Path(terrain_path)
+    if not path.exists():
+        raise FileNotFoundError(f"terrain input not found: {path}")
+    try:
+        from netCDF4 import Dataset  # type: ignore
+    except Exception as exc:
+        raise DataFormatError("netCDF4 is required to read terrain input NetCDF files") from exc
+    grid = Grid(**asdict(config.grid))
+    with Dataset(path) as ds:
+        dem_var = _terrain_variable(ds, ("surface_altitude", "elevation_m", "dem_elevation_m", "terrain_m", "terrain"))
+        if dem_var is None:
+            raise DataFormatError(f"terrain input lacks a DEM/surface altitude variable: {path}")
+        dem = np.asarray(dem_var[:], dtype=float)
+        if dem.ndim != 2:
+            raise DataFormatError("terrain DEM variable must be two-dimensional")
+        dims = tuple(str(dim) for dim in getattr(dem_var, "dimensions", ()))
+        y_dim = dims[-2] if len(dims) >= 2 else "y"
+        x_dim = dims[-1] if len(dims) >= 1 else "x"
+        source_x = np.asarray(ds.variables[x_dim][:], dtype=float) if x_dim in ds.variables else np.arange(dem.shape[1], dtype=float)
+        source_y = np.asarray(ds.variables[y_dim][:], dtype=float) if y_dim in ds.variables else np.arange(dem.shape[0], dtype=float)
+        result = {"terrain_m": _interp_terrain_2d(dem, source_x, source_y, grid.x, grid.y, nearest=False)}
+        lc_var = _terrain_variable(ds, ("land_cover", "landuse_class", "landuse", "land_use"))
+        if lc_var is not None:
+            lc = np.asarray(lc_var[:], dtype=float)
+            if lc.shape == dem.shape:
+                result["land_cover"] = _interp_terrain_2d(lc, source_x, source_y, grid.x, grid.y, nearest=True)
+        return result
+
+
+def _terrain_row_fields(terrain_fields: dict[str, np.ndarray], iy: int, ix: int) -> dict[str, float]:
+    values: dict[str, float] = {}
+    if "terrain_m" in terrain_fields:
+        values["terrain_m"] = float(terrain_fields["terrain_m"][iy, ix])
+    if "land_cover" in terrain_fields:
+        values["land_cover"] = float(terrain_fields["land_cover"][iy, ix])
+    return values
+
+
+def _terrain_row_fields_for_receptor(terrain_fields: dict[str, np.ndarray], receptor_id: str) -> dict[str, float]:
+    if not terrain_fields or not receptor_id.startswith("G"):
+        return {}
+    parts = receptor_id[1:].split("_")
+    try:
+        iy, ix = (int(parts[0]), int(parts[1])) if len(parts) == 2 else (int(parts[1]), int(parts[2]))
+    except (IndexError, ValueError):
+        return {}
+    return _terrain_row_fields(terrain_fields, iy, ix)
+
+
 def _wind_4d(meteo: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
     try:
         u = np.asarray(meteo.get("u", meteo.get("eastward_wind", [[[[2.0]]]])), dtype=float)
@@ -253,6 +349,30 @@ def _down_cross(dx: float, dy: float, u: float, v: float, speed: float) -> tuple
     xdown = dx * ex + dy * ey
     ycross = -dx * ey + dy * ex
     return xdown, ycross
+
+
+def _gaussian_puff_array(
+    *,
+    mass: float,
+    x_receptor: np.ndarray,
+    y_receptor: np.ndarray,
+    z_receptor: float,
+    x_center: float,
+    y_center: float,
+    z_center: float,
+    sigma_x: float,
+    sigma_y: float,
+    sigma_z: float,
+) -> np.ndarray:
+    sx = max(float(sigma_x), 1.0e-12)
+    sy = max(float(sigma_y), 1.0e-12)
+    sz = max(float(sigma_z), 1.0e-12)
+    norm = float(mass) / (((2.0 * np.pi) ** 1.5) * sx * sy * sz)
+    gx = np.exp(-0.5 * ((x_receptor - float(x_center)) / sx) ** 2)
+    gy = np.exp(-0.5 * ((y_receptor - float(y_center)) / sy) ** 2)
+    gz = np.exp(-0.5 * ((float(z_receptor) - float(z_center)) / sz) ** 2)
+    gz += np.exp(-0.5 * ((float(z_receptor) + float(z_center)) / sz) ** 2)
+    return norm * gx * gy * gz
 
 
 def _truthy(value: Any) -> bool:
@@ -471,10 +591,149 @@ def output_times(config: SuiteConfig) -> tuple[float, ...]:
     return tuple(float(np.round(value, 9)) for value in values)
 
 
+def _compute_gaussian_grid_concentrations(
+    *,
+    config: SuiteConfig,
+    meteo: dict[str, Any],
+    times: tuple[float, ...],
+    field_ids: set[str],
+    stability: str,
+    interval_mass_time: float,
+    puff_samples: int,
+    initial_sigma_h: float,
+    initial_sigma_z: float,
+    ambient_temperature: float,
+    mixing_height: float,
+    washout_rate: float,
+    wind_sampler: WindSampler,
+    terrain_fields: dict[str, np.ndarray],
+    progress_callback: Callable[[int, float], None] | None,
+) -> list[dict[str, float | str]]:
+    """Evaluate a clean-room CALPUFF-style puff ensemble on the output grid."""
+    grid = Grid(**asdict(config.grid))
+    field_levels = field_z_levels(config)
+    x2d, y2d = np.meshgrid(grid.x.astype(float), grid.y.astype(float))
+    rows: list[dict[str, float | str]] = []
+    downwash = bool(config.run.get("stack_tip_downwash", True))
+    transformer = _grid_geographic_transformer(config)
+
+    for time_index, sample_time in enumerate(times, start=1):
+        sample_dt = sample_datetime(config, sample_time)
+        firefighter_factor = _firefighters_emission_factor(config, sample_dt)
+        concentration = np.zeros((len(field_levels), grid.ny, grid.nx), dtype=float)
+        dry_flux = np.zeros_like(concentration)
+        wet_flux = np.zeros_like(concentration)
+        emission_window = min(interval_mass_time, max(float(sample_time), 1.0))
+        dt = emission_window / float(max(puff_samples, 1))
+
+        for src in config.sources:
+            if not _source_active(config, src, sample_dt):
+                continue
+            source_wet_rate = max(src.wet_scavenging, 0.0) + washout_rate
+            emission_rate = src.emission_rate * firefighter_factor
+            for sample_index in range(max(puff_samples, 1)):
+                age_s = (sample_index + 0.5) * dt
+                release_time = max(float(sample_time) - age_s, 0.0)
+                u, v, speed = wind_sampler.vector(
+                    src.x,
+                    src.y,
+                    max(src.z + src.stack_height, 0.0),
+                    release_time,
+                )
+                center_x = src.x + u * age_s
+                center_y = src.y + v * age_s
+                travel_distance = max(speed * age_s, 1.0)
+                eff_h = effective_release_height(
+                    stack_height=src.stack_height,
+                    source_z=src.z,
+                    receptor_z=0.0,
+                    wind_speed=speed,
+                    downwind_distance=travel_distance,
+                    stack_diameter=src.stack_diameter,
+                    exit_velocity=src.exit_velocity,
+                    exit_temperature=src.exit_temperature,
+                    ambient_temperature=ambient_temperature,
+                    heat_release=src.heat_release,
+                    downwash=downwash,
+                )
+                depletion = depletion_factor(
+                    travel_time_s=age_s,
+                    decay_rate_s=src.decay_rate,
+                    deposition_velocity_m_s=src.deposition_velocity,
+                    mixing_height_m=mixing_height,
+                    wet_scavenging_s=source_wet_rate,
+                    settling_velocity_m_s=src.settling_velocity,
+                )
+                sigmas = dispersion_parameters(
+                    travel_distance,
+                    stability,
+                    elapsed_s=age_s,
+                    initial_sigma_y=initial_sigma_h,
+                    initial_sigma_z=initial_sigma_z,
+                    source_width=src.width,
+                    source_length=src.length,
+                    source_height=max(src.height, 0.0),
+                )
+                mass = emission_rate * dt * depletion
+                for level_index, level in enumerate(field_levels):
+                    value = _gaussian_puff_array(
+                        mass=mass,
+                        x_receptor=x2d,
+                        y_receptor=y2d,
+                        z_receptor=float(level),
+                        x_center=center_x,
+                        y_center=center_y,
+                        z_center=eff_h,
+                        sigma_x=sigmas.sigma_x,
+                        sigma_y=sigmas.sigma_y,
+                        sigma_z=sigmas.sigma_z,
+                    )
+                    concentration[level_index] += value
+                    dry_flux[level_index] += value * max(src.deposition_velocity, 0.0)
+                    wet_flux[level_index] += value * source_wet_rate * mixing_height
+
+        for level_index, level in enumerate(field_levels):
+            concentration[level_index][concentration[level_index] < 1.0e-30] = 0.0
+            dry_flux[level_index][dry_flux[level_index] < 1.0e-30] = 0.0
+            wet_flux[level_index][wet_flux[level_index] < 1.0e-30] = 0.0
+            for iy, y in enumerate(grid.y):
+                for ix, x in enumerate(grid.x):
+                    rec_id = f"G{iy}_{ix}" if len(field_levels) == 1 else f"G{level_index}_{iy}_{ix}"
+                    row: dict[str, float | str] = {
+                        "time": sample_time,
+                        "receptor": rec_id,
+                        "output_kind": "field" if rec_id in field_ids else "receptor",
+                        "x": float(x),
+                        "y": float(y),
+                        "z": float(level),
+                        **_terrain_row_fields(terrain_fields, iy, ix),
+                        "concentration": float(concentration[level_index, iy, ix]),
+                        "dry_flux": float(dry_flux[level_index, iy, ix]),
+                        "wet_flux": float(wet_flux[level_index, iy, ix]),
+                    }
+                    if transformer is not None:
+                        longitude, latitude = transformer.transform(float(x), float(y))
+                        row["latitude"] = float(latitude)
+                        row["longitude"] = float(longitude)
+                    if sample_dt is not None:
+                        row["datetime"] = sample_dt.isoformat()
+                    rows.append(row)
+        if progress_callback is not None:
+            progress_callback(time_index, sample_time)
+        else:
+            LOGGER.info(
+                "Spritz Gaussian puff: concentration output interval reached index=%d output_time_s=%.0f",
+                time_index,
+                sample_time,
+            )
+    return rows
+
+
 def compute_concentrations(
     config: SuiteConfig,
     meteo: dict[str, Any],
     *,
+    terrain_fields: dict[str, np.ndarray] | None = None,
     parallel: str = "serial",
     gpu_backend: str | None = None,
     progress_callback: Callable[[int, float], None] | None = None,
@@ -508,12 +767,31 @@ def compute_concentrations(
             config.run.get("GAUSSIAN_INITIAL_SIGMA_Z", config.run.get("particle_sigma_z", 0.0)),
         )
     )
+    sampled_terrain = terrain_fields or {}
     ambient_temperature = float(np.nanmean(np.asarray(meteo.get("temperature", [[293.15]]), dtype=float)))
     mixing_height = float(np.nanmean(np.asarray(meteo.get("mixing_height", [[1000.0]]), dtype=float)))
     washout_rate = precipitation_washout_rate(config, meteo)
     wind_sampler = WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy)
     ctx = get_mpi_context(parallel)
     gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
+    if output_mode == "grid" and numerical_mode == "puff" and ctx.size == 1:
+        return _compute_gaussian_grid_concentrations(
+            config=config,
+            meteo=meteo,
+            times=times,
+            field_ids=field_ids,
+            stability=stability,
+            interval_mass_time=interval_mass_time,
+            puff_samples=puff_samples,
+            initial_sigma_h=initial_sigma_h,
+            initial_sigma_z=initial_sigma_z,
+            ambient_temperature=ambient_temperature,
+            mixing_height=mixing_height,
+            washout_rate=washout_rate,
+            wind_sampler=wind_sampler,
+            terrain_fields=sampled_terrain,
+            progress_callback=progress_callback,
+        )
     local_receptors = [receptors[i] for i in ctx.partition(len(receptors))]
     local_rows: list[dict[str, float | str]] = []
     for time_index, sample_time in enumerate(times, start=1):
@@ -662,6 +940,7 @@ def compute_concentrations(
                 "x": rec.x,
                 "y": rec.y,
                 "z": rec.z,
+                **_terrain_row_fields_for_receptor(sampled_terrain, rec.id),
                 "concentration": total,
                 "dry_flux": dry_total,
                 "wet_flux": wet_total,
@@ -701,6 +980,10 @@ def write_csv(path: str | Path, rows: list[dict[str, float | str]]) -> None:
     ]
     if any("latitude" in row and "longitude" in row for row in rows):
         fields.extend(["latitude", "longitude"])
+    if any("terrain_m" in row for row in rows):
+        fields.append("terrain_m")
+    if any("land_cover" in row for row in rows):
+        fields.append("land_cover")
     with NamedTemporaryFile("w", newline="", encoding="utf-8", dir=p.parent, delete=False) as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -727,15 +1010,18 @@ def run(
     output: str | Path,
     output_format: str = "auto",
     *,
+    terrain_input: str | Path | None = None,
     parallel: str = "serial",
     gpu_backend: str | None = None,
     progress_callback: Callable[[int, float], None] | None = None,
 ) -> list[dict[str, float | str]]:
     ctx = get_mpi_context(parallel)
     meteo = read_meteorology(meteo_path)
+    terrain_fields = terrain_fields_for_grid(terrain_input, config)
     rows = compute_concentrations(
         config,
         meteo,
+        terrain_fields=terrain_fields,
         parallel=parallel,
         gpu_backend=gpu_backend,
         progress_callback=progress_callback,

@@ -99,6 +99,7 @@ python tools/render3d.py output/production_2021_44/model/concentration.nc \
   --variable concentration_field \
   --terrain output/production_2021_44/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output/production_2021_44/model/concentration_3d.png
 ```
 

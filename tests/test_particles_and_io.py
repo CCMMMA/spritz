@@ -25,8 +25,14 @@ def test_netcdf_cf_fallback_and_particle_backend(tmp_path):
         with Dataset(meteo_path) as ds:
             assert ds.variables["wind_speed"].dimensions == ("time", "z", "y", "x")
             assert ds.variables["wind_from_direction"].dimensions == ("time", "z", "y", "x")
+            assert ds.variables["x"].axis == "X"
+            assert ds.variables["y"].axis == "Y"
+            assert ds.variables["z"].axis == "Z"
             assert ds.variables["latitude"].dimensions == ("y", "x")
             assert ds.variables["longitude"].dimensions == ("y", "x")
+            assert ds.variables["latitude"].standard_name == "latitude"
+            assert ds.variables["longitude"].standard_name == "longitude"
+            assert "latitude longitude" in ds.variables["wind_speed"].coordinates
     rows = particles.run(cfg, meteo_path, conc_path, "netcdf", seed=7)
     assert len(rows) == 2
     assert all("latitude" in row and "longitude" in row for row in rows)
@@ -53,6 +59,8 @@ def test_concentration_netcdf_writes_field_lat_lon_coordinates(tmp_path):
                     "z": 2.5,
                     "latitude": lat,
                     "longitude": lon,
+                    "terrain_m": 100.0,
+                    "land_cover": 50,
                     "concentration": 1.0,
                     "dry_flux": 0.0,
                     "wet_flux": 0.0,
@@ -63,8 +71,15 @@ def test_concentration_netcdf_writes_field_lat_lon_coordinates(tmp_path):
 
     with Dataset(path) as ds:
         assert ds.variables["latitude"].dimensions == ("receptor",)
+        assert ds.variables["latitude"].standard_name == "latitude"
+        assert ds.variables["longitude"].standard_name == "longitude"
         assert ds.variables["field_latitude"].dimensions == ("field_y", "field_x")
         assert ds.variables["field_longitude"].dimensions == ("field_y", "field_x")
+        assert ds.variables["field_z"].axis == "Z"
+        assert ds.variables["surface_altitude"].standard_name == "surface_altitude"
+        assert ds.variables["field_altitude"].standard_name == "altitude"
+        assert ds.variables["field_altitude"].dimensions == ("field_z", "field_y", "field_x")
+        assert "field_altitude" in ds.variables["concentration_field"].coordinates
         assert ds.variables["concentration_field"].coordinates.endswith("field_latitude field_longitude")
 
 

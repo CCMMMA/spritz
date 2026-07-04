@@ -14,7 +14,14 @@ from typing import Any, Iterable
 import numpy as np
 
 from sprtz.io.jsonio import write_json
-from sprtz.io.netcdf_cf import available as netcdf_available
+from sprtz.io.netcdf_cf import (
+    annotate_latitude,
+    annotate_local_x,
+    annotate_local_y,
+    annotate_longitude,
+    annotate_surface_altitude,
+    available as netcdf_available,
+)
 from sprtz.models.ctgproc import read_ascii_grid
 from sprtz.models.spritzmet import local_grid_latlon
 
@@ -168,8 +175,19 @@ def write_terrain_product(path: str | Path, product: TerrainProduct, *, prefer_n
                 ("surface_altitude", product.elevation_m, ("y", "x"), "m", "surface altitude above mean sea level"),
             ]:
                 var = ds.createVariable(name, "f8", dims, zlib=True)
-                var.units = units
                 var.long_name = long_name
+                if name == "x":
+                    annotate_local_x(var)
+                    var.long_name = long_name
+                elif name == "y":
+                    annotate_local_y(var)
+                    var.long_name = long_name
+                elif name == "latitude":
+                    annotate_latitude(var)
+                elif name == "longitude":
+                    annotate_longitude(var)
+                elif name == "surface_altitude":
+                    annotate_surface_altitude(var)
                 var[:] = np.asarray(values, dtype=float)
         return "NetCDF-CF"
     write_json(out, product.to_payload())

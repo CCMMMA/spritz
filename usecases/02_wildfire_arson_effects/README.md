@@ -107,6 +107,10 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
   --output data/output/wildfire_case/wildfire_event.json \
   --center-lat 40.827 \
   --center-lon 14.518 \
+  --nx 201 \
+  --ny 201 \
+  --dx 100 \
+  --dy 100 \
   --material plastic \
   --start 20240731Z1000 \
   --end 20240803Z0000 \
@@ -269,23 +273,31 @@ and Gaussian backends.
 
 To regenerate the 3-D plume-over-ground renders explicitly, pass a terrain/GEO
 NetCDF built from the same DEM and land-cover rasters. `tools/render3d.py`
-draws the DEM as the ground surface, colors it by land-cover class, and renders
-the concentration plume above that ground surface:
+draws the DEM as the ground surface, colors it by terrain elevation or
+land-cover class, and renders the concentration plume above that ground surface:
 
 ```bash
 python tools/render3d.py data/output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
-  --time-index 0 \
+  --animate \
+  --frame-duration-ms 300 \
+  --gif-loop 0 \
   --terrain data/output/wildfire_case/geo.nc \
-  --mode surface \
-  --output data/output/wildfire_case/model_compare/particles/particles_concentration_3d.png
+  --mode voxel \
+  --ground-color terrain \
+  --vertical-exaggeration 2 \
+  --output data/output/wildfire_case/model_compare/particles/particles_concentration_3d_animation.gif
 
 python tools/render3d.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
   --variable concentration_field \
-  --time-index 0 \
+  --animate \
+  --frame-duration-ms 300 \
+  --gif-loop 0 \
   --terrain data/output/wildfire_case/geo.nc \
-  --mode surface \
-  --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_3d.png
+  --mode voxel \
+  --ground-color terrain \
+  --vertical-exaggeration 2 \
+  --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_3d_animation.gif
 ```
 
 ## Event timing, materials, and source height

@@ -135,13 +135,15 @@ the WGS84 coordinate of the local `x=0, y=0` origin point for geographic context
 `tools/render3d.py` follows the same CLI family for three-dimensional fields:
 input path first, `--variable`, `--output`, `--time-index`, `--dpi`, `--cmap`,
 `--log-scale`, and `--animate`. Pass `--terrain path/to/geo.nc` to render a
-DEM-shaped ground surface from `surface_altitude`/`elevation_m` and color that
-surface with `land_cover` or `landuse_class`. Plume and other volume fields are
-rendered above that ground surface, so `field_z` heights are interpreted as
-height above local DEM where terrain is available. Static renders use all
-vertical levels and extract either a threshold surface or a sparse voxel view:
-when longitude/latitude axes are available, the 3-D horizontal tick labels show
-both local metres and WGS84 coordinates.
+DEM-shaped ground surface from `surface_altitude`/`elevation_m`. The ground is
+colored with a terrain elevation scale by default; use
+`--ground-color land-cover` to color it from `land_cover` or `landuse_class`
+instead. Plume and other volume fields are rendered above that ground surface,
+so height-above-ground vertical coordinates are offset by the local DEM and
+height-above-sea-level coordinates below the DEM are masked. Static renders use
+all vertical levels and extract either a threshold surface or a sparse voxel
+view. When longitude/latitude axes are available, the 3-D horizontal tick labels
+show only WGS84 longitude and latitude.
 
 ```bash
 MPLBACKEND=Agg python tools/render3d.py \
@@ -150,6 +152,7 @@ MPLBACKEND=Agg python tools/render3d.py \
   --time-index 3 \
   --terrain output/wildfire_case/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --threshold-quantile 0.85 \
   --output output/wildfire_case/model_compare/particles/concentration_3d.png
 
@@ -159,12 +162,16 @@ MPLBACKEND=Agg python tools/render3d.py \
   --time-index 3 \
   --terrain output/wildfire_case/geo.nc \
   --mode voxel \
+  --ground-color land-cover \
+  --vertical-exaggeration 2 \
   --threshold-quantile 0.90 \
   --output output/wildfire_case/model_compare/particles/concentration_voxels.png
 ```
 
 Use `--max-points` to limit per-axis sampling for large NetCDF products and
 `--elevation` / `--azimuth` to make camera angles reproducible in manuscripts.
+Use `--vertical-exaggeration N` with `N >= 1` to exaggerate vertical relief in
+the display while keeping tick labels in true metres.
 
 ## Animations
 
@@ -212,6 +219,7 @@ MPLBACKEND=Agg python tools/render3d.py \
   --variable concentration_field \
   --terrain output/wildfire_case/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --animate \
   --frame-duration-ms 300 \
   --gif-loop 0 \

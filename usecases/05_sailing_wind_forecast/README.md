@@ -146,6 +146,7 @@ python tools/render3d.py output/sailing/bay_of_naples_forecast.nc \
   --time-index 0 \
   --terrain output/sailing/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output/sailing/bay_of_naples_forecast_wind_speed_3d.png
 ```
 

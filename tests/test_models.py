@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from sprtz.config import from_mapping, load_config
+from sprtz.core.grid import Grid
 from sprtz.models import spritzmet, spritzpost, spritz, particles, ctgproc, spritzwrf
 from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.jsonio import read_json
@@ -336,8 +337,29 @@ def test_spritz_can_write_3d_concentration_field(tmp_path):
     )
     meteo_path = tmp_path / "meteo.json"
     conc_path = tmp_path / "field.nc"
+    terrain_path = tmp_path / "geo.nc"
     spritzmet.run(cfg, meteo_path, "json")
-    rows = spritz.run(cfg, meteo_path, conc_path, "netcdf")
+    if netcdf_available():
+        from netCDF4 import Dataset  # type: ignore
+
+        grid = Grid(**cfg.grid.__dict__)
+        with Dataset(terrain_path, "w") as ds:
+            ds.createDimension("y", cfg.grid.ny)
+            ds.createDimension("x", cfg.grid.nx)
+            ds.createVariable("y", "f8", ("y",))[:] = np.asarray(grid.y, dtype=float)
+            ds.createVariable("x", "f8", ("x",))[:] = np.asarray(grid.x, dtype=float)
+            ds.createVariable("surface_altitude", "f8", ("y", "x"))[:, :] = np.arange(
+                cfg.grid.ny * cfg.grid.nx,
+                dtype=float,
+            ).reshape(cfg.grid.ny, cfg.grid.nx)
+            ds.createVariable("land_cover", "i4", ("y", "x"))[:, :] = np.full((cfg.grid.ny, cfg.grid.nx), 50)
+    rows = spritz.run(
+        cfg,
+        meteo_path,
+        conc_path,
+        "netcdf",
+        terrain_input=terrain_path if netcdf_available() else None,
+    )
     assert len(rows) == cfg.grid.nx * cfg.grid.ny * 2
     if netcdf_available():
         from netCDF4 import Dataset  # type: ignore
@@ -349,6 +371,9 @@ def test_spritz_can_write_3d_concentration_field(tmp_path):
                 cfg.grid.ny,
                 cfg.grid.nx,
             )
+            assert "surface_altitude" in ds.variables
+            assert "land_cover" in ds.variables
+            np.testing.assert_allclose(ds.variables["surface_altitude"][:], np.arange(cfg.grid.ny * cfg.grid.nx).reshape(cfg.grid.ny, cfg.grid.nx))
     else:
         data = read_json(conc_path)
         assert data["field"]["z"] == [0.0, 25.0]
@@ -422,13 +447,18 @@ def test_particles_emit_time_dependent_grid_field():
         "mixing_height": [[1000.0]],
         "precipitation_rate": [[0.0]],
     }
-    rows = particles.simulate_particles(cfg, meteo)
+    terrain_fields = {
+        "terrain_m": np.arange(cfg.grid.ny * cfg.grid.nx, dtype=float).reshape(cfg.grid.ny, cfg.grid.nx),
+        "land_cover": np.full((cfg.grid.ny, cfg.grid.nx), 50.0),
+    }
+    rows = particles.simulate_particles(cfg, meteo, terrain_fields=terrain_fields)
     assert sorted({row["time"] for row in rows}) == [600.0, 1200.0]
     assert len(rows) == 2 * cfg.grid.nx * cfg.grid.ny
     first = [row["concentration"] for row in rows if row["time"] == 600.0]
     second = [row["concentration"] for row in rows if row["time"] == 1200.0]
     assert max(second) > 0.0
     assert first != second
+    assert all("terrain_m" in row and "land_cover" in row for row in rows)
 
 
 def test_particles_report_progress_after_each_output_time():

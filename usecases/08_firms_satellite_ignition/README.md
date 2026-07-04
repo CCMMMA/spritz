@@ -65,5 +65,6 @@ python tools/render3d.py output_firms/firefront.nc \
   --variable fire_probability \
   --terrain output_firms/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output_firms/firefront_3d.png
 ```

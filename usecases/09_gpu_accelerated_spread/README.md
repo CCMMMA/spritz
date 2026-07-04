@@ -58,12 +58,13 @@ python tools/plotter.py output_fire_gpu/firefront.nc \
 ```
 
 Use the 3-D renderer to inspect the accelerated fire surface against DEM shape
-and land-cover colors:
+and terrain colors:
 
 ```bash
 python tools/render3d.py output_fire_gpu/firefront.nc \
   --variable fire_probability \
   --terrain output_fire_gpu/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output_fire_gpu/firefront_3d.png
 ```

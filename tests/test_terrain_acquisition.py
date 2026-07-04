@@ -248,6 +248,26 @@ def test_build_product_aligns_grids(tmp_path: Path) -> None:
     assert product.grid.latitude.shape == (7, 7)
 
 
+def test_geo_netcdf_has_cf_spatial_coordinates(tmp_path: Path) -> None:
+    try:
+        from netCDF4 import Dataset  # type: ignore
+    except Exception:
+        return
+    config = _local_config(tmp_path)
+    config["terrain"] = {**config["terrain"], "output": str(tmp_path / "geo.nc")}
+    result = run_acquisition(config, prefer_netcdf=True)
+    assert result["format"] == "NetCDF-CF"
+    with Dataset(result["output"]) as ds:
+        assert ds.Conventions == "CF-1.8"
+        assert ds.variables["x"].axis == "X"
+        assert ds.variables["y"].axis == "Y"
+        assert ds.variables["latitude"].standard_name == "latitude"
+        assert ds.variables["longitude"].standard_name == "longitude"
+        assert ds.variables["surface_altitude"].standard_name == "surface_altitude"
+        assert ds.variables["surface_altitude"].coordinates == "latitude longitude"
+        assert ds.variables["land_cover"].coordinates == "latitude longitude"
+
+
 def test_sprtz_terrain_fetch_cli(tmp_path: Path) -> None:
     config = _local_config(tmp_path)
     config_path = tmp_path / "terrain.json"

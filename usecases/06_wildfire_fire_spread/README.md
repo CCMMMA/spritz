@@ -58,12 +58,13 @@ python tools/plotter.py output_fire/firefront.nc \
 ```
 
 When a matching terrain/GEO NetCDF is available, render the probability surface
-over DEM-shaped, land-cover-colored ground:
+over DEM-shaped, terrain-colored ground:
 
 ```bash
 python tools/render3d.py output_fire/firefront.nc \
   --variable fire_probability \
   --terrain output_fire/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output_fire/firefront_3d.png
 ```

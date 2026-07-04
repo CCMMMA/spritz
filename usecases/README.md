@@ -82,12 +82,14 @@ sprtz-terrain fetch \
 Use-case scripts plot NetCDF intermediate and final products with
 `tools/plotter.py` whenever a plottable NetCDF is produced. Workflows with
 three-dimensional plume outputs also call `tools/render3d.py` to render the
-plume above a DEM-shaped ground surface, using land-cover classes for ground
-color whenever a terrain/GEO NetCDF is available. Generated maps, profile
-figures, and 3-D renders are written beside the corresponding use-case outputs.
-Zero mass concentration is transparent in plume maps, profile heatmaps, and
-3-D renders; products with both longitude/latitude and local `x/y` coordinates
-show both coordinate systems in visualization axes or tick labels.
+plume above a DEM-shaped ground surface. The 3-D renderer colors the ground with
+a terrain elevation scale by default, can use land-cover classes with
+`--ground-color land-cover`, and accepts `--vertical-exaggeration N` with
+`N >= 1` for display-only vertical scaling. Generated maps, profile figures,
+and 3-D renders are written beside the corresponding use-case outputs. Zero mass
+concentration is transparent in plume maps, profile heatmaps, and 3-D renders;
+products with longitude/latitude coordinates use those coordinates for 3-D
+horizontal tick labels.
 See `docs/plotter.md` for direct plotter commands, Cartopy Natural Earth/GSHHS
 coastline behavior, 3-D terrain/plume rendering, and optional dependency notes.
 

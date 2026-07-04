@@ -72,6 +72,7 @@ python tools/render3d.py output_backward_plume/source_likelihood.nc \
   --variable source_likelihood \
   --terrain output_backward_plume/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output_backward_plume/source_likelihood_3d.png
 ```
 

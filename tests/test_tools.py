@@ -737,6 +737,116 @@ def test_render3d_reads_dem_and_land_cover_terrain(tmp_path: Path) -> None:
     np.testing.assert_allclose(terrain.land_cover, [[80, 80, 50], [311, 311, 50]])
 
 
+def test_render3d_detects_vertical_reference_and_model_top(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    agl_path = tmp_path / "concentration_agl.nc"
+    with Dataset(agl_path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("field_z", 2)
+        ds.createDimension("field_y", 2)
+        ds.createDimension("field_x", 2)
+        z = ds.createVariable("field_z", "f8", ("field_z",))
+        z.units = "m"
+        z.long_name = "model grid height above local ground"
+        z[:] = [10.0, 200.0]
+        concentration = ds.createVariable("concentration_field", "f8", ("time", "field_z", "field_y", "field_x"))
+        concentration[:, :, :, :] = np.zeros((1, 2, 2, 2), dtype=float)
+
+    render3d = load_render3d_tool()
+    agl = render3d.read_volume_field(agl_path, variable_name="concentration_field", time_index=0)
+    z_limits = render3d._vertical_limits(agl, np.asarray([[100.0, 125.0], [150.0, 175.0]], dtype=float))
+
+    assert agl.z_reference == "height_above_ground"
+    assert z_limits[0] < 100.0
+    assert z_limits[1] > 375.0
+
+
+def test_render3d_sea_level_heights_mask_below_dem(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wind_asl.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 1)
+        ds.createDimension("z", 2)
+        ds.createDimension("y", 1)
+        ds.createDimension("x", 1)
+        z = ds.createVariable("z", "f8", ("z",))
+        z.units = "m"
+        z.long_name = "height above mean sea level"
+        z[:] = [50.0, 250.0]
+        speed = ds.createVariable("wind_speed", "f8", ("time", "z", "y", "x"))
+        speed[:, :, :, :] = np.ones((1, 2, 1, 1), dtype=float)
+
+    render3d = load_render3d_tool()
+    field = render3d.read_volume_field(path, variable_name="wind_speed", time_index=0)
+    terrain = np.asarray([[[100.0]], [[100.0]]], dtype=float)
+    altitude = render3d._plume_altitude(field, field.z_axis[:, np.newaxis, np.newaxis], terrain)
+
+    assert field.z_reference == "height_above_sea_level"
+    assert np.isnan(altitude[0, 0, 0])
+    assert altitude[1, 0, 0] == 250.0
+
+
+def test_render3d_vertical_exaggeration_scales_display_only() -> None:
+    render3d = load_render3d_tool()
+
+    scaled = render3d._scale_z(np.asarray([100.0, 150.0, 200.0]), 100.0, 3.0)
+
+    np.testing.assert_allclose(scaled, [100.0, 250.0, 400.0])
+    assert render3d._display_z_limits((100.0, 200.0), 2.0) == (100.0, 300.0)
+    assert render3d._ground_clearance((100.0, 200.0)) >= 0.5
+
+
+def test_render3d_resamples_larger_terrain_to_volume_grid() -> None:
+    render3d = load_render3d_tool()
+    terrain = render3d.TerrainField(
+        elevation_m=np.asarray(
+            [
+                [0.0, 10.0, 20.0, 30.0, 40.0],
+                [100.0, 110.0, 120.0, 130.0, 140.0],
+                [200.0, 210.0, 220.0, 230.0, 240.0],
+                [300.0, 310.0, 320.0, 330.0, 340.0],
+                [400.0, 410.0, 420.0, 430.0, 440.0],
+            ],
+            dtype=float,
+        ),
+        x_axis=np.asarray([-2.0, -1.0, 0.0, 1.0, 2.0]),
+        y_axis=np.asarray([-2.0, -1.0, 0.0, 1.0, 2.0]),
+        land_cover=np.asarray(
+            [
+                [20, 20, 30, 30, 30],
+                [20, 20, 30, 30, 30],
+                [40, 40, 50, 50, 50],
+                [40, 40, 50, 50, 50],
+                [40, 40, 50, 50, 50],
+            ],
+            dtype=float,
+        ),
+    )
+    field = render3d.VolumeField(
+        "concentration.nc",
+        "concentration_field",
+        np.zeros((1, 3, 3), dtype=float),
+        np.asarray([-1.0, 0.0, 1.0]),
+        np.asarray([-1.0, 0.0, 1.0]),
+        np.asarray([2.5]),
+        "g m-3",
+        "gridded mass concentration",
+    )
+
+    resampled = render3d._terrain_like_volume(terrain, field)
+
+    assert resampled.elevation_m.shape == (3, 3)
+    np.testing.assert_allclose(
+        resampled.elevation_m,
+        [[110.0, 120.0, 130.0], [210.0, 220.0, 230.0], [310.0, 320.0, 330.0]],
+    )
+    np.testing.assert_allclose(resampled.land_cover, [[20, 30, 30], [40, 50, 50], [40, 50, 50]])
+
+
 def test_render3d_animation_time_indexes_follow_selected_variable(tmp_path: Path) -> None:
     pytest.importorskip("netCDF4")
     from netCDF4 import Dataset  # type: ignore
@@ -781,6 +891,10 @@ def test_render3d_main_animates_selected_volume(monkeypatch: pytest.MonkeyPatch,
             "175",
             "--gif-loop",
             "2",
+            "--vertical-exaggeration",
+            "2",
+            "--ground-color",
+            "land-cover",
         ]
     )
 
@@ -790,6 +904,16 @@ def test_render3d_main_animates_selected_volume(monkeypatch: pytest.MonkeyPatch,
     assert calls[0]["mode"] == "voxel"
     assert calls[0]["duration_ms"] == 175
     assert calls[0]["loop"] == 2
+    assert calls[0]["vertical_exaggeration"] == 2.0
+    assert calls[0]["ground_color"] == "land-cover"
+
+
+def test_render3d_rejects_vertical_exaggeration_below_one(tmp_path: Path) -> None:
+    render3d = load_render3d_tool()
+
+    result = render3d.main(["concentration.nc", "--output", str(tmp_path / "out.png"), "--vertical-exaggeration", "0.5"])
+
+    assert result == 1
 
 
 def test_plotter_converts_wind_speed_to_knots_and_uses_palette(tmp_path: Path) -> None:

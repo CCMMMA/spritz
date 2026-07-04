@@ -74,9 +74,13 @@ the WGS84 coordinate of the local `x=0, y=0` point. Use `tools/render3d.py` for
 reproducible three-dimensional surface or voxel views of `z,y,x` and
 `time,z,y,x` fields, including animated GIFs. It renders all vertical levels by
 default. When passed `--terrain geo.nc`, it renders DEM-shaped ground from
-`surface_altitude` and colors that surface by `land_cover` or `landuse_class`
-before drawing the plume above the terrain; 3-D horizontal tick labels include
-both local metres and WGS84 coordinates when those axes are present. Use
+`surface_altitude`, colors that surface with a terrain elevation scale by
+default, and can switch to land-cover coloring with
+`--ground-color land-cover`. Height-above-ground plume coordinates are offset by
+the local DEM, height-above-sea-level plume coordinates below the DEM are
+masked, and 3-D horizontal tick labels show WGS84 longitude and latitude when
+those axes are present. Use `--vertical-exaggeration N` with `N >= 1` to
+exaggerate vertical relief in the display. Use
 `tools/plotter.py --animate --gif-loop 0` for endlessly looping simulation-long
 map GIFs.
 

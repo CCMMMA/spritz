@@ -7,7 +7,14 @@ from typing import Any
 import numpy as np
 
 from sprtz.io.jsonio import read_json, write_json
-from sprtz.io.netcdf_cf import available as netcdf_available
+from sprtz.io.netcdf_cf import (
+    annotate_latitude,
+    annotate_local_x,
+    annotate_local_y,
+    annotate_longitude,
+    annotate_surface_altitude,
+    available as netcdf_available,
+)
 from sprtz.terrain.cache import terrain_cache_dir, write_cache_metadata
 from sprtz.terrain.landuse import (
     derive_surface_parameters,
@@ -229,13 +236,28 @@ def write_geo_product(
             ]:
                 dtype = "i4" if name in {"land_cover", "landuse_class"} else "f8"
                 var = ds.createVariable(name, dtype, dims, zlib=True)
-                var.units = units
                 var.long_name = long_name
+                if name == "x":
+                    annotate_local_x(var)
+                    var.long_name = long_name
+                elif name == "y":
+                    annotate_local_y(var)
+                    var.long_name = long_name
+                elif name == "latitude":
+                    annotate_latitude(var)
+                elif name == "longitude":
+                    annotate_longitude(var)
+                elif name == "surface_altitude":
+                    annotate_surface_altitude(var)
+                else:
+                    var.units = units
+                    var.coordinates = "latitude longitude"
                 var[:] = np.asarray(values)
             for name, values in product.surface_parameters.items():
                 var = ds.createVariable(name, "f8", ("y", "x"), zlib=True)
                 var.units = "1" if name != "roughness_length_m" else "m"
                 var.long_name = name.replace("_", " ")
+                var.coordinates = "latitude longitude"
                 var[:] = np.asarray(values, dtype=float)
         return "NetCDF-CF"
     write_json(out, product.to_payload())

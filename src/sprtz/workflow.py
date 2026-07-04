@@ -25,6 +25,7 @@ def run_workflow(
     allow_terrain_network: bool = False,
     output_interval_s: float | None = None,
     meteo_input: str | Path | None = None,
+    terrain_input: str | Path | None = None,
     calpuff_binary: bool = False,
     concentration_progress_callback: Callable[[int, float], None] | None = None,
 ) -> dict[str, Any]:
@@ -66,7 +67,15 @@ def run_workflow(
         result = run_firefront_serial(config, out, interchange)
         if model_backend.endswith("+puff"):
             config = from_mapping({**config.raw, "run": {**dict(config.raw.get("run", {})), "backend": "gaussian"}})
-            puff_result = run_workflow(config_path, output_dir, backend="gaussian", interchange=interchange, parallel=parallel, gpu_backend=gpu_backend)
+            puff_result = run_workflow(
+                config_path,
+                output_dir,
+                backend="gaussian",
+                interchange=interchange,
+                parallel=parallel,
+                gpu_backend=gpu_backend,
+                terrain_input=terrain_input,
+            )
             result["puff"] = puff_result.get("concentration")
         return ctx.bcast(result, root=0)
     terrain_result: dict[str, Any] | None = None
@@ -116,6 +125,7 @@ def run_workflow(
             "netcdf" if use_netcdf else "csv",
             parallel=parallel,
             gpu_backend=gpu_backend,
+            terrain_input=terrain_input,
             progress_callback=concentration_progress_callback,
         )
         model_component = "particles"
@@ -127,6 +137,7 @@ def run_workflow(
             "netcdf" if use_netcdf else "csv",
             parallel=parallel,
             gpu_backend=gpu_backend,
+            terrain_input=terrain_input,
             progress_callback=concentration_progress_callback,
         )
         model_component = "spritz"
@@ -155,6 +166,8 @@ def run_workflow(
     if terrain_result is not None:
         result["terrain"] = terrain_result["output"]
         result["terrain_cache_key"] = terrain_result["cache_key"]
+    elif terrain_input is not None:
+        result["terrain"] = str(terrain_input)
     if output_interval_s is not None:
         result["output_interval_s"] = float(output_interval_s)
     if meteo_input is not None:

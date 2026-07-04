@@ -9,7 +9,7 @@ import numpy as np
 
 from sprtz.config import SuiteConfig
 from sprtz.core.grid import Grid
-from sprtz.core.physics import stack_tip_downwash
+from sprtz.core.physics import exponential_loss_factor, random_walk_std_from_k, stack_tip_downwash
 from sprtz.exceptions import DataFormatError
 from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
@@ -25,12 +25,77 @@ from sprtz.models.spritz import (
     precipitation_washout_rate,
     read_meteorology,
     sample_datetime,
+    terrain_fields_for_grid,
+    _terrain_row_fields_for_receptor,
     WindSampler,
     write_csv,
 )
 from sprtz.parallel import get_gpu_context, get_mpi_context
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _run_float(config: SuiteConfig, *names: str, default: float) -> float:
+    for name in names:
+        value = config.run.get(name, config.run.get(name.upper()))
+        if value is not None:
+            return float(value)
+    return float(default)
+
+
+def _run_text(config: SuiteConfig, *names: str, default: str) -> str:
+    for name in names:
+        value = config.run.get(name, config.run.get(name.upper()))
+        if value is not None:
+            return str(value).strip().lower()
+    return default
+
+
+def _particle_diffusivities(config: SuiteConfig, duration_s: float, legacy_sigma_h: float) -> tuple[float, float, float]:
+    """Resolve constant particle eddy diffusivities in m2/s.
+
+    Explicit ``particle_k*`` keys use the random-walk convention directly.  If
+    old configurations only set ``particle_sigma_h``, treat it as a target
+    one-dimensional spread over the particle sampling duration rather than as a
+    per-step displacement.
+    """
+    legacy_k = legacy_sigma_h**2 / max(2.0 * duration_s, 1.0)
+    kx = _run_float(config, "particle_kx_m2_s", "particle_k_m2_s", default=legacy_k)
+    ky = _run_float(config, "particle_ky_m2_s", "particle_k_m2_s", default=legacy_k)
+    kz = _run_float(config, "particle_kz_m2_s", default=1.0)
+    return max(kx, 0.0), max(ky, 0.0), max(kz, 0.0)
+
+
+def _apply_vertical_boundary(
+    z: np.ndarray,
+    weights: np.ndarray,
+    *,
+    ground_m: float,
+    top_m: float,
+    ground_policy: str,
+    top_policy: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply deterministic vertical boundary handling to particle positions."""
+    bounded = np.asarray(z, dtype=float).copy()
+    mass = np.asarray(weights, dtype=float).copy()
+    ground = float(ground_m)
+    top = max(float(top_m), ground + 1.0)
+    below = bounded < ground
+    if np.any(below):
+        if ground_policy == "absorb_deposit":
+            mass[below] = 0.0
+            bounded[below] = ground
+        else:
+            bounded[below] = ground + (ground - bounded[below])
+    above = bounded > top
+    if np.any(above):
+        if top_policy == "open":
+            mass[above] = 0.0
+            bounded[above] = top
+        else:
+            bounded[above] = top - (bounded[above] - top)
+            bounded = np.clip(bounded, ground, top)
+    return bounded, mass
 
 
 def _wind(meteo: dict[str, Any]) -> tuple[float, float]:
@@ -80,6 +145,7 @@ def simulate_particles(
     *,
     n_particles: int | None = None,
     seed: int | None = None,
+    terrain_fields: dict[str, np.ndarray] | None = None,
     parallel: str = "serial",
     gpu_backend: str | None = None,
     progress_callback: Callable[[int, float], None] | None = None,
@@ -95,11 +161,26 @@ def simulate_particles(
         n_particles = int(config.run.get("particles", config.run.get("PARTICLES", 2000)))
     if n_particles <= 0:
         raise DataFormatError("n_particles must be positive")
-    base_seed = seed if seed is not None else int(config.run.get("seed", config.run.get("SEED", 42)))
+    base_seed = (
+        seed
+        if seed is not None
+        else int(config.run.get("particle_random_seed", config.run.get("seed", config.run.get("SEED", 42))))
+    )
     duration = float(config.run.get("particle_duration_s", config.run.get("PARTICLE_DURATION_S", 3600.0)))
     advection_steps = max(1, int(config.run.get("particle_advection_steps", config.run.get("PARTICLE_ADVECTION_STEPS", 8))))
     sigma_h = float(config.run.get("particle_sigma_h", 250.0))
     sigma_z = float(config.run.get("particle_sigma_z", 80.0))
+    diffusion_model = _run_text(config, "particle_diffusion_model", default="constant")
+    if diffusion_model != "constant":
+        raise DataFormatError("run.particle_diffusion_model currently supports constant")
+    kx, ky, kz = _particle_diffusivities(config, duration, sigma_h)
+    vertical_boundary = _run_text(config, "particle_vertical_boundary", default="reflect")
+    top_boundary = _run_text(config, "particle_top_boundary", default="reflect")
+    if vertical_boundary not in {"reflect", "absorb_deposit"}:
+        raise DataFormatError("run.particle_vertical_boundary must be reflect or absorb_deposit")
+    if top_boundary not in {"reflect", "open"}:
+        raise DataFormatError("run.particle_top_boundary must be reflect or open")
+    top_m = _run_float(config, "particle_top_m", "model_top_m", default=1000.0)
     receptor_radius = float(config.run.get("particle_receptor_radius", 400.0))
     washout_rate = precipitation_washout_rate(config, meteo)
     ambient_temperature = float(np.nanmean(np.asarray(meteo.get("temperature", [[293.15]]), dtype=float)))
@@ -108,6 +189,7 @@ def simulate_particles(
     field_levels = field_z_levels(config)
     field_receptors = _grid_receptors(config, field_levels) if output_mode in {"grid", "both"} else ()
     field_ids = {rec.id for rec in field_receptors}
+    sampled_terrain = terrain_fields or {}
     point_receptors = tuple(rec for rec in receptors if rec.id not in field_ids)
     grid = Grid(**asdict(config.grid))
     wind_sampler = WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy)
@@ -188,6 +270,7 @@ def simulate_particles(
                 downwash=bool(config.run.get("stack_tip_downwash", True)),
             )
             pz_np += plume_heights - (src.z + src.stack_height)
+            boundary_weights = np.ones(count, dtype=float)
             for step in range(advection_steps):
                 current_time = release_time + (step + 0.5) * step_dt
                 u_step, v_step = wind_sampler.sample(
@@ -196,15 +279,33 @@ def simulate_particles(
                     pz_np,
                     current_time,
                 )
-                px_np = px_np + u_step * step_dt
-                py_np = py_np + v_step * step_dt
-            px_np = px_np + rng.normal(0.0, sigma_h, count)
-            py_np = py_np + rng.normal(0.0, sigma_h, count)
+                px_np = px_np + u_step * step_dt + rng.normal(0.0, random_walk_std_from_k(kx, step_dt), count)
+                py_np = py_np + v_step * step_dt + rng.normal(0.0, random_walk_std_from_k(ky, step_dt), count)
+                pz_np = pz_np + rng.normal(0.0, random_walk_std_from_k(kz, step_dt), count)
+                if src.settling_velocity > 0.0:
+                    pz_np = pz_np - float(src.settling_velocity) * step_dt
+                pz_np, _boundary_mass = _apply_vertical_boundary(
+                    pz_np,
+                    np.ones(count, dtype=float),
+                    ground_m=0.0,
+                    top_m=top_m,
+                    ground_policy=vertical_boundary,
+                    top_policy=top_boundary,
+                )
+                boundary_weights *= _boundary_mass
             loss_rate = max(src.decay_rate, 0.0) + max(src.wet_scavenging, 0.0) + washout_rate
             loss_rate += max(src.deposition_velocity + src.settling_velocity, 0.0) / max(
                 sigma_z * 10.0, 1.0
             )
-            weights_np = np.exp(-loss_rate * travel_np)
+            weights_np = np.asarray(exponential_loss_factor(loss_rate, travel_np), dtype=float) * boundary_weights
+            pz_np, weights_np = _apply_vertical_boundary(
+                pz_np,
+                weights_np,
+                ground_m=0.0,
+                top_m=top_m,
+                ground_policy=vertical_boundary,
+                top_policy=top_boundary,
+            )
             particle_mass = src.emission_rate * sample_window / count
             point_volume = max(np.pi * receptor_radius**2 * max(sigma_z, 1.0), 1.0)
             for rec in point_receptors:
@@ -253,6 +354,7 @@ def simulate_particles(
                 "x": rec.x,
                 "y": rec.y,
                 "z": rec.z,
+                **_terrain_row_fields_for_receptor(sampled_terrain, rec.id),
                 "concentration": total,
                 "dry_flux": dry_flux,
                 "wet_flux": wet_flux,
@@ -292,15 +394,18 @@ def run(
     output_format: str = "auto",
     seed: int | None = None,
     *,
+    terrain_input: str | Path | None = None,
     parallel: str = "serial",
     gpu_backend: str | None = None,
     progress_callback: Callable[[int, float], None] | None = None,
 ) -> list[dict[str, float | str]]:
     ctx = get_mpi_context(parallel)
+    terrain_fields = terrain_fields_for_grid(terrain_input, config)
     rows = simulate_particles(
         config,
         read_meteorology(meteo_path),
         seed=seed,
+        terrain_fields=terrain_fields,
         parallel=parallel,
         gpu_backend=gpu_backend,
         progress_callback=progress_callback,

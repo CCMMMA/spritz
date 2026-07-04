@@ -69,5 +69,6 @@ python tools/render3d.py output_fire_smoke/concentration.nc \
   --variable concentration_field \
   --terrain output_fire_smoke/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output_fire_smoke/concentration_3d.png
 ```

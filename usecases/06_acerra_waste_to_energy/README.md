@@ -92,6 +92,7 @@ python tools/render3d.py output/acerra_wte/model/concentration.nc \
   --variable concentration_field \
   --terrain output/acerra_wte/geo.nc \
   --mode surface \
+  --ground-color terrain \
   --output output/acerra_wte/model/concentration_3d.png
 ```
 

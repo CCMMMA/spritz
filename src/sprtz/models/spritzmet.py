@@ -17,9 +17,14 @@ from sprtz.core.physics import wind_components
 from sprtz.io.jsonio import write_json
 from sprtz.io.legacy_outputs import infer_format
 from sprtz.io.netcdf_cf import (
+    annotate_latitude,
+    annotate_local_x,
+    annotate_local_y,
+    annotate_longitude,
     available as netcdf_available,
     cf_time_units,
     iso_utc,
+    set_spatiotemporal_coordinates,
     write_cf_meteorology,
     write_cf_time_coordinate,
 )
@@ -2187,7 +2192,7 @@ def write_local_meteorology(
                 z[:] = np.arange(nz, dtype=float)
             else:
                 level_kind = str((met.downscaling_metadata or {}).get("level_meters_kind", "height_above_ground"))
-                z.standard_name = "height"
+                z.standard_name = "altitude" if level_kind == "height_above_sea_level" else "height"
                 z.long_name = (
                     "height above mean sea level"
                     if level_kind == "height_above_sea_level"
@@ -2263,8 +2268,20 @@ def write_local_meteorology(
                 )
             for name, values, dims, units, long_name in variables:
                 var = ds.createVariable(name, "f8", dims, zlib=True)
-                var.units = units
                 var.long_name = long_name
+                if name == "x":
+                    annotate_local_x(var)
+                    var.long_name = long_name
+                elif name == "y":
+                    annotate_local_y(var)
+                    var.long_name = long_name
+                elif name == "latitude":
+                    annotate_latitude(var)
+                elif name == "longitude":
+                    annotate_longitude(var)
+                else:
+                    var.units = units
+                    set_spatiotemporal_coordinates(var, dims)
                 var[:] = np.asarray(values, dtype=float)
         return "NetCDF-CF"
     LOGGER.info("SpritzMet: writing JSON local meteorology path=%s", out)

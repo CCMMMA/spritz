@@ -61,6 +61,7 @@ class VolumeField:
     time_label: str | None = None
     longitude_axis: np.ndarray | None = None
     latitude_axis: np.ndarray | None = None
+    z_reference: str = "height_above_ground"
 
     @property
     def label(self) -> str:
@@ -262,6 +263,24 @@ def _time_label(ds: Any, *, time_index: int) -> str | None:
     return f"Time: {float(values[time_index]):g} {str(getattr(time_var, 'units', '')).strip()}".strip()
 
 
+def _z_reference(ds: Any, z_dimension: str | None) -> str:
+    if z_dimension is not None:
+        variable = ds.variables.get(z_dimension)
+        if variable is not None:
+            text = " ".join(
+                str(getattr(variable, attr, ""))
+                for attr in ("standard_name", "long_name", "description", "units")
+            ).lower()
+            if "mean sea level" in text or "above sea level" in text:
+                return "height_above_sea_level"
+            if "local ground" in text or "above ground" in text:
+                return "height_above_ground"
+    metadata = str(getattr(ds, "spritzmet_level_meters_kind", "")).lower()
+    if metadata in {"height_above_sea_level", "height_above_ground"}:
+        return metadata
+    return "height_above_ground"
+
+
 def read_volume_field(input_path: str | Path, *, variable_name: str | None, time_index: int) -> VolumeField:
     Dataset = _load_netcdf4()
     with Dataset(input_path) as ds:
@@ -274,11 +293,25 @@ def read_volume_field(input_path: str | Path, *, variable_name: str | None, time
         lon_axis = _geographic_axis_values(ds, LONGITUDE_NAMES, x_count, "x")
         lat_axis = _geographic_axis_values(ds, LATITUDE_NAMES, y_count, "y")
         label = _time_label(ds, time_index=time_index)
-    return VolumeField(Path(input_path).name, actual, values, x_axis, y_axis, z_axis, units, long_name, label, lon_axis, lat_axis)
+        z_reference = _z_reference(ds, dimensions[0])
+    return VolumeField(
+        Path(input_path).name,
+        actual,
+        values,
+        x_axis,
+        y_axis,
+        z_axis,
+        units,
+        long_name,
+        label,
+        lon_axis,
+        lat_axis,
+        z_reference,
+    )
 
 
 def _terrain_like_volume(terrain: TerrainField | None, field: VolumeField) -> TerrainField:
-    if terrain is None or terrain.elevation_m.shape != (field.y_axis.size, field.x_axis.size):
+    if terrain is None:
         return TerrainField(
             np.zeros((field.y_axis.size, field.x_axis.size), dtype=float),
             field.x_axis,
@@ -288,6 +321,8 @@ def _terrain_like_volume(terrain: TerrainField | None, field: VolumeField) -> Te
             longitude_axis=field.longitude_axis,
             latitude_axis=field.latitude_axis,
         )
+    if terrain.elevation_m.shape != (field.y_axis.size, field.x_axis.size):
+        terrain = _resample_terrain_to_volume(terrain, field)
     return TerrainField(
         np.asarray(terrain.elevation_m, dtype=float),
         np.asarray(terrain.x_axis, dtype=float),
@@ -296,6 +331,99 @@ def _terrain_like_volume(terrain: TerrainField | None, field: VolumeField) -> Te
         source_name=terrain.source_name,
         longitude_axis=terrain.longitude_axis if terrain.longitude_axis is not None else field.longitude_axis,
         latitude_axis=terrain.latitude_axis if terrain.latitude_axis is not None else field.latitude_axis,
+    )
+
+
+def _resample_axis_values(source_axis: np.ndarray, target_axis: np.ndarray, values: np.ndarray, *, nearest: bool) -> np.ndarray:
+    source = np.asarray(source_axis, dtype=float)
+    target = np.asarray(target_axis, dtype=float)
+    arr = np.asarray(values, dtype=float)
+    if source.ndim != 1 or target.ndim != 1 or source.size != arr.shape[-1]:
+        raise ValueError("source axis must be one-dimensional and match the sampled data width")
+    if source.size == target.size and np.allclose(source, target):
+        return arr.copy()
+    order = np.argsort(source)
+    source_sorted = source[order]
+    arr_sorted = arr[..., order]
+    if np.any(np.diff(source_sorted) <= 0.0):
+        raise ValueError("source axis values must be unique for terrain resampling")
+    if target[0] < source_sorted[0] or target[-1] > source_sorted[-1]:
+        raise ValueError("target axis extends outside terrain domain")
+    if nearest:
+        indexes = np.searchsorted(source_sorted, target, side="left")
+        indexes = np.clip(indexes, 0, source_sorted.size - 1)
+        previous = np.clip(indexes - 1, 0, source_sorted.size - 1)
+        use_previous = np.abs(target - source_sorted[previous]) <= np.abs(target - source_sorted[indexes])
+        return arr_sorted[..., np.where(use_previous, previous, indexes)]
+    flat = arr_sorted.reshape((-1, source_sorted.size))
+    out = np.vstack([np.interp(target, source_sorted, row) for row in flat])
+    return out.reshape((*arr_sorted.shape[:-1], target.size))
+
+
+def _resample_2d(
+    values: np.ndarray,
+    source_x: np.ndarray,
+    source_y: np.ndarray,
+    target_x: np.ndarray,
+    target_y: np.ndarray,
+    *,
+    nearest: bool,
+) -> np.ndarray:
+    x_resampled = _resample_axis_values(source_x, target_x, values, nearest=nearest)
+    y_resampled = _resample_axis_values(source_y, target_y, x_resampled.T, nearest=nearest).T
+    return np.asarray(y_resampled, dtype=float)
+
+
+def _resample_geographic_axis(axis: np.ndarray | None, source: np.ndarray, target: np.ndarray) -> np.ndarray | None:
+    if axis is None:
+        return None
+    if axis.size == target.size and np.allclose(source, target):
+        return np.asarray(axis, dtype=float)
+    return _resample_axis_values(source, target, np.asarray(axis, dtype=float), nearest=False)
+
+
+def _resample_terrain_to_volume(terrain: TerrainField, field: VolumeField) -> TerrainField:
+    try:
+        elevation = _resample_2d(
+            terrain.elevation_m,
+            terrain.x_axis,
+            terrain.y_axis,
+            field.x_axis,
+            field.y_axis,
+            nearest=False,
+        )
+    except ValueError:
+        LOGGER.warning(
+            "terrain grid %s does not cover or align with volume grid %s; using flat reference plane",
+            terrain.elevation_m.shape,
+            (field.y_axis.size, field.x_axis.size),
+        )
+        return TerrainField(
+            np.zeros((field.y_axis.size, field.x_axis.size), dtype=float),
+            field.x_axis,
+            field.y_axis,
+            None,
+            source_name=None,
+            longitude_axis=field.longitude_axis,
+            latitude_axis=field.latitude_axis,
+        )
+    land_cover = (
+        _resample_2d(terrain.land_cover, terrain.x_axis, terrain.y_axis, field.x_axis, field.y_axis, nearest=True)
+        if terrain.land_cover is not None
+        else None
+    )
+    return TerrainField(
+        elevation,
+        field.x_axis,
+        field.y_axis,
+        land_cover,
+        source_name=terrain.source_name,
+        longitude_axis=_resample_geographic_axis(terrain.longitude_axis, terrain.x_axis, field.x_axis)
+        if terrain.longitude_axis is not None
+        else field.longitude_axis,
+        latitude_axis=_resample_geographic_axis(terrain.latitude_axis, terrain.y_axis, field.y_axis)
+        if terrain.latitude_axis is not None
+        else field.latitude_axis,
     )
 
 
@@ -325,6 +453,23 @@ def _land_cover_facecolors(land_cover: np.ndarray | None, shape: tuple[int, int]
         colors[index] = palette.get(code, fallback((abs(code) % 20) / 19.0))
         colors[index + (3,)] = 1.0
     return colors
+
+
+def _terrain_facecolors(elevation_m: np.ndarray, plt: Any) -> np.ndarray:
+    from matplotlib.colors import Normalize
+
+    elevation = np.asarray(elevation_m, dtype=float)
+    finite = elevation[np.isfinite(elevation)]
+    if finite.size == 0:
+        return np.full((*elevation.shape, 4), (0.72, 0.68, 0.58, 1.0), dtype=float)
+    low = float(np.nanmin(finite))
+    high = float(np.nanmax(finite))
+    if high <= low:
+        high = low + 1.0
+    normalized = Normalize(vmin=low, vmax=high)(np.where(np.isfinite(elevation), elevation, low))
+    colors = plt.get_cmap("terrain")(normalized)
+    colors[..., 3] = 0.96
+    return np.asarray(colors, dtype=float)
 
 
 def _animation_time_indexes(input_path: str | Path, variable_name: str | None) -> list[int]:
@@ -374,6 +519,32 @@ def _surface_z(values: np.ndarray, z_axis: np.ndarray, threshold: float) -> np.n
     return np.where(has_value, surface, np.nan)
 
 
+def _plume_altitude(field: VolumeField, z_values: np.ndarray, terrain_m: np.ndarray) -> np.ndarray:
+    if field.z_reference == "height_above_sea_level":
+        return np.where(z_values >= terrain_m, z_values, np.nan)
+    return terrain_m + z_values
+
+
+def _vertical_limits(field: VolumeField, terrain_sample: np.ndarray) -> tuple[float, float]:
+    finite_terrain = terrain_sample[np.isfinite(terrain_sample)]
+    ground_min = float(np.nanmin(finite_terrain)) if finite_terrain.size else 0.0
+    ground_max = float(np.nanmax(finite_terrain)) if finite_terrain.size else 0.0
+    finite_z = field.z_axis[np.isfinite(field.z_axis)]
+    if finite_z.size == 0:
+        return ground_min - 1.0, ground_max + 1.0
+    if field.z_reference == "height_above_sea_level":
+        low = min(ground_min, float(np.nanmin(finite_z)))
+        high = max(ground_max, float(np.nanmax(finite_z)))
+    else:
+        low = ground_min
+        high = ground_max + float(np.nanmax(finite_z))
+    if high <= low:
+        pad = max(abs(low) * 0.01, 1.0)
+        return low - pad, high + pad
+    pad = max((high - low) * 0.03, 1.0)
+    return low - pad, high + pad
+
+
 def _is_concentration_field(field: VolumeField) -> bool:
     text = f"{field.variable_name} {field.long_name}".lower()
     return "concentration" in text or "mass" in text
@@ -396,7 +567,17 @@ def _format_axis_tick(value: float) -> str:
     return f"{value:.0f}" if math.isfinite(value) and abs(value - round(value)) < 1.0e-6 else f"{value:.1f}"
 
 
-def _apply_dual_horizontal_ticks(ax: Any, field: VolumeField, terrain: TerrainField) -> None:
+def _format_longitude(value: float) -> str:
+    suffix = "E" if value >= 0.0 else "W"
+    return f"{abs(value):.5f} deg{suffix}"
+
+
+def _format_latitude(value: float) -> str:
+    suffix = "N" if value >= 0.0 else "S"
+    return f"{abs(value):.5f} deg{suffix}"
+
+
+def _apply_geographic_horizontal_ticks(ax: Any, field: VolumeField, terrain: TerrainField) -> None:
     lon_axis = terrain.longitude_axis if terrain.longitude_axis is not None else field.longitude_axis
     lat_axis = terrain.latitude_axis if terrain.latitude_axis is not None else field.latitude_axis
     ax.set_xticks(np.linspace(float(np.nanmin(field.x_axis)), float(np.nanmax(field.x_axis)), min(4, field.x_axis.size)))
@@ -405,18 +586,42 @@ def _apply_dual_horizontal_ticks(ax: Any, field: VolumeField, terrain: TerrainFi
         xticks = ax.get_xticks()
         lon_values = np.interp(xticks, field.x_axis, lon_axis)
         ax.set_xticks(xticks)
-        ax.set_xticklabels([f"{_format_axis_tick(x)}\n{lon:.5f} degE" for x, lon in zip(xticks, lon_values)], fontsize=7)
-        ax.set_xlabel("x [m] / longitude")
+        ax.set_xticklabels([_format_longitude(lon) for lon in lon_values], fontsize=7)
+        ax.set_xlabel("longitude")
     else:
         ax.set_xlabel("x [m]")
     if lat_axis is not None and lat_axis.size == field.y_axis.size:
         yticks = ax.get_yticks()
         lat_values = np.interp(yticks, field.y_axis, lat_axis)
         ax.set_yticks(yticks)
-        ax.set_yticklabels([f"{_format_axis_tick(y)}\n{lat:.5f} degN" for y, lat in zip(yticks, lat_values)], fontsize=7)
-        ax.set_ylabel("y [m] / latitude")
+        ax.set_yticklabels([_format_latitude(lat) for lat in lat_values], fontsize=7)
+        ax.set_ylabel("latitude")
     else:
         ax.set_ylabel("y [m]")
+
+
+def _scale_z(values: np.ndarray | float, origin: float, vertical_exaggeration: float) -> np.ndarray:
+    return origin + (np.asarray(values, dtype=float) - origin) * vertical_exaggeration
+
+
+def _display_z_limits(z_limits: tuple[float, float], vertical_exaggeration: float) -> tuple[float, float]:
+    return float(z_limits[0]), float(_scale_z(z_limits[1], z_limits[0], vertical_exaggeration))
+
+
+def _ground_clearance(z_limits: tuple[float, float]) -> float:
+    return max((z_limits[1] - z_limits[0]) * 0.003, 0.5)
+
+
+def _apply_vertical_axis(ax: Any, z_limits: tuple[float, float], vertical_exaggeration: float) -> None:
+    display_limits = _display_z_limits(z_limits, vertical_exaggeration)
+    ax.set_zlim(*display_limits)
+    if vertical_exaggeration > 1.0:
+        ticks = np.linspace(z_limits[0], z_limits[1], 6)
+        ax.set_zticks(_scale_z(ticks, z_limits[0], vertical_exaggeration))
+        ax.set_zticklabels([_format_axis_tick(tick) for tick in ticks])
+        ax.set_zlabel(f"elevation / plume height [m] (x{vertical_exaggeration:g})", labelpad=12.0)
+    else:
+        ax.set_zlabel("elevation / plume height [m]", labelpad=12.0)
 
 
 def _nanmax_or_nan(values: np.ndarray, axis: int) -> np.ndarray:
@@ -442,6 +647,8 @@ def plot_volume(
     max_points: int,
     elevation: float,
     azimuth: float,
+    vertical_exaggeration: float,
+    ground_color: str,
     color_limits: tuple[float, float] | None = None,
 ) -> Path:
     plt = _load_matplotlib()
@@ -460,20 +667,27 @@ def plot_volume(
     z_idx = np.arange(field.z_axis.size)
     terrain_field = _terrain_like_volume(terrain, field)
     terrain_sample = terrain_field.elevation_m[np.ix_(y_idx, x_idx)]
+    z_limits = _vertical_limits(field, terrain_sample)
+    vertical_exaggeration = max(1.0, float(vertical_exaggeration))
+    display_z_limits = _display_z_limits(z_limits, vertical_exaggeration)
+    clearance_m = _ground_clearance(z_limits)
 
     fig = plt.figure(figsize=figure_size, dpi=dpi)
     ax = fig.add_subplot(1, 1, 1, projection="3d")
     plot_cmap = plt.get_cmap(cmap)
     xx, yy = np.meshgrid(field.x_axis[x_idx], field.y_axis[y_idx])
-    terrain_colors = _land_cover_facecolors(
-        None if terrain_field.land_cover is None else terrain_field.land_cover[np.ix_(y_idx, x_idx)],
-        terrain_sample.shape,
-        plt,
-    )
+    if ground_color == "land-cover":
+        terrain_colors = _land_cover_facecolors(
+            None if terrain_field.land_cover is None else terrain_field.land_cover[np.ix_(y_idx, x_idx)],
+            terrain_sample.shape,
+            plt,
+        )
+    else:
+        terrain_colors = _terrain_facecolors(terrain_sample, plt)
     ax.plot_surface(
         xx,
         yy,
-        terrain_sample,
+        _scale_z(terrain_sample, z_limits[0], vertical_exaggeration),
         facecolors=terrain_colors,
         linewidth=0.0,
         antialiased=True,
@@ -488,12 +702,15 @@ def plot_volume(
         if np.any(occupied):
             zz, yy3, xx3 = np.meshgrid(field.z_axis[z_idx], field.y_axis[y_idx], field.x_axis[x_idx], indexing="ij")
             terrain3 = np.broadcast_to(terrain_sample, sampled.shape)
+            altitude = _plume_altitude(field, zz, terrain3)
+            occupied &= np.isfinite(altitude)
+            altitude = np.maximum(altitude, terrain3 + clearance_m)
             colors = plot_cmap(norm(sampled[occupied]))
             colors[:, 3] = 0.62
             ax.scatter(
                 xx3[occupied],
                 yy3[occupied],
-                terrain3[occupied] + zz[occupied],
+                _scale_z(altitude[occupied], z_limits[0], vertical_exaggeration),
                 c=colors,
                 s=18.0,
                 marker="s",
@@ -501,20 +718,30 @@ def plot_volume(
                 depthshade=False,
                 zorder=3,
             )
-        ax.set_box_aspect((np.ptp(field.x_axis[x_idx]) or 1.0, np.ptp(field.y_axis[y_idx]) or 1.0, (np.ptp(terrain_sample) + np.ptp(field.z_axis[z_idx])) or 1.0))
+        ax.set_box_aspect((np.ptp(field.x_axis[x_idx]) or 1.0, np.ptp(field.y_axis[y_idx]) or 1.0, (display_z_limits[1] - display_z_limits[0]) or 1.0))
     else:
         sampled = _positive_render_values(field, field.values[:, :, x_idx][:, y_idx, :])
         threshold = _threshold(sampled, threshold_quantile)
-        surface = terrain_sample + _surface_z(sampled, field.z_axis, threshold) if threshold is not None else np.full_like(terrain_sample, np.nan)
+        plume_height = _surface_z(sampled, field.z_axis, threshold) if threshold is not None else np.full_like(terrain_sample, np.nan)
+        surface = _plume_altitude(field, plume_height, terrain_sample)
+        surface = np.where(np.isfinite(surface), np.maximum(surface, terrain_sample + clearance_m), np.nan)
         colors = plot_cmap(norm(_nanmax_or_nan(sampled, axis=0)))
         colors[..., 3] = np.where(np.isfinite(surface), 0.68, 0.0)
-        ax.plot_surface(xx, yy, surface, facecolors=colors, linewidth=0.0, antialiased=True, shade=False)
-        ax.set_box_aspect((np.ptp(field.x_axis[x_idx]) or 1.0, np.ptp(field.y_axis[y_idx]) or 1.0, (np.ptp(terrain_sample) + np.ptp(field.z_axis)) or 1.0))
+        ax.plot_surface(
+            xx,
+            yy,
+            _scale_z(surface, z_limits[0], vertical_exaggeration),
+            facecolors=colors,
+            linewidth=0.0,
+            antialiased=True,
+            shade=False,
+        )
+        ax.set_box_aspect((np.ptp(field.x_axis[x_idx]) or 1.0, np.ptp(field.y_axis[y_idx]) or 1.0, (display_z_limits[1] - display_z_limits[0]) or 1.0))
     mappable = plt.cm.ScalarMappable(norm=norm, cmap=plot_cmap)
     mappable.set_array([])
-    fig.colorbar(mappable, ax=ax, shrink=0.72, pad=0.08, label=field.label)
-    _apply_dual_horizontal_ticks(ax, field, terrain_field)
-    ax.set_zlabel("elevation / plume height [m]")
+    fig.colorbar(mappable, ax=ax, shrink=0.72, pad=0.16, label=field.label)
+    _apply_geographic_horizontal_ticks(ax, field, terrain_field)
+    _apply_vertical_axis(ax, z_limits, vertical_exaggeration)
     ax.view_init(elev=elevation, azim=azimuth)
     ax.set_title(title or field.title, fontsize=11)
     out = Path(output_path)
@@ -576,6 +803,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-points", type=int, default=56, help="maximum sampled points per axis for responsive rendering")
     parser.add_argument("--elevation", type=float, default=28.0, help="3-D camera elevation in degrees")
     parser.add_argument("--azimuth", type=float, default=-55.0, help="3-D camera azimuth in degrees")
+    parser.add_argument("--vertical-exaggeration", type=float, default=1.0, help="vertical display exaggeration factor; must be >= 1")
+    parser.add_argument(
+        "--ground-color",
+        choices=("terrain", "land-cover"),
+        default="terrain",
+        help="color the DEM surface by terrain elevation or land-cover class",
+    )
     parser.add_argument("--animate", action="store_true", help="write an animated GIF using every time frame of the selected variable")
     parser.add_argument("--frame-duration-ms", type=int, default=300, help="animated GIF frame duration in milliseconds")
     parser.add_argument("--gif-loop", type=int, default=0, help="animated GIF loop count; 0 loops forever")
@@ -594,6 +828,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         datefmt=LOG_DATE_FORMAT,
     )
     try:
+        if args.vertical_exaggeration < 1.0:
+            raise ValueError("--vertical-exaggeration must be >= 1")
         common = {
             "title": args.title,
             "dpi": args.dpi,
@@ -605,6 +841,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "max_points": max(2, args.max_points),
             "elevation": args.elevation,
             "azimuth": args.azimuth,
+            "vertical_exaggeration": args.vertical_exaggeration,
+            "ground_color": args.ground_color,
             "duration_ms": args.frame_duration_ms,
             "loop": args.gif_loop,
         }

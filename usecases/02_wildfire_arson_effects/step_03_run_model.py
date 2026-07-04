@@ -33,6 +33,11 @@ def _default_meteo_path(config_path: str | Path) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def _default_terrain_path(config_path: str | Path) -> Path | None:
+    candidate = Path(config_path).parent / "geo.nc"
+    return candidate if candidate.exists() else None
+
+
 def _infer_output_interval_s(meteo_path: str | Path | None) -> float | None:
     if meteo_path is None:
         return None
@@ -172,6 +177,7 @@ def _run_workflow_with_performance_log(
     interchange: str,
     output_interval_s: float | None,
     meteo_input: Path | None,
+    terrain_input: Path | None,
     calpuff_binary: bool,
 ) -> dict:
     LOGGER.info("step 3/3 workflow: running Sprtz workflow backend=%s", backend)
@@ -200,6 +206,7 @@ def _run_workflow_with_performance_log(
         parallel="serial",
         output_interval_s=output_interval_s,
         meteo_input=meteo_input,
+        terrain_input=terrain_input,
         calpuff_binary=calpuff_binary,
         concentration_progress_callback=_log_concentration_progress,
     )
@@ -220,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backend", choices=["gaussian", "particles", "both"], default="both")
     parser.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
     parser.add_argument("--meteo", default=None, help="prepared meteorology file; defaults to wrf_100m_wind.nc beside the config")
+    parser.add_argument("--terrain", default=None, help="prepared GEO/terrain file; defaults to geo.nc beside the config")
     parser.add_argument("--output-interval-s", type=float, default=None, help="concentration output interval in seconds")
     parser.add_argument("--calpuff-binary", action="store_true", help="write clean-room CALPUFF-style binary concentration sidecars")
     parser.add_argument("--verbose", action="store_true", help="enable debug logging")
@@ -231,8 +239,11 @@ def main(argv: list[str] | None = None) -> int:
     if upgraded:
         LOGGER.info("step 3/3 config: added receptor latitude/longitude coordinates to %s", args.config)
     meteo_input = Path(args.meteo) if args.meteo else _default_meteo_path(args.config)
+    terrain_input = Path(args.terrain) if args.terrain else _default_terrain_path(args.config)
     if meteo_input is not None:
         LOGGER.info("step 3/3 meteo: using prepared meteorology %s", meteo_input)
+    if terrain_input is not None:
+        LOGGER.info("step 3/3 terrain: using prepared GEO/terrain %s", terrain_input)
     config, inferred_interval_s, plume_upgraded = _ensure_time_dependent_plume_config(args.config, meteo_input)
     output_interval_s = args.output_interval_s if args.output_interval_s is not None else inferred_interval_s
     if plume_upgraded:
@@ -250,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
                 interchange=args.interchange,
                 output_interval_s=output_interval_s,
                 meteo_input=meteo_input,
+                terrain_input=terrain_input,
                 calpuff_binary=args.calpuff_binary,
             )
             LOGGER.info(
@@ -275,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
             interchange=args.interchange,
             output_interval_s=output_interval_s,
             meteo_input=meteo_input,
+            terrain_input=terrain_input,
             calpuff_binary=args.calpuff_binary,
         )
         workflows[args.backend] = workflow

@@ -574,6 +574,14 @@ def test_wildfire_run_entrypoint_synthetic(tmp_path: Path) -> None:
                 "40.85",
                 "--center-lon",
                 "14.27",
+                "--nx",
+                "9",
+                "--ny",
+                "7",
+                "--dx",
+                "200",
+                "--dy",
+                "100",
                 "--duration-s",
                 "600",
                 "--area-m2",
@@ -586,6 +594,12 @@ def test_wildfire_run_entrypoint_synthetic(tmp_path: Path) -> None:
     )
     assert config.exists()
     payload = read_json(config)
+    assert payload["grid"]["nx"] == 9
+    assert payload["grid"]["ny"] == 7
+    assert payload["grid"]["dx"] == 200.0
+    assert payload["grid"]["dy"] == 100.0
+    assert payload["grid"]["x0"] + ((payload["grid"]["nx"] - 1) / 2.0) * payload["grid"]["dx"] == pytest.approx(0.0)
+    assert payload["grid"]["y0"] + ((payload["grid"]["ny"] - 1) / 2.0) * payload["grid"]["dy"] == pytest.approx(0.0)
     assert payload["run"]["field_z_levels"] == [1.5, 10.0, 50.0]
 
 
@@ -1536,6 +1550,13 @@ def test_wrf_to_local_netcdf_writes_cf_time_from_wrf_times(tmp_path: Path) -> No
         assert ds.variables["temperature_2m_c"].units == "degree_Celsius"
         assert ds.variables["relative_humidity_2m"].dimensions == ("time", "y", "x")
         assert ds.variables["relative_humidity_2m"].units == "1"
+        assert ds.variables["x"].axis == "X"
+        assert ds.variables["y"].axis == "Y"
+        assert ds.variables["z"].axis == "Z"
+        assert ds.variables["latitude"].standard_name == "latitude"
+        assert ds.variables["longitude"].standard_name == "longitude"
+        assert "latitude longitude" in ds.variables["eastward_wind"].coordinates
+        assert "latitude longitude" in ds.variables["precipitation_rate"].coordinates
         np.testing.assert_allclose(ds.variables["U10M"][:], 3.0)
         np.testing.assert_allclose(ds.variables["V10M"][:], 0.0)
         np.testing.assert_allclose(ds.variables["temperature_2m_c"][:], 20.0)
