@@ -68,7 +68,8 @@ See `docs/firefront.md`, `docs/firefront_numerical.md`, `docs/firefront_spotting
 | `docs/firms_ignition.md` | FIRMS/VIIRS satellite ignition ingestion. |
 | `docs/buoyancy_correction.md` | Semi-coupled fire buoyancy wind correction. |
 | `docs/backward.md` | Backward plume source and fire/arson origin attribution. |
-| `docs/parallelization.md` | MPI/GPU execution models across SpritzMet, Gaussian, particles, and SpritzFire. |
+| `docs/parallelization.md` | MPI/shared-memory/GPU execution models across SpritzMet, Gaussian, particles, and SpritzFire. |
+| `docs/hierarchical_heterogeneous_parallelism.md` | Hierarchical MPI, local-worker, and CUDA/CuPy execution contract. |
 | `docs/spritzmet_mpi.md` | SpritzMet spatial MPI decomposition. |
 | `docs/hpc.md` | SLURM batch scripts for HPC systems. |
 | `docs/visualization.md` | Plotting and map outputs. |

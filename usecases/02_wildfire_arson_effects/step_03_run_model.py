@@ -179,6 +179,11 @@ def _run_workflow_with_performance_log(
     meteo_input: Path | None,
     terrain_input: Path | None,
     calpuff_binary: bool,
+    parallel: str,
+    thread_backend: str,
+    threads_per_rank: int | None,
+    gpu_backend: str,
+    decomposition: str,
 ) -> dict:
     LOGGER.info("step 3/3 workflow: running Sprtz workflow backend=%s", backend)
     started = time.perf_counter()
@@ -203,7 +208,11 @@ def _run_workflow_with_performance_log(
         output_dir,
         backend=backend,
         interchange=interchange,
-        parallel="serial",
+        parallel=parallel,
+        gpu_backend=gpu_backend,
+        thread_backend=thread_backend,
+        threads_per_rank=threads_per_rank,
+        decomposition=decomposition,
         output_interval_s=output_interval_s,
         meteo_input=meteo_input,
         terrain_input=terrain_input,
@@ -229,12 +238,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--meteo", default=None, help="prepared meteorology file; defaults to wrf_100m_wind.nc beside the config")
     parser.add_argument("--terrain", default=None, help="prepared GEO/terrain file; defaults to geo.nc beside the config")
     parser.add_argument("--output-interval-s", type=float, default=None, help="concentration output interval in seconds")
+    parser.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial", help="parallel execution mode")
+    parser.add_argument("--thread-backend", choices=["serial", "threads", "processes", "auto"], default="serial", help="rank-local shared-memory backend")
+    parser.add_argument("--threads-per-rank", type=int, default=None, help="rank-local worker count")
+    parser.add_argument("--gpu-backend", choices=["numpy", "auto", "cupy", "cuda"], default="numpy", help="optional array accelerator backend")
+    parser.add_argument(
+        "--decomposition",
+        choices=["auto", "rows", "tiles", "receptors", "sources", "particles", "realizations"],
+        default="auto",
+        help="preferred work decomposition strategy",
+    )
     parser.add_argument("--calpuff-binary", action="store_true", help="write clean-room CALPUFF-style binary concentration sidecars")
     parser.add_argument("--verbose", action="store_true", help="enable debug logging")
     args = parser.parse_args(argv)
     configure_logging(args.verbose)
     LOGGER.info("step 3/3 input: config=%s output_dir=%s", args.config, args.output_dir)
-    LOGGER.info("step 3/3 model: backend=%s interchange=%s parallel=serial", args.backend, args.interchange)
+    LOGGER.info(
+        "step 3/3 model: backend=%s interchange=%s parallel=%s thread_backend=%s threads_per_rank=%s gpu_backend=%s decomposition=%s",
+        args.backend,
+        args.interchange,
+        args.parallel,
+        args.thread_backend,
+        args.threads_per_rank,
+        args.gpu_backend,
+        args.decomposition,
+    )
     upgraded = ensure_wildfire_receptor_coordinates(args.config)
     if upgraded:
         LOGGER.info("step 3/3 config: added receptor latitude/longitude coordinates to %s", args.config)
@@ -263,6 +291,11 @@ def main(argv: list[str] | None = None) -> int:
                 meteo_input=meteo_input,
                 terrain_input=terrain_input,
                 calpuff_binary=args.calpuff_binary,
+                parallel=args.parallel,
+                thread_backend=args.thread_backend,
+                threads_per_rank=args.threads_per_rank,
+                gpu_backend=args.gpu_backend,
+                decomposition=args.decomposition,
             )
             LOGGER.info(
                 "step 3/3 workflow: backend=%s wrote meteo=%s concentration=%s post=%s",
@@ -289,6 +322,11 @@ def main(argv: list[str] | None = None) -> int:
             meteo_input=meteo_input,
             terrain_input=terrain_input,
             calpuff_binary=args.calpuff_binary,
+            parallel=args.parallel,
+            thread_backend=args.thread_backend,
+            threads_per_rank=args.threads_per_rank,
+            gpu_backend=args.gpu_backend,
+            decomposition=args.decomposition,
         )
         workflows[args.backend] = workflow
         LOGGER.info("step 3/3 workflow: wrote meteo=%s concentration=%s post=%s", workflow.get("meteo"), workflow.get("concentration"), workflow.get("post"))

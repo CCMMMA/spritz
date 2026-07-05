@@ -9,7 +9,7 @@ from .config import configured_backend, from_mapping, load_config
 from .io.calpuff import write_calpuff_concentration_dat
 from .io.jsonio import write_json
 from .models import spritzmet, spritzpost, spritz, particles
-from .parallel import get_mpi_context
+from .parallel import get_parallel_context
 from .terrain.acquisition import run_acquisition
 
 
@@ -21,6 +21,9 @@ def run_workflow(
     interchange: str = "netcdf",
     parallel: str = "serial",
     gpu_backend: str | None = None,
+    thread_backend: str = "serial",
+    threads_per_rank: int | None = None,
+    decomposition: str = "auto",
     auto_terrain: bool = False,
     allow_terrain_network: bool = False,
     output_interval_s: float | None = None,
@@ -29,7 +32,8 @@ def run_workflow(
     calpuff_binary: bool = False,
     concentration_progress_callback: Callable[[int, float], None] | None = None,
 ) -> dict[str, Any]:
-    ctx = get_mpi_context(parallel)
+    parallel_ctx = get_parallel_context(parallel, thread_backend, threads_per_rank, gpu_backend or "numpy")
+    ctx = parallel_ctx.mpi
     out = Path(output_dir)
     if ctx.is_root:
         out.mkdir(parents=True, exist_ok=True)
@@ -74,6 +78,9 @@ def run_workflow(
                 interchange=interchange,
                 parallel=parallel,
                 gpu_backend=gpu_backend,
+                thread_backend=thread_backend,
+                threads_per_rank=threads_per_rank,
+                decomposition=decomposition,
                 terrain_input=terrain_input,
             )
             result["puff"] = puff_result.get("concentration")
@@ -160,6 +167,9 @@ def run_workflow(
         "backend": model_backend,
         "parallel": "mpi" if ctx.enabled else "serial",
         "gpu_backend": gpu_backend or str(config.run.get("gpu_backend", "numpy")),
+        "thread_backend": parallel_ctx.threads.mode,
+        "threads_per_rank": parallel_ctx.threads.workers,
+        "decomposition": decomposition,
         "mpi_size": ctx.size,
         "components": [meteo["component"], model_component, post["component"]],
     }

@@ -12,7 +12,7 @@ from .exceptions import SpritzError
 from .logging import configure_logging
 from .models import backward, ctgproc, makegeo, particles, spritz, spritzmet, spritzpost, spritzwrf
 from .models import terrain, visualization
-from .parallel import get_mpi_context
+from .parallel import get_mpi_context, get_parallel_context
 from .terrain import acquisition as terrain_acquisition
 from .workflow import run_workflow
 
@@ -39,9 +39,35 @@ def _config_parser(description: str) -> argparse.ArgumentParser:
 def _add_gpu_backend(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--gpu-backend",
-        choices=["numpy", "auto", "cupy"],
+        choices=["numpy", "auto", "cupy", "cuda"],
         default=None,
         help="optional array accelerator backend; cupy requires CUDA",
+    )
+
+
+def _add_hybrid_parallel_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--thread-backend",
+        choices=["serial", "threads", "processes", "auto"],
+        default="serial",
+        help="rank-local shared-memory backend",
+    )
+    parser.add_argument("--threads-per-rank", type=int, default=None, help="rank-local worker count")
+    parser.add_argument(
+        "--decomposition",
+        choices=[
+            "auto",
+            "rows",
+            "tiles",
+            "receptors",
+            "sources",
+            "particles",
+            "realizations",
+            "source-particle-auto",
+            "source-receptor-2d",
+        ],
+        default="auto",
+        help="preferred work decomposition strategy",
     )
 
 
@@ -55,7 +81,12 @@ def _run_dispersion(
     seed: int | None = None,
     parallel: str = "serial",
     gpu_backend: str | None = None,
+    thread_backend: str = "serial",
+    threads_per_rank: int | None = None,
+    decomposition: str = "auto",
 ) -> list[dict[str, float | str]]:
+    get_parallel_context(parallel, thread_backend, threads_per_rank, gpu_backend or "numpy")
+    LOGGER.debug("dispersion decomposition=%s", decomposition)
     model_backend = configured_backend(config.run, backend)
     if model_backend == "particles":
         return particles.run(
@@ -87,8 +118,10 @@ def spritzmet_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--format", default="auto", choices=["auto", "json", "netcdf"])
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"])
         _add_gpu_backend(parser)
+        _add_hybrid_parallel_options(parser)
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
+        get_parallel_context(args.parallel, args.thread_backend, args.threads_per_rank, args.gpu_backend or "numpy")
         spritzmet.run(load_config(args.config), args.output, args.format, parallel=args.parallel, gpu_backend=args.gpu_backend)
         return 0
 
@@ -102,6 +135,7 @@ def sprtzfire_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
         parser.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial")
         _add_gpu_backend(parser)
+        _add_hybrid_parallel_options(parser)
         parser.add_argument("--firms", action="store_true")
         parser.add_argument("--firms-source", default=None)
         parser.add_argument("--firms-date", default=None)
@@ -117,6 +151,9 @@ def sprtzfire_main(argv: Sequence[str] | None = None) -> int:
             interchange=args.interchange,
             parallel=args.parallel,
             gpu_backend=args.gpu_backend,
+            thread_backend=args.thread_backend,
+            threads_per_rank=args.threads_per_rank,
+            decomposition=args.decomposition,
         )
         LOGGER.info("%s", result)
         return 0
@@ -135,6 +172,7 @@ def spritz_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"], help="parallel execution mode")
         parser.add_argument("--output-interval", type=float, default=None, help="optional concentration output interval in seconds")
         _add_gpu_backend(parser)
+        _add_hybrid_parallel_options(parser)
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
         _run_dispersion(
@@ -146,6 +184,9 @@ def spritz_main(argv: Sequence[str] | None = None) -> int:
             seed=args.seed,
             parallel=args.parallel,
             gpu_backend=args.gpu_backend,
+            thread_backend=args.thread_backend,
+            threads_per_rank=args.threads_per_rank,
+            decomposition=args.decomposition,
         )
         return 0
 
@@ -161,6 +202,7 @@ def sprtz_particles_main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--seed", type=int, default=None)
         parser.add_argument("--parallel", default="serial", choices=["serial", "auto", "mpi"], help="parallel execution mode")
         _add_gpu_backend(parser)
+        _add_hybrid_parallel_options(parser)
         args = parser.parse_args(argv_)
         configure_logging(args.verbose)
         _run_dispersion(
@@ -172,6 +214,9 @@ def sprtz_particles_main(argv: Sequence[str] | None = None) -> int:
             seed=args.seed,
             parallel=args.parallel,
             gpu_backend=args.gpu_backend,
+            thread_backend=args.thread_backend,
+            threads_per_rank=args.threads_per_rank,
+            decomposition=args.decomposition,
         )
         return 0
 
@@ -295,7 +340,13 @@ def terrain_main(argv: Sequence[str] | None = None) -> int:
 def _provider_spec(value: str, *, kind: str) -> dict[str, object]:
     path = Path(value)
     if path.exists():
-        return {"source": "local", "path": str(path)}
+        spec: dict[str, object] = {"source": "local", "path": str(path)}
+        lowered_path = path.name.lower()
+        if kind == "dem" and ("cop30" in lowered_path or "copernicus" in lowered_path):
+            spec.update({"dataset": "copernicus-cop30", "resolution": "30m"})
+        if kind == "landuse" and ("lc100" in lowered_path or "landcover" in lowered_path):
+            spec.update({"dataset": "copernicus-lc100", "resolution": "100m"})
+        return spec
     lowered = value.lower()
     if kind == "dem" and lowered in {"copernicus-30", "copernicus-dem", "copernicus-glo-30"}:
         return {"source": "copernicus-dem", "resolution": "30m"}
@@ -457,6 +508,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         workflow.add_argument("--interchange", choices=["json", "netcdf"], default="netcdf")
         workflow.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial")
         _add_gpu_backend(workflow)
+        _add_hybrid_parallel_options(workflow)
         workflow.add_argument("--auto-terrain", action="store_true", help="run configured terrain acquisition before meteorology")
         workflow.add_argument("--allow-terrain-network", action="store_true", help="allow explicit online terrain providers")
         workflow.add_argument("--terrain-input", default=None, help="prepared GEO/terrain NetCDF used by dispersion models")
@@ -485,6 +537,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 interchange=args.interchange,
                 parallel=args.parallel,
                 gpu_backend=args.gpu_backend,
+                thread_backend=args.thread_backend,
+                threads_per_rank=args.threads_per_rank,
+                decomposition=args.decomposition,
                 auto_terrain=args.auto_terrain,
                 allow_terrain_network=args.allow_terrain_network,
                 terrain_input=args.terrain_input,

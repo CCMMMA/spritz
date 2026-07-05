@@ -11,6 +11,107 @@ python -m pip install -e .[netcdf,viz]
 sprtz doctor --require-netcdf
 ```
 
+## Shared-memory and multicore execution
+
+The use cases can run on laptops, workstations, and single-node servers without
+MPI by using the shared-memory execution path. This is the recommended mode for
+teaching, debugging, small production tests, and multicore workstation runs.
+
+Install the scientific extras first:
+
+```bash
+python -m pip install -e .[netcdf,viz]
+sprtz doctor --require-netcdf
+```
+
+For CPU-only multicore runs, pin BLAS/OpenMP libraries so they do not
+oversubscribe the cores used by Spritz workers:
+
+```bash
+export SPRITZ_THREADS=8
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+```
+
+Run a use-case step in shared-memory mode:
+
+```bash
+python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+  --parallel serial \
+  --thread-backend auto \
+  --threads-per-rank ${SPRITZ_THREADS:-8}
+```
+
+Run the wildfire/arson concentration step on multicore CPU:
+
+```bash
+python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+  --backend particles \
+  --parallel serial \
+  --thread-backend auto \
+  --threads-per-rank ${SPRITZ_THREADS:-8} \
+  --gpu-backend numpy
+```
+
+On a single workstation with one CUDA GPU, keep the process count at one and use
+CUDA for dense array kernels:
+
+```bash
+python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+  --backend particles \
+  --parallel serial \
+  --thread-backend auto \
+  --threads-per-rank ${SPRITZ_THREADS:-8} \
+  --gpu-backend auto
+```
+
+For multi-GPU or multi-node runs, use MPI and normally assign one MPI rank per
+GPU:
+
+```bash
+mpiexec -n 4 python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+  --backend particles \
+  --parallel mpi \
+  --thread-backend serial \
+  --gpu-backend auto
+```
+
+Recommended execution modes:
+
+| Environment | `--parallel` | `--thread-backend` | `--gpu-backend` | Notes |
+|---|---|---|---|---|
+| laptop, small test | `serial` | `serial` or `auto` | `numpy` | Most reproducible debugging mode. |
+| multicore workstation | `serial` | `auto` | `numpy` | Shared-memory CPU execution. |
+| workstation with one GPU | `serial` | `auto` | `auto` | GPU kernels where available; CPU fallback otherwise. |
+| single node, many CPU cores | `mpi` or `serial` | `auto` | `numpy` | Avoid core oversubscription. |
+| multi-GPU node | `mpi` | `serial` or `auto` | `auto` | Prefer one MPI rank per GPU. |
+| HPC cluster | `mpi` | `auto` | `auto` | Use scheduler `cpus-per-task` and GPU binding. |
+
+For deterministic comparisons, first run a small serial baseline and then
+compare a parallel run:
+
+```bash
+python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+  --backend gaussian \
+  --parallel serial \
+  --thread-backend serial \
+  --gpu-backend numpy
+
+mpiexec -n 2 python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+  --backend gaussian \
+  --parallel mpi \
+  --thread-backend auto \
+  --threads-per-rank 2 \
+  --gpu-backend numpy
+```
+
+Use shared-memory mode when the complete input and output products fit
+comfortably in one node's memory. Use MPI when the receptor grid, source
+catalog, particle count, SpritzMet grid, or Firefront ensemble is too large for
+one process or when a cluster scheduler allocates multiple nodes/GPUs.
+
 For lightweight tests or classroom demonstrations without WRF data, each relevant script provides a synthetic-data option. For real runs, use the meteo@uniparthenope WRF5 d03 archive URL pattern documented in the use-case folders.
 
 High-resolution WRF/SpritzMet preparation workflows can also save a

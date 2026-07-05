@@ -21,6 +21,7 @@ from plotting import plot_netcdf_if_available
 from sprtz.config import config_defaults
 from sprtz.logging import configure_logging
 from sprtz.models import spritzmet, spritzwrf
+from sprtz.parallel import get_parallel_context
 
 
 LOGGER = logging.getLogger(__name__)
@@ -769,6 +770,15 @@ def build_parser(description: str | None = None) -> argparse.ArgumentParser:
     parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster, e.g. data/landcover/lc100_naples.tif")
     parser.add_argument("--downscaling-mode", choices=["deterministic", "ai", "diffusion"], default="deterministic")
     parser.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial", help="parallel execution mode for SpritzMet WRF downscaling")
+    parser.add_argument("--thread-backend", choices=["serial", "threads", "processes", "auto"], default="serial", help="rank-local shared-memory backend")
+    parser.add_argument("--threads-per-rank", type=int, default=None, help="rank-local worker count")
+    parser.add_argument("--gpu-backend", choices=["numpy", "auto", "cupy", "cuda"], default="numpy", help="optional array accelerator backend")
+    parser.add_argument(
+        "--decomposition",
+        choices=["auto", "rows", "tiles", "receptors", "sources", "particles", "realizations"],
+        default="auto",
+        help="preferred work decomposition strategy",
+    )
     parser.add_argument(
         "--station-measurements",
         default=None,
@@ -790,6 +800,15 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
     args = parser.parse_args(argv)
     if args.output is None:
         parser.error("--output is required unless provided by --config")
+    parallel_ctx = get_parallel_context(args.parallel, args.thread_backend, args.threads_per_rank, args.gpu_backend)
+    LOGGER.debug(
+        "parallel context: mpi_size=%s thread_backend=%s threads_per_rank=%s gpu_backend=%s decomposition=%s",
+        parallel_ctx.mpi.size,
+        parallel_ctx.threads.mode,
+        parallel_ctx.threads.workers,
+        parallel_ctx.gpu.backend,
+        args.decomposition,
+    )
 
     download_date = None
     download_cycle_hour = 0

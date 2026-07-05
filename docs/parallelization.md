@@ -4,9 +4,9 @@
 
 This document presents the parallelization schema for Sprtz. It separates scientific state from execution layout so parallel acceleration does not change model interpretation.
 
-Spritz uses an optional MPI parallelization layer designed for deterministic atmospheric-dispersion workflows on both laptops and HPC clusters. The same code path can run in serial mode, in automatic MPI mode, or in explicit MPI mode without changing the scenario configuration files. Backend selection can live in JSON `run.backend` or be overridden with `--backend`.
+Spritz uses an optional hierarchical parallelization layer designed for deterministic atmospheric-dispersion workflows on both laptops and HPC clusters. The same code path can run in serial mode, in automatic MPI mode, or in explicit MPI mode without changing the scenario configuration files. Backend selection can live in JSON `run.backend` or be overridden with `--backend`.
 
-Spritz also supports optional CUDA acceleration through CuPy. GPU execution is requested with `--gpu-backend auto` or `--gpu-backend cupy`; CPU NumPy remains the default and always works without CUDA libraries.
+The execution hierarchy is MPI ranks across nodes, rank-local shared-memory workers, and an optional NumPy/CuPy array backend inside each rank. GPU execution is requested with `--gpu-backend auto` or `--gpu-backend cupy`; CPU NumPy remains the default and always works without CUDA libraries.
 
 This document describes the production execution schema, how work is partitioned, which files are read and written by each rank, and how to run and validate parallel jobs.
 
@@ -14,11 +14,11 @@ This document describes the production execution schema, how work is partitioned
 
 Spritz parallelization follows five design goals.
 
-1. **Serial first**: every model must run without MPI or `mpi4py` installed.
-2. **Optional HPC acceleration**: MPI is enabled only when requested or when `--parallel auto` detects a multi-rank communicator.
-3. **Deterministic results**: serial and parallel runs should produce equivalent outputs for the same backend, configuration, and random seed.
-4. **Safe output writing**: only rank 0 writes shared concentration, meteorology, post-processing, and workflow files.
-5. **Clean interoperability**: NetCDF-CF remains the preferred file exchange format between SpritzWRF, SpritzMet, Terrain, Spritz, SpritzPost, and the use-case scripts.
+1. **Serial first**: every model must run without MPI, CUDA, or optional HPC libraries.
+2. **Hierarchical by construction**: MPI distributes large independent work units; CPU workers subdivide rank-local work; CUDA accelerates dense kernels.
+3. **Deterministic partitioning**: static or cost-aware partitions must be reproducible from model inputs, not runtime scheduling order.
+4. **Minimal communication**: communication occurs at phase boundaries, halo exchanges, or well-defined reductions.
+5. **Safe I/O**: rank-0 gather/write remains the portable default; parallel NetCDF/HDF5 is optional and must be validated per HPC filesystem.
 
 ## Supported execution modes
 
@@ -37,6 +37,15 @@ GPU backend modes:
 | `numpy` | CPU arrays only. | Reproducibility tests, CPU-only systems. |
 | `auto` | Use CuPy only when CUDA allocation succeeds. | Portable scripts that can benefit from GPU nodes. |
 | `cupy` | Require CUDA/CuPy and fail fast if unavailable. | Batch jobs where GPU allocation is expected. |
+
+Shared-memory backend modes:
+
+| Mode | Behavior | Recommended use |
+|---|---|---|
+| `serial` | Disable rank-local workers. | Default behavior and reproducibility tests. |
+| `threads` | Use a `ThreadPoolExecutor` inside each rank. | NumPy/CuPy kernels that release the GIL and light I/O orchestration. |
+| `processes` | Use a `ProcessPoolExecutor` inside each rank. | Pure-Python CPU loops where serialization cost is acceptable. |
+| `auto` | Use threads when the selected worker count is greater than one. | Workstation or SLURM jobs with `SPRITZ_THREADS` or `--threads-per-rank`. |
 
 Example serial run:
 
@@ -84,10 +93,27 @@ The parallel abstraction is implemented in:
 ```text
 src/sprtz/parallel/
 ├── __init__.py
-└── mpi.py
+├── gpu.py
+├── mpi.py
+├── partition.py
+├── scheduler.py
+└── threads.py
 ```
 
-The central object is `MPIContext`. It wraps `MPI.COMM_WORLD` when MPI is active and exposes the same small API when Spritz is running serially:
+The central object is `ParallelContext`. It combines `MPIContext`, `ThreadContext`, and `GPUContext` while preserving serial fallbacks at every level:
+
+```python
+from sprtz.parallel import get_parallel_context
+
+ctx = get_parallel_context(
+    parallel="auto",
+    thread_mode="auto",
+    threads_per_rank=4,
+    gpu_backend="auto",
+)
+```
+
+`MPIContext` wraps `MPI.COMM_WORLD` when MPI is active and exposes the same small API when Spritz is running serially:
 
 - `rank`: current rank, or `0` in serial mode.
 - `size`: communicator size, or `1` in serial mode.
@@ -108,9 +134,11 @@ ctx = get_mpi_context("auto")
 
 No modeling module imports `mpi4py` directly. This keeps non-MPI installations importable and simplifies testing.
 
+`ThreadContext.map()` gives model code a deterministic local map operation. It is serial unless explicitly configured for `threads`, `processes`, or `auto` with more than one worker. `GPUContext.xp` stores either NumPy or CuPy so dense kernels can be written once and validated against the CPU path.
+
 ## Work partitioning
 
-Spritz currently uses static balanced partitioning with contiguous blocks. For `n_items` units of work, `size` MPI ranks, and one `rank`, the partition is:
+Spritz currently uses static balanced partitioning with contiguous blocks. For `n_items` units of work, `size` MPI ranks, and one `rank`, the 1-D partition is:
 
 ```python
 base, remainder = divmod(n_items, size)
@@ -133,16 +161,18 @@ Example for 10 receptors and 4 ranks:
 | 2 | 6, 7 | 2 |
 | 3 | 8, 9 | 2 |
 
+For gridded workflows, `balanced_tiles_2d(nx, ny, rank, size, halo=0)` provides deterministic row-major 2-D tiles. SpritzMet can keep row partitioning for compatibility and use tile partitioning for future halo-aware WRF downscaling, smoothing, or terrain-correction kernels.
+
 ## Stage-specific best models
 
 Spritz uses different parallelization units for different numerical kernels:
 
-| Stage | MPI unit | GPU unit | Reason |
-|---|---|---|---|
-| SpritzMet | spatial grid rows, including WRF-to-local-grid downscaling | local grid-array operations | meteorology is cell-wise gridded downscaling. |
-| Spritz Gaussian | receptors | source/receptor vector geometry | receptor rows are independent after meteorology is known. |
-| Spritz particles | sources | particles for each local source | source RNG streams stay deterministic across MPI sizes. |
-| SpritzFire | stochastic realizations | CA arrays per rank | ensemble realizations are independent; one GPU per rank avoids communication. |
+| Module | MPI unit | Shared-memory unit | CUDA unit | Communication |
+|---|---|---|---|---|
+| SpritzMet | 2-D grid tiles with halo; row mode retained | tile rows/subtiles, time slices | WRF interpolation, DEM/LC corrections, diagnostic grid arrays | halo exchange for local operators; gather/write or optional parallel NetCDF. |
+| SpritzGaussian | receptor blocks; optional source-receptor 2-D decomposition | local receptor sub-blocks | source/receptor geometry and batched plume arrays | final gather over receptor rows; optional source-dimension reduction. |
+| SpritzParticles | source blocks; particle blocks for dominant sources | particle batches and local reductions | particle advection, stochastic offsets, deposition, hit tests | deterministic reduction of receptor/grid totals. |
+| SpritzFirefront | stochastic realizations | realization batches or spatial tiles | cellular automaton state arrays | ensemble reduction; optional tile halo exchange. |
 
 ## Gaussian backend schema
 
@@ -288,6 +318,18 @@ humidity arrays. Use case 01 exposes this as `--parallel auto` or
 `--parallel mpi`; output writing remains rank-0/serial through
 `write_local_meteorology`.
 
+The academic target for large domains is 2-D tiling:
+
+```text
+Global grid G(time, y, x)
+│
+├── MPI rank r owns tile Tr = [y0:y1, x0:x1] plus halo h
+├── CPU workers process subtiles of Tr
+└── CUDA kernels evaluate dense cell-wise operations on Tr
+```
+
+Recommended dense kernels include WRF-to-local interpolation, terrain correction from DEM, land-cover correction and roughness proxies, diagnostic U10M/V10M preservation, precipitation interpolation, 2 m temperature and relative humidity derivation, and local quality masks.
+
 ## File I/O rules
 
 The I/O contract is intentionally conservative.
@@ -302,6 +344,8 @@ The I/O contract is intentionally conservative.
 | Visualization figures | Serial scripts or rank 0 | User | Visualization is not currently MPI-parallel. |
 
 Rank 0 only writing is deliberate. It avoids multi-writer NetCDF corruption and keeps the package portable across MPI implementations and filesystems. Future versions may add parallel NetCDF/HDF5 output for very large domains, but that will require optional dependencies and filesystem-specific validation.
+
+An optional HPC extension may collectively write large arrays through parallel NetCDF/HDF5 or PnetCDF only when the Python environment is linked against MPI-enabled HDF5/netCDF4 or PnetCDF and the target filesystem supports collective I/O efficiently. This feature must remain disabled unless detected and explicitly validated.
 
 ## NetCDF-CF interoperability
 
@@ -393,29 +437,27 @@ mpiexec -n 16 sprtz run examples/minimal.json \
 
 ## Performance considerations
 
-The dominant cost depends on the backend.
+The dominant cost depends on the backend. Let `R` be receptors, `S` sources, `P` particles, `G` grid cells, `E` Firefront ensemble realizations, `T` time steps, `M` MPI ranks, `C` CPU workers per rank, and `A` the accelerator throughput factor.
 
-For the Gaussian backend, the approximate operation count is:
-
-```text
-O(number_of_receptors × number_of_sources)
-```
-
-Since receptors are partitioned, scaling is best when the receptor count is
-large relative to the number of MPI ranks. For gridded 3D field output, the
-effective receptor count is `nx × ny × number_of_field_z_levels`.
-
-For the particle backend, the approximate operation count is:
+Approximate dominant costs:
 
 ```text
-O(number_of_sources × number_of_particles × number_of_receptors)
+SpritzMet:        O(G × T) / (M × C × A)
+SpritzGaussian:   O(R × S × T) / (M × C × A)
+SpritzParticles:  O(S × P × R × T) / (M × C × A)
+SpritzFirefront:  O(E × G × T) / (M × C × A)
 ```
 
-Since sources are partitioned, scaling is best when there are multiple sources
-with similar emission-weighted particle counts. Gridded 3D field output
-increases the receptor-distance checks by `nx × ny × number_of_field_z_levels`.
-For a single dominant source, the current source-partitioning schema provides
-limited speedup.
+Communication terms:
+
+```text
+SpritzMet:        halo_exchange + final gather/write
+SpritzGaussian:   final receptor gather; optional source-dimension reduction
+SpritzParticles:  receptor/grid total reduction
+SpritzFirefront:  ensemble statistic reduction
+```
+
+The scheduler should prefer decompositions that maximize arithmetic intensity and minimize communication. For Gaussian runs, scaling is best when receptor count is large relative to MPI ranks. For particles, source decomposition scales best with multiple similarly weighted sources; single dominant sources need particle-block decomposition for useful speedup.
 
 ## Practical recommendations
 
@@ -469,6 +511,17 @@ mpiexec -n 2 sprtz run examples/minimal.json \
   --parallel mpi
 ```
 
+Each module-level implementation should cover these test classes as the relevant execution paths mature:
+
+1. Serial baseline test.
+2. MPI equivalence test.
+3. Shared-memory equivalence test.
+4. GPU tolerance test.
+5. Mixed MPI plus shared-memory test.
+6. Mixed MPI plus GPU test.
+7. Deterministic seed and stable output ordering test.
+8. Small end-to-end workflow test.
+
 ## Current limitations
 
 The current implementation does not yet provide:
@@ -498,6 +551,14 @@ When adding a new parallelized module:
 
 - Message Passing Interface Forum. (1994). MPI: A message-passing interface standard. International Journal of Supercomputer Applications, 8(3-4), 159-416.
 - Gropp, W., Lusk, E., Doss, N., and Skjellum, A. (1996). A high-performance, portable implementation of the MPI message passing interface standard. Parallel Computing, 22(6), 789-828.
+- Dagum, L., and Menon, R. (1998). OpenMP: an industry-standard API for shared-memory programming. IEEE Computational Science and Engineering, 5(1), 46-55.
+- Nickolls, J., Buck, I., Garland, M., and Skadron, K. (2008). Scalable parallel programming with CUDA. Queue, 6(2), 40-53.
 - Owens, J. D., Houston, M., Luebke, D., Green, S., Stone, J. E., and Phillips, J. C. (2008). GPU computing. Proceedings of the IEEE, 96(5), 879-899. https://doi.org/10.1109/JPROC.2008.917757
+- Li, J., Liao, W.-k., Choudhary, A., Ross, R., Thakur, R., Gropp, W., Latham, R., Siegel, A., Gallagher, B., and Zingale, M. (2003). Parallel netCDF: A high-performance scientific I/O interface. Proceedings of the ACM/IEEE Supercomputing Conference.
+- Liao, W.-k., Choudhary, A., Coloma, K., Ward, L., Russell, E., Pundit, M., and Tideman, N. (2021). Supporting data compression in PnetCDF. Proceedings of the IEEE/ACM International Symposium on Cluster, Cloud and Internet Computing.
+- Sullivan, A. L. (2009). Wildland surface fire spread modelling, 1990-2007. 1: Physical and quasi-physical models. International Journal of Wildland Fire, 18(4), 349-368.
+- Sullivan, A. L. (2009). Wildland surface fire spread modelling, 1990-2007. 2: Empirical and quasi-empirical models. International Journal of Wildland Fire, 18(4), 369-386.
+- Mandel, J., Beezley, J. D., and Kochanski, A. K. (2011). Coupled atmosphere-wildland fire modeling with WRF-Fire. Geoscientific Model Development, 4, 591-610.
+- LeVeque, R. J. (1997). Wave propagation algorithms for multidimensional hyperbolic systems. Journal of Computational Physics, 131(2), 327-353.
 - Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
 - Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285

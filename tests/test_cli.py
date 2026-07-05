@@ -26,6 +26,31 @@ def test_run_cli_parallel_auto_fallback(tmp_path):
     assert (tmp_path / "concentration.nc").exists()
 
 
+def test_run_cli_accepts_hybrid_parallel_options(tmp_path):
+    assert (
+        main(
+            [
+                "run",
+                "examples/minimal.json",
+                "--output-dir",
+                str(tmp_path),
+                "--interchange",
+                "json",
+                "--thread-backend",
+                "threads",
+                "--threads-per-rank",
+                "2",
+                "--gpu-backend",
+                "numpy",
+                "--decomposition",
+                "receptors",
+            ]
+        )
+        == 0
+    )
+    assert (tmp_path / "concentration.csv").exists()
+
+
 def test_run_cli_output_interval(tmp_path):
     assert (
         main(

@@ -6,6 +6,8 @@ This document describes batch and SLURM execution of Sprtz workflows. It emphasi
 
 This guide shows how to submit Spritz modules on an HPC system with SLURM. The commands assume the package is installed in `.venv` and optional MPI dependencies are available.
 
+Sprtz's academic execution model is hierarchical: MPI ranks distribute global work, rank-local CPU workers subdivide each rank's work, and NumPy/CuPy arrays execute dense kernels. Use scheduler `cpus-per-task` for `--threads-per-rank`, and avoid BLAS/OpenMP oversubscription by setting those thread counts deliberately.
+
 ## Environment
 
 ```bash
@@ -85,6 +87,7 @@ mpiexec -n $SLURM_NTASKS sprtz-backward --config examples/backward_plume.json --
 ## Practical Notes
 
 - Use `--parallel mpi` when SLURM allocated multiple ranks.
+- Use `--thread-backend auto --threads-per-rank $SLURM_CPUS_PER_TASK` for hybrid CPU jobs.
 - Use `--gpu-backend cupy` only when CUDA/CuPy is guaranteed; otherwise use `auto`.
 - Keep output directories per job to avoid concurrent writes.
 - Run `sprtz doctor --require-mpi` on the target node before production jobs.
@@ -94,6 +97,9 @@ mpiexec -n $SLURM_NTASKS sprtz-backward --config examples/backward_plume.json --
 
 - Message Passing Interface Forum. (1994). MPI: A message-passing interface standard. International Journal of Supercomputer Applications, 8(3-4), 159-416.
 - Gropp, W., Lusk, E., Doss, N., and Skjellum, A. (1996). A high-performance, portable implementation of the MPI message passing interface standard. Parallel Computing, 22(6), 789-828.
+- Dagum, L., and Menon, R. (1998). OpenMP: an industry-standard API for shared-memory programming. IEEE Computational Science and Engineering, 5(1), 46-55.
+- Nickolls, J., Buck, I., Garland, M., and Skadron, K. (2008). Scalable parallel programming with CUDA. Queue, 6(2), 40-53.
 - Owens, J. D., Houston, M., Luebke, D., Green, S., Stone, J. E., and Phillips, J. C. (2008). GPU computing. Proceedings of the IEEE, 96(5), 879-899. https://doi.org/10.1109/JPROC.2008.917757
+- Li, J., Liao, W.-k., Choudhary, A., Ross, R., Thakur, R., Gropp, W., Latham, R., Siegel, A., Gallagher, B., and Zingale, M. (2003). Parallel netCDF: A high-performance scientific I/O interface. Proceedings of the ACM/IEEE Supercomputing Conference.
 - Wilson, G., Aruliah, D. A., Brown, C. T., Hong, N. P. C., Davis, M., Guy, R. T., Haddock, S. H. D., Huff, K. D., Mitchell, I. M., Plumbley, M. D., Waugh, B., White, E. P., and Wilson, P. (2014). Best practices for scientific computing. PLOS Biology, 12(1), e1001745. https://doi.org/10.1371/journal.pbio.1001745
 - Sandve, G. K., Nekrutenko, A., Taylor, J., and Hovig, E. (2013). Ten simple rules for reproducible computational research. PLOS Computational Biology, 9(10), e1003285. https://doi.org/10.1371/journal.pcbi.1003285
