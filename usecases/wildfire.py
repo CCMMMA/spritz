@@ -238,9 +238,17 @@ def build_wildfire_config(
     wind_from_direction_deg: float = 270.0,
     grid_cells: int = 101,
     grid_spacing_m: float = 100.0,
+    nx: int | None = None,
+    ny: int | None = None,
+    dx_m: float | None = None,
+    dy_m: float | None = None,
     field_z_levels: Any = None,
 ) -> dict[str, Any]:
     """Create a Spritz config for one or more arson/wildfire release events."""
+    grid_nx = int(grid_cells if nx is None else nx)
+    grid_ny = int(grid_cells if ny is None else ny)
+    grid_dx = float(grid_spacing_m if dx_m is None else dx_m)
+    grid_dy = float(grid_spacing_m if dy_m is None else dy_m)
     burn_lat = center_lat if burning_lat is None else burning_lat
     burn_lon = center_lon if burning_lon is None else burning_lon
     material = burning_material.lower()
@@ -270,8 +278,8 @@ def build_wildfire_config(
                 "emission_factor_g_m2": factor,
             }
         ]
-    x0 = -((grid_cells - 1) / 2.0) * grid_spacing_m
-    y0 = x0
+    x0 = -((grid_nx - 1) / 2.0) * grid_dx
+    y0 = -((grid_ny - 1) / 2.0) * grid_dy
     concentration_field_z_levels = list(
         parse_field_z_levels(DEFAULT_WILDFIRE_FIELD_Z_LEVELS if field_z_levels is None else field_z_levels)
     )
@@ -377,10 +385,10 @@ def build_wildfire_config(
             "note": "Screening use case; calibrate with fuel inventory and observations before operational decisions.",
         },
         "grid": {
-            "nx": grid_cells,
-            "ny": grid_cells,
-            "dx": grid_spacing_m,
-            "dy": grid_spacing_m,
+            "nx": grid_nx,
+            "ny": grid_ny,
+            "dx": grid_dx,
+            "dy": grid_dy,
             "x0": x0,
             "y0": y0,
             "projection": f"AEQD centered at {center_lat},{center_lon}",

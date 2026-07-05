@@ -389,7 +389,7 @@ def _concentration_field(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
         if np.isnan(values).any():
             return None
         payload[name] = values
-    if all("latitude" in row and "longitude" in row for row in selected):
+    if selected and "latitude" in selected[0] and "longitude" in selected[0]:
         latitude = np.full((len(ys), len(xs)), np.nan, dtype=float)
         longitude = np.full((len(ys), len(xs)), np.nan, dtype=float)
         seen: set[tuple[int, int]] = set()
@@ -400,8 +400,6 @@ def _concentration_field(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
             lat_value = float(row["latitude"])
             lon_value = float(row["longitude"])
             if key in seen:
-                if not (np.isclose(latitude[yi, xi], lat_value) and np.isclose(longitude[yi, xi], lon_value)):
-                    return payload
                 continue
             latitude[yi, xi] = lat_value
             longitude[yi, xi] = lon_value
@@ -410,7 +408,7 @@ def _concentration_field(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
             payload["latitude"] = latitude
             payload["longitude"] = longitude
     for row_name, payload_name in (("terrain_m", "surface_altitude"), ("land_cover", "land_cover")):
-        if all(row_name in row for row in selected):
+        if selected and row_name in selected[0]:
             values = np.full((len(ys), len(xs)), np.nan, dtype=float)
             seen: set[tuple[int, int]] = set()
             for row in selected:
@@ -419,8 +417,6 @@ def _concentration_field(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
                 key = (yi, xi)
                 value = float(row[row_name])
                 if key in seen:
-                    if not np.isclose(values[yi, xi], value):
-                        break
                     continue
                 values[yi, xi] = value
                 seen.add(key)
@@ -531,10 +527,17 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
             ds.createDimension("field_z", len(field["z"]))
             ds.createDimension("field_y", len(field["y"]))
             ds.createDimension("field_x", len(field["x"]))
+            z_reference = str(field.get("z_reference", "height_above_sea_level"))
+            ds.spritz_concentration_field_z_reference = z_reference
+            z_long_name = (
+                "model grid altitude above mean sea level"
+                if z_reference == "height_above_sea_level"
+                else "model grid height above local ground"
+            )
             for name, values, units, long_name in [
                 ("field_x", field["x"], "m", "model grid x coordinate"),
                 ("field_y", field["y"], "m", "model grid y coordinate"),
-                ("field_z", field["z"], "m", "model grid height above local ground"),
+                ("field_z", field["z"], "m", z_long_name),
             ]:
                 var = ds.createVariable(name, "f8", (name,), zlib=True)
                 var.long_name = long_name
@@ -545,7 +548,14 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                     annotate_local_y(var)
                     var.long_name = long_name
                 else:
-                    annotate_height(var, long_name=long_name)
+                    if z_reference == "height_above_sea_level":
+                        var.standard_name = "altitude"
+                        var.units = units
+                        var.positive = "up"
+                        var.axis = "Z"
+                        var.long_name = long_name
+                    else:
+                        annotate_height(var, long_name=long_name)
                 var[:] = np.asarray(values, dtype=float)
             if "latitude" in field and "longitude" in field:
                 for name, source_name, units, long_name, standard_name in [
@@ -579,10 +589,16 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
                     if "latitude" in field and "longitude" in field
                     else "field_z field_y field_x"
                 )
-                altitude[:, :, :] = (
-                    np.asarray(field["z"], dtype=float)[:, np.newaxis, np.newaxis]
-                    + np.asarray(field["surface_altitude"], dtype=float)[np.newaxis, :, :]
-                )
+                if z_reference == "height_above_sea_level":
+                    altitude[:, :, :] = np.broadcast_to(
+                        np.asarray(field["z"], dtype=float)[:, np.newaxis, np.newaxis],
+                        (len(field["z"]), len(field["y"]), len(field["x"])),
+                    )
+                else:
+                    altitude[:, :, :] = (
+                        np.asarray(field["z"], dtype=float)[:, np.newaxis, np.newaxis]
+                        + np.asarray(field["surface_altitude"], dtype=float)[np.newaxis, :, :]
+                    )
             if "land_cover" in field:
                 var = ds.createVariable("land_cover", "i4", ("field_y", "field_x"), zlib=True)
                 var.long_name = "categorical land-cover class"

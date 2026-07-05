@@ -76,9 +76,13 @@ def test_concentration_netcdf_writes_field_lat_lon_coordinates(tmp_path):
         assert ds.variables["field_latitude"].dimensions == ("field_y", "field_x")
         assert ds.variables["field_longitude"].dimensions == ("field_y", "field_x")
         assert ds.variables["field_z"].axis == "Z"
+        assert ds.variables["field_z"].standard_name == "altitude"
+        assert ds.variables["field_z"].long_name == "model grid altitude above mean sea level"
+        assert ds.spritz_concentration_field_z_reference == "height_above_sea_level"
         assert ds.variables["surface_altitude"].standard_name == "surface_altitude"
         assert ds.variables["field_altitude"].standard_name == "altitude"
         assert ds.variables["field_altitude"].dimensions == ("field_z", "field_y", "field_x")
+        np.testing.assert_allclose(ds.variables["field_altitude"][:, 0, 0], ds.variables["field_z"][:])
         assert "field_altitude" in ds.variables["concentration_field"].coordinates
         assert ds.variables["concentration_field"].coordinates.endswith("field_latitude field_longitude")
 

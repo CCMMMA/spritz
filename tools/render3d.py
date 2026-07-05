@@ -264,6 +264,10 @@ def _time_label(ds: Any, *, time_index: int) -> str | None:
 
 
 def _z_reference(ds: Any, z_dimension: str | None) -> str:
+    for attr in ("spritz_concentration_field_z_reference", "spritzmet_level_meters_kind"):
+        metadata = str(getattr(ds, attr, "")).lower()
+        if metadata in {"height_above_sea_level", "height_above_ground"}:
+            return metadata
     if z_dimension is not None:
         variable = ds.variables.get(z_dimension)
         if variable is not None:
@@ -275,9 +279,6 @@ def _z_reference(ds: Any, z_dimension: str | None) -> str:
                 return "height_above_sea_level"
             if "local ground" in text or "above ground" in text:
                 return "height_above_ground"
-    metadata = str(getattr(ds, "spritzmet_level_meters_kind", "")).lower()
-    if metadata in {"height_above_sea_level", "height_above_ground"}:
-        return metadata
     return "height_above_ground"
 
 
@@ -468,7 +469,7 @@ def _terrain_facecolors(elevation_m: np.ndarray, plt: Any) -> np.ndarray:
         high = low + 1.0
     normalized = Normalize(vmin=low, vmax=high)(np.where(np.isfinite(elevation), elevation, low))
     colors = plt.get_cmap("terrain")(normalized)
-    colors[..., 3] = 0.96
+    colors[..., 3] = 0.78
     return np.asarray(colors, dtype=float)
 
 
@@ -533,7 +534,7 @@ def _vertical_limits(field: VolumeField, terrain_sample: np.ndarray) -> tuple[fl
     if finite_z.size == 0:
         return ground_min - 1.0, ground_max + 1.0
     if field.z_reference == "height_above_sea_level":
-        low = min(ground_min, float(np.nanmin(finite_z)))
+        low = max(0.0, min(ground_min, float(np.nanmin(finite_z))))
         high = max(ground_max, float(np.nanmax(finite_z)))
     else:
         low = ground_min
@@ -542,6 +543,8 @@ def _vertical_limits(field: VolumeField, terrain_sample: np.ndarray) -> tuple[fl
         pad = max(abs(low) * 0.01, 1.0)
         return low - pad, high + pad
     pad = max((high - low) * 0.03, 1.0)
+    if field.z_reference == "height_above_sea_level":
+        return low, high + pad
     return low - pad, high + pad
 
 
@@ -612,16 +615,42 @@ def _ground_clearance(z_limits: tuple[float, float]) -> float:
     return max((z_limits[1] - z_limits[0]) * 0.003, 0.5)
 
 
-def _apply_vertical_axis(ax: Any, z_limits: tuple[float, float], vertical_exaggeration: float) -> None:
+def _vertical_ticks(field: VolumeField, z_limits: tuple[float, float], max_ticks: int = 6) -> np.ndarray:
+    finite_z = np.asarray(field.z_axis[np.isfinite(field.z_axis)], dtype=float)
+    if field.z_reference == "height_above_sea_level" and finite_z.size:
+        in_range = finite_z[(finite_z >= z_limits[0]) & (finite_z <= z_limits[1])]
+        if in_range.size:
+            if in_range.size <= max_ticks:
+                return in_range
+            minimum_spacing = max((z_limits[1] - z_limits[0]) / max(max_ticks - 1, 1) * 0.75, 1.0)
+            chosen = [float(in_range[0])]
+            for value in in_range[1:-1]:
+                if float(value) - chosen[-1] >= minimum_spacing:
+                    chosen.append(float(value))
+                if len(chosen) >= max_ticks - 1:
+                    break
+            if in_range[-1] - chosen[-1] >= minimum_spacing * 0.5:
+                chosen.append(float(in_range[-1]))
+            elif len(chosen) == 1:
+                chosen.append(float(in_range[-1]))
+            return np.asarray(chosen[:max_ticks], dtype=float)
+    return np.linspace(z_limits[0], z_limits[1], max_ticks)
+
+
+def _apply_vertical_axis(ax: Any, field: VolumeField, z_limits: tuple[float, float], vertical_exaggeration: float) -> None:
     display_limits = _display_z_limits(z_limits, vertical_exaggeration)
     ax.set_zlim(*display_limits)
+    label = (
+        "altitude above mean sea level [m]"
+        if field.z_reference == "height_above_sea_level"
+        else "elevation / plume height above ground [m]"
+    )
     if vertical_exaggeration > 1.0:
-        ticks = np.linspace(z_limits[0], z_limits[1], 6)
-        ax.set_zticks(_scale_z(ticks, z_limits[0], vertical_exaggeration))
-        ax.set_zticklabels([_format_axis_tick(tick) for tick in ticks])
-        ax.set_zlabel(f"elevation / plume height [m] (x{vertical_exaggeration:g})", labelpad=12.0)
-    else:
-        ax.set_zlabel("elevation / plume height [m]", labelpad=12.0)
+        label = f"{label} (x{vertical_exaggeration:g})"
+    ticks = _vertical_ticks(field, z_limits)
+    ax.set_zticks(_scale_z(ticks, z_limits[0], vertical_exaggeration))
+    ax.set_zticklabels([_format_axis_tick(tick) for tick in ticks])
+    ax.set_zlabel(label, labelpad=12.0)
 
 
 def _nanmax_or_nan(values: np.ndarray, axis: int) -> np.ndarray:
@@ -684,6 +713,7 @@ def plot_volume(
         )
     else:
         terrain_colors = _terrain_facecolors(terrain_sample, plt)
+    terrain_colors[..., 3] = np.minimum(terrain_colors[..., 3], 0.78)
     ax.plot_surface(
         xx,
         yy,
@@ -692,7 +722,7 @@ def plot_volume(
         linewidth=0.0,
         antialiased=True,
         shade=True,
-        alpha=0.96,
+        alpha=0.78,
         zorder=1,
     )
     if mode == "voxel":
@@ -741,7 +771,7 @@ def plot_volume(
     mappable.set_array([])
     fig.colorbar(mappable, ax=ax, shrink=0.72, pad=0.16, label=field.label)
     _apply_geographic_horizontal_ticks(ax, field, terrain_field)
-    _apply_vertical_axis(ax, z_limits, vertical_exaggeration)
+    _apply_vertical_axis(ax, field, z_limits, vertical_exaggeration)
     ax.view_init(elev=elevation, azim=azimuth)
     ax.set_title(title or field.title, fontsize=11)
     out = Path(output_path)

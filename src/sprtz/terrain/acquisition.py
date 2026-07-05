@@ -90,6 +90,7 @@ def _local_provider(kind: str, spec: dict[str, Any]) -> LocalRasterProvider:
         path=path,
         kind="dem" if kind == "dem" else "landcover",
         dataset=str(spec.get("dataset", "local-raster")),
+        resolution=None if spec.get("resolution") is None else str(spec["resolution"]),
         crs=str(spec.get("crs", "LOCAL")),
         x_spacing_m=float(source_dx),
         y_spacing_m=float(source_dy),

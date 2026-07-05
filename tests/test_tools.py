@@ -790,6 +790,32 @@ def test_render3d_sea_level_heights_mask_below_dem(tmp_path: Path) -> None:
     assert altitude[1, 0, 0] == 250.0
 
 
+def test_render3d_uses_concentration_field_asl_reference(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "concentration_asl.nc"
+    with Dataset(path, "w") as ds:
+        ds.spritz_concentration_field_z_reference = "height_above_sea_level"
+        ds.createDimension("time", 1)
+        ds.createDimension("field_z", 3)
+        ds.createDimension("field_y", 1)
+        ds.createDimension("field_x", 1)
+        z = ds.createVariable("field_z", "f8", ("field_z",))
+        z.units = "m"
+        z.long_name = "model grid altitude above mean sea level"
+        z[:] = [50.0, 150.0, 300.0]
+        concentration = ds.createVariable("concentration_field", "f8", ("time", "field_z", "field_y", "field_x"))
+        concentration[:, :, :, :] = np.ones((1, 3, 1, 1), dtype=float)
+
+    render3d = load_render3d_tool()
+    field = render3d.read_volume_field(path, variable_name="concentration_field", time_index=0)
+    z_limits = render3d._vertical_limits(field, np.asarray([[125.0]], dtype=float))
+
+    assert field.z_reference == "height_above_sea_level"
+    np.testing.assert_allclose(render3d._vertical_ticks(field, z_limits), [50.0, 150.0, 300.0])
+
+
 def test_render3d_vertical_exaggeration_scales_display_only() -> None:
     render3d = load_render3d_tool()
 

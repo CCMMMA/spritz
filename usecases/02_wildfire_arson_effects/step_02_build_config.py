@@ -31,6 +31,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--center-lat", type=float, required=True)
     parser.add_argument("--center-lon", type=float, required=True)
+    parser.add_argument("--nx", type=int, default=None)
+    parser.add_argument("--ny", type=int, default=None)
+    parser.add_argument("--dx", type=float, default=None)
+    parser.add_argument("--dy", type=float, default=None)
     parser.add_argument("--temperature-k", type=float, default=None)
     parser.add_argument("--material", choices=sorted(BURNING_MATERIALS), default="generic")
     parser.add_argument("--start", default=None, help="UTC start datetime as YYYYMMDDZhhmm")
@@ -80,6 +84,10 @@ def main(argv: list[str] | None = None) -> int:
         precipitation_rate_mm_h=args.precipitation_rate_mm_h,
         wind_speed_m_s=args.wind_speed_m_s,
         wind_from_direction_deg=args.wind_from_direction_deg,
+        nx=args.nx,
+        ny=args.ny,
+        dx_m=args.dx,
+        dy_m=args.dy,
         field_z_levels=field_z_levels,
     )
     return 0

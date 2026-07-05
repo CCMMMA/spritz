@@ -1,7 +1,18 @@
 from __future__ import annotations
 
 from sprtz.config import from_mapping, load_config
-from sprtz.core.physics import depletion_factor, dispersion_parameters, effective_release_height, gaussian_puff
+import numpy as np
+
+from sprtz.core.physics import (
+    depletion_factor,
+    dispersion_parameters,
+    effective_release_height,
+    exponential_loss_factor,
+    gaussian_puff,
+    met_wind_from_uv,
+    random_walk_std_from_k,
+    wind_speed,
+)
 from sprtz.models import spritzmet, spritz
 
 
@@ -26,6 +37,14 @@ def test_deposition_and_decay_reduce_mass():
     no_loss = depletion_factor(travel_time_s=1000.0)
     lossy = depletion_factor(travel_time_s=1000.0, decay_rate_s=0.001, deposition_velocity_m_s=0.01, mixing_height_m=500.0)
     assert 0.0 < lossy < no_loss <= 1.0
+
+
+def test_wind_and_loss_shared_physics_conventions():
+    assert wind_speed(3.0, 4.0) == 5.0
+    assert float(met_wind_from_uv(1.0, 0.0)) == 270.0
+    assert float(met_wind_from_uv(0.0, -1.0)) == 0.0
+    assert np.isclose(random_walk_std_from_k(10.0, 5.0), 10.0)
+    assert np.isclose(exponential_loss_factor(0.01, 100.0), np.exp(-1.0))
 
 
 def test_plume_rise_raises_effective_height():

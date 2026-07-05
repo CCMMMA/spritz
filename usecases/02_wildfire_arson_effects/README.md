@@ -57,8 +57,8 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_wildfire_case.tif
 ```
 
-These bounds use a 5 km geodetic half-width around `40.827, 14.518`, matching
-the edge nodes of a `101 x 101` grid with `100 m` spacing.
+These bounds use a 10 km geodetic half-width around `40.827, 14.518`, matching
+the edge nodes of a `201 x 201` grid with `100 m` spacing.
 
 Use the downloaded DEM and LC100 land-cover rasters through `sprtz-terrain
 fetch` with the same domain settings used by the wildfire run. The wind
@@ -125,9 +125,10 @@ defines both the local projection origin and the fire location. With
 `x=-5000..5000 m`, `y=-5000..5000 m`, and field cell `G50_50` is the center at
 `x=0, y=0`, mapping back to `40.827 N, 14.518 E`. The particle and Gaussian
 gridded concentration outputs both use this same center and coordinate contract.
-Use `--field-z-levels` to write one or more concentration-field heights in
-metres above local ground; multiple levels enable vertical concentration
-profile plots for both Gaussian and particle outputs.
+Use `--field-z-levels` to write one or more concentration-field altitudes in
+metres above mean sea level; multiple levels enable vertical concentration
+profile plots for both Gaussian and particle outputs. Source and receptor
+release heights remain heights above local ground.
 
 ## Step 3: Run the model
 
@@ -285,7 +286,7 @@ python tools/render3d.py data/output/wildfire_case/model_compare/particles/conce
   --terrain data/output/wildfire_case/geo.nc \
   --mode voxel \
   --ground-color terrain \
-  --vertical-exaggeration 2 \
+  --vertical-exaggeration 3 \
   --output data/output/wildfire_case/model_compare/particles/particles_concentration_3d_animation.gif
 
 python tools/render3d.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
@@ -296,7 +297,7 @@ python tools/render3d.py data/output/wildfire_case/model_compare/gaussian/concen
   --terrain data/output/wildfire_case/geo.nc \
   --mode voxel \
   --ground-color terrain \
-  --vertical-exaggeration 2 \
+  --vertical-exaggeration 3 \
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_3d_animation.gif
 ```
 
@@ -328,8 +329,8 @@ Step 2 also writes time-dependent plume defaults under `run`:
   different interval is inferred or supplied;
 - `concentration_output`: `both`, so receptor values and gridded plume fields
   are written together;
-- `field_z_levels`: plume-aware metres-above-ground levels from 1.5 m through
-  2000 m by default, or explicit levels from `--field-z-levels`;
+- `field_z_levels`: plume-field altitudes above mean sea level from 1.5 m
+  through 2000 m by default, or explicit levels from `--field-z-levels`;
 - particle defaults: `particles=10000`, `particle_sigma_h=175 m`,
   `particle_sigma_z=150 m`, and `particle_advection_steps=12`.
 - Gaussian puff initialization reuses the configured horizontal and vertical

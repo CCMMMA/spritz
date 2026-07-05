@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sprtz.cli import sprtz_terrain_main
+from sprtz.cli import _provider_spec, sprtz_terrain_main
 from sprtz.io.jsonio import read_json
 from sprtz.terrain.acquisition import build_product, run_acquisition
 from sprtz.terrain.cache import cache_key
@@ -321,6 +321,21 @@ def test_sprtz_terrain_fetch_cli_accepts_lc100_mapping(tmp_path: Path) -> None:
 
     data = read_json(output)
     assert set(np.unique(np.asarray(data["landuse_class"], dtype=int))) == {1}
+
+
+def test_local_copernicus_paths_preserve_source_resolution(tmp_path: Path) -> None:
+    dem_path = tmp_path / "cop30_wildfire_case.tif"
+    lc_path = tmp_path / "lc100_wildfire_case.tif"
+    dem_path.write_bytes(b"placeholder")
+    lc_path.write_bytes(b"placeholder")
+
+    dem_spec = _provider_spec(str(dem_path), kind="dem")
+    lc_spec = _provider_spec(str(lc_path), kind="landuse")
+
+    assert dem_spec["dataset"] == "copernicus-cop30"
+    assert dem_spec["resolution"] == "30m"
+    assert lc_spec["dataset"] == "copernicus-lc100"
+    assert lc_spec["resolution"] == "100m"
 
 
 def test_workflow_runs_configured_auto_terrain(tmp_path: Path) -> None:

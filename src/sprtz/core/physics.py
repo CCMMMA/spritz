@@ -4,12 +4,34 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
+
 Stability = Literal["A", "B", "C", "D", "E", "F"]
 
 
 def wind_components(speed: float, direction_degrees_from: float) -> tuple[float, float]:
     theta = math.radians(270.0 - direction_degrees_from)
     return speed * math.cos(theta), speed * math.sin(theta)
+
+
+def met_wind_from_uv(u: np.ndarray | float, v: np.ndarray | float) -> np.ndarray | float:
+    """Meteorological wind direction in degrees, from which wind blows."""
+    return (270.0 - np.degrees(np.arctan2(v, u))) % 360.0
+
+
+def wind_speed(u: np.ndarray | float, v: np.ndarray | float) -> np.ndarray | float:
+    """Horizontal wind speed from eastward and northward components."""
+    return np.hypot(u, v)
+
+
+def random_walk_std_from_k(k: np.ndarray | float, dt: np.ndarray | float) -> np.ndarray | float:
+    """Standard deviation for a 1-D Fickian random walk: sqrt(2 K dt)."""
+    return np.sqrt(np.maximum(0.0, 2.0 * np.asarray(k, dtype=float) * np.asarray(dt, dtype=float)))
+
+
+def exponential_loss_factor(lambda_total: np.ndarray | float, dt: np.ndarray | float) -> np.ndarray | float:
+    """Mass survival factor for first-order loss over dt seconds."""
+    return np.exp(-np.maximum(0.0, lambda_total) * np.asarray(dt, dtype=float))
 
 
 @dataclass(frozen=True)
@@ -77,7 +99,7 @@ def dispersion_parameters(
     finite_y = max(source_width, source_length) / math.sqrt(12.0) if max(source_width, source_length) > 0 else 0.0
     finite_x = source_length / math.sqrt(12.0) if source_length > 0 else finite_y
     finite_z = source_height / math.sqrt(12.0) if source_height > 0 else 0.0
-    turbulent_x = sy if elapsed_s is None else max(0.15 * sy, 0.03 * x, 0.1 * math.sqrt(max(elapsed_s, 1.0)))
+    turbulent_x = sy if elapsed_s is None else max(sy, 0.10 * x, 0.1 * math.sqrt(max(elapsed_s, 1.0)))
     return DispersionParameters(
         sigma_x=_positive(math.hypot(turbulent_x, finite_x)),
         sigma_y=_positive(math.hypot(sy, initial_sigma_y, finite_y)),

@@ -33,6 +33,7 @@ class LocalRasterProvider:
     crs: str = "LOCAL"
     x_spacing_m: float = 100.0
     y_spacing_m: float = 100.0
+    resolution: str | None = None
     nodata: float | None = None
     variable: str | None = None
     name: str = "local"
@@ -53,7 +54,7 @@ class LocalRasterProvider:
             source=str(path),
             provider=self.name,
             dataset=self.dataset,
-            resolution=f"{self.x_spacing_m:g}m",
+            resolution=self.resolution or f"{self.x_spacing_m:g}m",
             crs=str(metadata.get("crs", self.crs)),
             x_spacing_m=float(metadata.get("x_spacing_m", self.x_spacing_m)),
             y_spacing_m=float(metadata.get("y_spacing_m", self.y_spacing_m)),
