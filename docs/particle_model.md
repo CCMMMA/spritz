@@ -26,7 +26,27 @@ JSON can select particles without a CLI override:
 }
 ```
 
-`sprtz-particles` remains as a compatibility alias for older scripts and forces the same particle backend. The particle backend is deterministic for a fixed seed. Relevant `run` keys are `particles`, `seed`, `particle_duration_s`, `particle_advection_steps`, `particle_sigma_h`, `particle_sigma_z`, and `particle_receptor_radius`.
+`sprtz-particles` remains as a compatibility alias for older scripts and forces the same particle backend. The particle backend is deterministic for a fixed seed. Relevant `run` keys are `particles`, `seed`, `particle_duration_s`, `particle_advection_steps`, `particle_kx_m2_s`, `particle_ky_m2_s`, `particle_kz_m2_s`, `particle_sigma_h`, `particle_sigma_z`, `particle_receptor_radius`, `particle_vertical_boundary`, `particle_top_boundary`, and `particle_top_m`.
+
+Horizontal and vertical turbulent diffusion use a Fickian random walk in each
+advection substep:
+
+```text
+dx_random = sqrt(2 Kx dt) N(0, 1)
+dy_random = sqrt(2 Ky dt) N(0, 1)
+dz_random = sqrt(2 Kz dt) N(0, 1)
+```
+
+This makes ensemble variance grow linearly with elapsed time instead of with
+the number of numerical substeps. If explicit diffusivity keys are absent,
+legacy `particle_sigma_h` is interpreted as a target one-dimensional spread
+over `particle_duration_s`, not as a per-step displacement. Vertical boundaries
+are explicit: `particle_vertical_boundary = reflect` mirrors particles above
+ground, while `absorb_deposit` removes their airborne mass at ground contact.
+`particle_top_boundary = reflect` mirrors particles below `particle_top_m`;
+`open` removes mass that leaves the model top. Decay, wet scavenging, dry
+deposition, and settling reduce particle weights with first-order exponential
+loss factors, so airborne mass remains non-negative.
 
 The particle backend also honors the shared Spritz run controls for source
 activity windows, firefighter emission reduction, precipitation washout, and

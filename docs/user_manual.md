@@ -387,7 +387,7 @@ To request a model-grid concentration field, set `run.concentration_output`.
 ```
 
 `field_z_levels` may also be generated from a documented distribution. The
-exponential preset below creates 21 heights in metres above ground using
+exponential preset below creates 21 plume-field altitudes in metres above mean sea level using
 `10 * exp(level_index)` for `level_index` values `0..20`.
 
 ```json
@@ -407,7 +407,7 @@ Accepted `concentration_output` values:
 
 - `receptors`: sample explicit receptors, or grid cells at `z=0` if no
   receptors are supplied.
-- `grid`: sample every model-grid cell at every `field_z_levels` height.
+- `grid`: sample every model-grid cell at every `field_z_levels` altitude.
 - `both`: sample explicit receptors and the model-grid field.
 
 When the rows form a complete grid, NetCDF-CF output also includes:
@@ -492,10 +492,11 @@ Use `tools/render3d.py` for static or animated three-dimensional surface and
 voxel views of compatible gridded volume variables. It uses all vertical levels
 by default. With `--terrain geo.nc`, it offsets height-above-ground plume levels
 by the local DEM, masks height-above-sea-level plume levels below the DEM, and
-draws the ground with a terrain elevation color scale unless
-`--ground-color land-cover` is selected. Use `--vertical-exaggeration N` with
-`N >= 1` to exaggerate vertical relief in the display; longitude and latitude
-are used for 3-D horizontal tick labels when available.
+uses ASL model levels as vertical ticks. It draws the ground with a terrain
+elevation color scale unless `--ground-color land-cover` is selected. Use
+`--vertical-exaggeration N` with `N >= 1` to exaggerate vertical relief in the
+display; longitude and latitude are used for 3-D horizontal tick labels when
+available.
 
 ## Terrain And GEO Products
 
@@ -638,8 +639,8 @@ backend values in JSON or CLI.
 `run.concentration_output must be receptors, grid, or both`: check the
 field-output mode spelling.
 
-`run.field_z_levels must be non-negative`: vertical field levels are heights
-above local ground in meters.
+`run.field_z_levels must be non-negative`: vertical field levels are altitudes
+above mean sea level in metres.
 
 No true NetCDF file was produced: install `netCDF4` with `python -m pip install
 -e .[netcdf]`. Without it, Spritz writes JSON fallback payloads.

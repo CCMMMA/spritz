@@ -88,6 +88,13 @@ Run-level numerical keys:
 Use `backend = gaussian` or `backend = gauss` for the Gaussian Spritz backend
 and `backend = particles` for the Lagrangian particle backend. Use
 `numerical_mode = plume` to reproduce the older steady Gaussian screening pathway.
+Both dispersion backends use eastward/northward wind components directly for
+advection; meteorological wind direction remains a diagnostic "from" direction.
+Shared first-order losses are applied as `exp(-lambda dt)`. The particle
+backend uses Fickian random-walk increments `sqrt(2 K dt) N(0,1)` for each
+coordinate, with constant diffusivity keys `particle_kx_m2_s`,
+`particle_ky_m2_s`, and `particle_kz_m2_s` available for idealized validation
+and screening runs.
 Omit `output_interval_s` to keep the legacy single output at `time=0`. When it
 is set, Spritz emits concentration/deposition rows at that interval, independent
 of the meteorological input cadence. Puff-mode time-resolved output samples the
@@ -96,6 +103,15 @@ active wildfire sources as continuous output-window emissions by averaging
 Gaussian puffs over release ages in the output window. The optional
 `gaussian_puff_samples` run key controls that clean-room quadrature count
 (`6` by default); plume mode remains steady at each requested output time.
+For gridded puff output, Spritz evaluates the continuous source as a
+CALPUFF-inspired ensemble of finite-mass puffs released uniformly across the
+output or averaging window. Each puff center is advanced in the local `x,y`
+grid using the sampled SpritzMet wind, plume rise and depletion are evaluated
+from puff age, and the full `field_y,field_x` plane is accumulated with a
+vectorized Gaussian kernel. Longitudinal spread is bounded by the lateral
+spread and a fraction of travel distance so time-integrated puffs form a
+resolved plume footprint on practical grid spacings instead of isolated
+single-cell hits.
 `gaussian_initial_sigma_h` and `gaussian_initial_sigma_z` add explicit initial
 horizontal and vertical puff spread in metres, combined in quadrature with
 Pasquill-Gifford and finite-source spreads. When those Gaussian-specific keys
@@ -173,7 +189,7 @@ wind and precipitation adjustments.
 
 - `receptors` uses the named receptor list, or the model grid at `z=0` when no
   receptors are supplied.
-- `grid` samples every model-grid cell at every `field_z_levels` height and
+- `grid` samples every model-grid cell at every `field_z_levels` altitude and
   writes `concentration_field(time, field_z, field_y, field_x)` in NetCDF-CF.
 - `both` keeps named receptors and also writes the model-grid field.
 

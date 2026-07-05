@@ -46,8 +46,10 @@ New module-to-module exchange prefers NetCDF-CF:
   model-grid 3D field when explicit receptors are also present.
 - Gaussian and particle gridded outputs use the same coordinate contract:
   `time(time)`, `field_z(field_z)`, `field_y(field_y)`, and
-  `field_x(field_x)`. Use case 02 validates those axes before writing
-  particle/Gaussian comparison metrics. When `metadata.center_lat` and
+  `field_x(field_x)`. `field_z` is a CF altitude coordinate in metres above
+  mean sea level for gridded concentration fields; source/receptor release
+  heights remain above local ground. Use case 02 validates those axes before
+  writing particle/Gaussian comparison metrics. When `metadata.center_lat` and
   `metadata.center_lon` are present, the receptor table rows that back the
   gridded field also include WGS84 `latitude` and `longitude`, so the local
   center cell can be audited against the configured geographic center.

@@ -140,10 +140,12 @@ colored with a terrain elevation scale by default; use
 `--ground-color land-cover` to color it from `land_cover` or `landuse_class`
 instead. Plume and other volume fields are rendered above that ground surface,
 so height-above-ground vertical coordinates are offset by the local DEM and
-height-above-sea-level coordinates below the DEM are masked. Static renders use
-all vertical levels and extract either a threshold surface or a sparse voxel
-view. When longitude/latitude axes are available, the 3-D horizontal tick labels
-show only WGS84 longitude and latitude.
+height-above-sea-level coordinates below the DEM are masked. For ASL products,
+the vertical axis ticks are selected from the model `z`/`field_z` levels and
+shown as metres above mean sea level. Static renders use all vertical levels and
+extract either a threshold surface or a sparse voxel view. When
+longitude/latitude axes are available, the 3-D horizontal tick labels show only
+WGS84 longitude and latitude.
 
 ```bash
 MPLBACKEND=Agg python tools/render3d.py \
