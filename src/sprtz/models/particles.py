@@ -27,6 +27,8 @@ from sprtz.models.spritz import (
     sample_datetime,
     terrain_fields_for_grid,
     _terrain_row_fields_for_receptor,
+    _source_ground_altitude_m,
+    _source_release_height_agl_m,
     WindSampler,
     write_csv,
 )
@@ -110,6 +112,8 @@ def _wind(meteo: dict[str, Any]) -> tuple[float, float]:
 def _particle_effective_release_heights(
     src: Any,
     *,
+    source_ground_asl: float | None = None,
+    release_height_agl: float | None = None,
     wind_speed: float,
     downwind_distances: np.ndarray,
     ambient_temperature: float,
@@ -132,11 +136,13 @@ def _particle_effective_release_heights(
     momentum = max(float(src.exit_velocity), 0.0) * diameter / u
     rise = np.maximum(buoyant_rise, 3.0 * momentum)
     penalty = (
-        stack_tip_downwash(float(src.stack_height), diameter, float(src.exit_velocity), u)
+        stack_tip_downwash(float(release_height_agl if release_height_agl is not None else src.stack_height), diameter, float(src.exit_velocity), u)
         if downwash
         else 0.0
     )
-    return np.maximum(float(src.z) + float(src.stack_height) + rise - penalty, 0.0)
+    ground = float(src.z if source_ground_asl is None else source_ground_asl)
+    release = float(src.stack_height if release_height_agl is None else release_height_agl)
+    return np.maximum(ground + release + rise - penalty, 0.0)
 
 
 def simulate_particles(
@@ -192,6 +198,7 @@ def simulate_particles(
     sampled_terrain = terrain_fields or {}
     point_receptors = tuple(rec for rec in receptors if rec.id not in field_ids)
     grid = Grid(**asdict(config.grid))
+    terrain_m = np.asarray(sampled_terrain.get("terrain_m", np.zeros((grid.ny, grid.nx), dtype=float)), dtype=float)
     wind_sampler = WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy)
     x_edges = np.concatenate(
         (
@@ -225,6 +232,8 @@ def simulate_particles(
         for source_index, src in local_sources:
             if not _source_active(config, src, sample_dt):
                 continue
+            source_ground_asl = _source_ground_altitude_m(src, sampled_terrain, grid)
+            release_height_agl = _source_release_height_agl_m(src)
             seed_i = base_seed + source_index * 1000003 + int(round(float(time_value) * 10.0))
             rng = np.random.default_rng(seed_i)
             count = max(1, int(round(n_particles * src.emission_rate / total_emission)))
@@ -233,12 +242,12 @@ def simulate_particles(
                 travel = grng.uniform(0.0, sample_window, count)
                 px = xp.full(count, src.x, dtype=float)
                 py = xp.full(count, src.y, dtype=float)
-                pz = src.z + src.stack_height + grng.normal(0.0, sigma_z, count)
+                pz = source_ground_asl + release_height_agl + grng.normal(0.0, sigma_z, count)
             else:
                 travel = rng.uniform(0.0, sample_window, count)
                 px = np.full(count, src.x, dtype=float)
                 py = np.full(count, src.y, dtype=float)
-                pz = src.z + src.stack_height + rng.normal(0.0, sigma_z, count)
+                pz = source_ground_asl + release_height_agl + rng.normal(0.0, sigma_z, count)
             if src.width > 0 or src.length > 0:
                 if gpu.enabled:
                     px += grng.uniform(-0.5 * src.length, 0.5 * src.length, count)
@@ -257,19 +266,21 @@ def simulate_particles(
             plume_u, plume_v, plume_speed = wind_sampler.vector(
                 src.x,
                 src.y,
-                max(src.z + src.stack_height, 0.0),
+                max(source_ground_asl + release_height_agl, 0.0),
                 max(float(time_value), 0.0),
             )
             del plume_u, plume_v
             plume_distances = np.maximum(plume_speed * np.maximum(travel_np, 1.0), 1.0)
             plume_heights = _particle_effective_release_heights(
                 src,
+                source_ground_asl=source_ground_asl,
+                release_height_agl=release_height_agl,
                 wind_speed=plume_speed,
                 downwind_distances=plume_distances,
                 ambient_temperature=ambient_temperature,
                 downwash=bool(config.run.get("stack_tip_downwash", True)),
             )
-            pz_np += plume_heights - (src.z + src.stack_height)
+            pz_np += plume_heights - (source_ground_asl + release_height_agl)
             boundary_weights = np.ones(count, dtype=float)
             for step in range(advection_steps):
                 current_time = release_time + (step + 0.5) * step_dt
@@ -326,6 +337,7 @@ def simulate_particles(
                         weights=weights_np * vertical_weight,
                     )
                     conc_grid = mass_grid * particle_mass / cell_volume * firefighter_factor
+                    conc_grid = np.where(float(level) >= terrain_m, conc_grid, 0.0)
                     for iy in range(grid.ny):
                         for ix in range(grid.nx):
                             rec_id = f"G{iy}_{ix}" if len(field_levels) == 1 else f"G{level_index}_{iy}_{ix}"

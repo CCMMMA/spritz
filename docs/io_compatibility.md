@@ -134,6 +134,11 @@ first `z` level is above the surface, dispersion sampling inserts that
 diagnostic 10 m above-ground wind as the lower boundary. The firefront module
 should consume the near-surface diagnostic level, preferring `U10M/V10M` when
 present and otherwise interpolating from the lowest physically valid `z` level.
+For terrain-aware dispersion, source `height_agl_m` is converted to absolute
+release altitude by adding DEM elevation at the source. Gridded concentration
+`field_z` follows the SpritzMet vertical reference; WRF-downscaled concentration
+outputs therefore store `field_z` as altitude above mean sea level and zero any
+cell whose ASL level lies below the local DEM.
 Binary `CALMET.DAT` and CALPUFF-style concentration outputs should be generated
 only as exports from these canonical representations so all modules see the
 same horizontal, temporal, and vertical semantics.

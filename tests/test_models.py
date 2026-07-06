@@ -381,6 +381,49 @@ def test_spritz_can_write_3d_concentration_field(tmp_path):
         assert len(data["field"]["concentration"][0][0][0]) == cfg.grid.nx
 
 
+def test_gaussian_grid_uses_terrain_lifted_asl_source_and_masks_subsurface_levels():
+    base = load_config("examples/minimal.json")
+    cfg = from_mapping(
+        {
+            **base.raw,
+            "grid": {"nx": 3, "ny": 1, "dx": 100.0, "dy": 100.0, "x0": 0.0, "y0": 0.0},
+            "sources": [
+                {
+                    **base.raw["sources"][0],
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                    "stack_height": 10.0,
+                    "height_agl_m": 10.0,
+                    "exit_velocity": 0.0,
+                    "heat_release": 0.0,
+                }
+            ],
+            "receptors": [],
+            "run": {
+                **base.raw["run"],
+                "concentration_output": "grid",
+                "field_z_levels": [5.0, 115.0],
+                "output_interval_s": 600.0,
+                "output_duration_s": 600.0,
+                "numerical_mode": "puff",
+                "gaussian_puff_samples": 2,
+                "gaussian_initial_sigma_z": 25.0,
+                "gaussian_initial_sigma_h": 25.0,
+            },
+        }
+    )
+    meteo = {"u": [[2.0, 2.0, 2.0]], "v": [[0.0, 0.0, 0.0]], "mixing_height": [[1000.0, 1000.0, 1000.0]]}
+    terrain_fields = {"terrain_m": np.full((1, 3), 100.0)}
+
+    rows = spritz.compute_concentrations(cfg, meteo, terrain_fields=terrain_fields)
+
+    below = [row for row in rows if row["z"] == 5.0]
+    above = [row for row in rows if row["z"] == 115.0]
+    assert all(row["concentration"] == 0.0 for row in below)
+    assert max(row["concentration"] for row in above) > 0.0
+
+
 def test_calpuff_style_concentration_binary_records(tmp_path: Path) -> None:
     base = load_config("examples/minimal.json")
     cfg = from_mapping(
@@ -434,7 +477,7 @@ def test_particles_emit_time_dependent_grid_field():
                 "output_interval_s": 600.0,
                 "output_duration_s": 1200.0,
                 "concentration_output": "grid",
-                "field_z_levels": [0.0],
+                "field_z_levels": [50.0],
                 "particles": 300,
                 "particle_duration_s": 1200.0,
             },

@@ -121,6 +121,13 @@ screening runs do not compare a broad particle initialization against a
 near-point Gaussian initialization. Elevated gridded field levels are evaluated
 with absolute release height and the receptor's physical `z` coordinate, so a
 low plume is not clipped onto every elevated receptor plane.
+For terrain-aware dispersion, `height_agl_m` is interpreted as source release
+height above local ground. Spritz samples the DEM at the source, converts that
+release to altitude above mean sea level, and then evaluates Gaussian and
+particle transport against the SpritzMet vertical coordinate. WRF-downscaled
+concentration grids therefore keep `field_z` as altitude above mean sea level;
+grid cells where `field_z` is below the local DEM are written as zero
+concentration and deposition flux.
 
 When weather start/end datetimes are supplied, `output_interval_s` defaults to
 covering the weather period. Output rows carry absolute `datetime` values. The

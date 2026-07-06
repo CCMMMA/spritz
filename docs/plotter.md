@@ -138,10 +138,12 @@ input path first, `--variable`, `--output`, `--time-index`, `--dpi`, `--cmap`,
 DEM-shaped ground surface from `surface_altitude`/`elevation_m`. The ground is
 colored with a terrain elevation scale by default; use
 `--ground-color land-cover` to color it from `land_cover` or `landuse_class`
-instead. Plume and other volume fields are rendered above that ground surface,
-so height-above-ground vertical coordinates are offset by the local DEM and
+instead. In terrain mode, blue DEM coloring is reserved for finite
+`surface_altitude <= 0` cells so low positive land is not drawn as sea. Plume
+and other volume fields are rendered above that ground surface, so
+height-above-ground vertical coordinates are offset by the local DEM and
 height-above-sea-level coordinates below the DEM are masked. For ASL products,
-the vertical axis ticks are selected from the model `z`/`field_z` levels and
+the vertical axis ticks are the configured model `z`/`field_z` levels and are
 shown as metres above mean sea level. Static renders use all vertical levels and
 extract either a threshold surface or a sparse voxel view. When
 longitude/latitude axes are available, the 3-D horizontal tick labels show only

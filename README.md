@@ -181,15 +181,22 @@ JSON can select the dispersion behavior directly:
 }
 ```
 
-This preset samples heights above ground as `10 * exp(level_index)` for
+This preset samples concentration-field altitudes above mean sea level as
+`10 * exp(level_index)` for
 `level_index` values `0..20`. A literal list such as `[0.0, 25.0, 50.0]`
-remains supported when exact heights are required.
+remains supported when exact altitudes are required.
 
 With NetCDF-CF output, gridded runs include receptor-table variables plus
 `concentration_field(time, field_z, field_y, field_x)`. When configuration
 metadata provides `center_lat` and `center_lon`, gridded field receptors also
 carry WGS84 latitude/longitude coordinates; the model-grid midpoint remains
 `x=0, y=0` for odd node-count centered grids.
+For terrain-aware runs, source `height_agl_m` is a release height above local
+ground and is converted to an absolute release altitude with the DEM before
+Gaussian or particle transport. Gridded concentration `field_z` remains tied to
+the SpritzMet vertical reference, normally altitude above mean sea level for
+WRF-downscaled meteorology; cells where `field_z` is below the local DEM are
+masked to zero in terrain-aware gridded output.
 For external comparison workflows, Gaussian and particle gridded concentration
 outputs can also be exported with `--format calpuff` on `spritz`, or as
 `concentration_calpuff.dat` sidecars from use case 02 with `--calpuff-binary`.

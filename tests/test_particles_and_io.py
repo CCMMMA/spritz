@@ -1,3 +1,5 @@
+import numpy as np
+
 from sprtz.config import from_mapping, load_config
 from sprtz.io.netcdf_cf import read_cf_concentration, read_cf_meteorology, write_cf_concentration
 from sprtz.models import spritzmet, particles

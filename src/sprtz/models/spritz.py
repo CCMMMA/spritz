@@ -162,6 +162,23 @@ def _terrain_row_fields_for_receptor(terrain_fields: dict[str, np.ndarray], rece
     return _terrain_row_fields(terrain_fields, iy, ix)
 
 
+def _terrain_at_xy(terrain_fields: dict[str, np.ndarray], grid: Grid, x: float, y: float) -> float:
+    terrain = terrain_fields.get("terrain_m")
+    if terrain is None:
+        return 0.0
+    return float(_interp_terrain_2d(np.asarray(terrain, dtype=float), grid.x, grid.y, np.asarray([x]), np.asarray([y]), nearest=False)[0, 0])
+
+
+def _source_ground_altitude_m(src: Source, terrain_fields: dict[str, np.ndarray], grid: Grid) -> float:
+    return _terrain_at_xy(terrain_fields, grid, float(src.x), float(src.y)) + float(src.z)
+
+
+def _source_release_height_agl_m(src: Source) -> float:
+    if src.height_agl_m is not None:
+        return float(src.height_agl_m)
+    return float(src.stack_height)
+
+
 def _wind_4d(meteo: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
     try:
         u = np.asarray(meteo.get("u", meteo.get("eastward_wind", [[[[2.0]]]])), dtype=float)
@@ -613,6 +630,7 @@ def _compute_gaussian_grid_concentrations(
     grid = Grid(**asdict(config.grid))
     field_levels = field_z_levels(config)
     x2d, y2d = np.meshgrid(grid.x.astype(float), grid.y.astype(float))
+    terrain_m = np.asarray(terrain_fields.get("terrain_m", np.zeros((grid.ny, grid.nx), dtype=float)), dtype=float)
     rows: list[dict[str, float | str]] = []
     downwash = bool(config.run.get("stack_tip_downwash", True))
     transformer = _grid_geographic_transformer(config)
@@ -629,6 +647,8 @@ def _compute_gaussian_grid_concentrations(
         for src in config.sources:
             if not _source_active(config, src, sample_dt):
                 continue
+            source_ground_asl = _source_ground_altitude_m(src, terrain_fields, grid)
+            release_height_agl = _source_release_height_agl_m(src)
             source_wet_rate = max(src.wet_scavenging, 0.0) + washout_rate
             emission_rate = src.emission_rate * firefighter_factor
             for sample_index in range(max(puff_samples, 1)):
@@ -637,15 +657,15 @@ def _compute_gaussian_grid_concentrations(
                 u, v, speed = wind_sampler.vector(
                     src.x,
                     src.y,
-                    max(src.z + src.stack_height, 0.0),
+                    max(source_ground_asl + release_height_agl, 0.0),
                     release_time,
                 )
                 center_x = src.x + u * age_s
                 center_y = src.y + v * age_s
                 travel_distance = max(speed * age_s, 1.0)
                 eff_h = effective_release_height(
-                    stack_height=src.stack_height,
-                    source_z=src.z,
+                    stack_height=release_height_agl,
+                    source_z=source_ground_asl,
                     receptor_z=0.0,
                     wind_speed=speed,
                     downwind_distance=travel_distance,
@@ -693,6 +713,10 @@ def _compute_gaussian_grid_concentrations(
                     wet_flux[level_index] += value * source_wet_rate * mixing_height
 
         for level_index, level in enumerate(field_levels):
+            below_ground = float(level) < terrain_m
+            concentration[level_index][below_ground] = 0.0
+            dry_flux[level_index][below_ground] = 0.0
+            wet_flux[level_index][below_ground] = 0.0
             concentration[level_index][concentration[level_index] < 1.0e-30] = 0.0
             dry_flux[level_index][dry_flux[level_index] < 1.0e-30] = 0.0
             wet_flux[level_index][wet_flux[level_index] < 1.0e-30] = 0.0
@@ -772,6 +796,7 @@ def compute_concentrations(
     mixing_height = float(np.nanmean(np.asarray(meteo.get("mixing_height", [[1000.0]]), dtype=float)))
     washout_rate = precipitation_washout_rate(config, meteo)
     wind_sampler = WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy)
+    grid = Grid(**asdict(config.grid))
     ctx = get_mpi_context(parallel)
     gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
     if output_mode == "grid" and numerical_mode == "puff" and ctx.size == 1:
@@ -804,10 +829,12 @@ def compute_concentrations(
             for src_index, src in enumerate(config.sources):
                 if not _source_active(config, src, sample_dt):
                     continue
+                source_ground_asl = _source_ground_altitude_m(src, sampled_terrain, grid)
+                release_height_agl = _source_release_height_agl_m(src)
                 u, v, speed = wind_sampler.vector(
                     0.5 * (src.x + rec.x),
                     0.5 * (src.y + rec.y),
-                    max(0.5 * (src.z + src.stack_height + rec.z), 0.0),
+                    max(0.5 * (source_ground_asl + release_height_agl + rec.z), 0.0),
                     sample_time,
                 )
                 dx = rec.x - src.x
@@ -823,8 +850,8 @@ def compute_concentrations(
                 elapsed_s = travel_time if legacy_steady_output else puff_age_s
                 puff_center_x = xdown if legacy_steady_output else speed * puff_age_s
                 eff_h = effective_release_height(
-                    stack_height=src.stack_height,
-                    source_z=src.z,
+                    stack_height=release_height_agl,
+                    source_z=source_ground_asl,
                     receptor_z=0.0,
                     wind_speed=speed,
                     downwind_distance=max(puff_center_x, xdown, 1.0),
@@ -890,8 +917,8 @@ def compute_concentrations(
                             age_s = (sample_index + 0.5) * dt
                             center_x = speed * age_s
                             age_eff_h = effective_release_height(
-                                stack_height=src.stack_height,
-                                source_z=src.z,
+                                stack_height=release_height_agl,
+                                source_z=source_ground_asl,
                                 receptor_z=0.0,
                                 wind_speed=speed,
                                 downwind_distance=max(center_x, xdown, 1.0),

@@ -456,6 +456,11 @@ def _land_cover_facecolors(land_cover: np.ndarray | None, shape: tuple[int, int]
     return colors
 
 
+def _sea_mask_from_dem(elevation_m: np.ndarray) -> np.ndarray:
+    elevation = np.asarray(elevation_m, dtype=float)
+    return np.isfinite(elevation) & (elevation <= 0.0)
+
+
 def _terrain_facecolors(elevation_m: np.ndarray, plt: Any) -> np.ndarray:
     from matplotlib.colors import Normalize
 
@@ -463,12 +468,20 @@ def _terrain_facecolors(elevation_m: np.ndarray, plt: Any) -> np.ndarray:
     finite = elevation[np.isfinite(elevation)]
     if finite.size == 0:
         return np.full((*elevation.shape, 4), (0.72, 0.68, 0.58, 1.0), dtype=float)
-    low = float(np.nanmin(finite))
-    high = float(np.nanmax(finite))
+    sea_mask = _sea_mask_from_dem(elevation)
+    land = elevation[np.isfinite(elevation) & ~sea_mask]
+    if land.size == 0:
+        colors = np.full((*elevation.shape, 4), (0.17, 0.40, 0.72, 0.78), dtype=float)
+        colors[~np.isfinite(elevation)] = (0.72, 0.68, 0.58, 0.78)
+        return colors
+    low = max(float(np.nanmin(land)), 0.0)
+    high = float(np.nanmax(land))
     if high <= low:
         high = low + 1.0
-    normalized = Normalize(vmin=low, vmax=high)(np.where(np.isfinite(elevation), elevation, low))
-    colors = plt.get_cmap("terrain")(normalized)
+    normalized = Normalize(vmin=low, vmax=high)(np.where(np.isfinite(elevation), np.maximum(elevation, low), low))
+    land_cmap = plt.get_cmap("terrain")
+    colors = land_cmap(0.25 + 0.75 * normalized)
+    colors[sea_mask] = (0.17, 0.40, 0.72, 1.0)
     colors[..., 3] = 0.78
     return np.asarray(colors, dtype=float)
 
@@ -620,20 +633,7 @@ def _vertical_ticks(field: VolumeField, z_limits: tuple[float, float], max_ticks
     if field.z_reference == "height_above_sea_level" and finite_z.size:
         in_range = finite_z[(finite_z >= z_limits[0]) & (finite_z <= z_limits[1])]
         if in_range.size:
-            if in_range.size <= max_ticks:
-                return in_range
-            minimum_spacing = max((z_limits[1] - z_limits[0]) / max(max_ticks - 1, 1) * 0.75, 1.0)
-            chosen = [float(in_range[0])]
-            for value in in_range[1:-1]:
-                if float(value) - chosen[-1] >= minimum_spacing:
-                    chosen.append(float(value))
-                if len(chosen) >= max_ticks - 1:
-                    break
-            if in_range[-1] - chosen[-1] >= minimum_spacing * 0.5:
-                chosen.append(float(in_range[-1]))
-            elif len(chosen) == 1:
-                chosen.append(float(in_range[-1]))
-            return np.asarray(chosen[:max_ticks], dtype=float)
+            return in_range
     return np.linspace(z_limits[0], z_limits[1], max_ticks)
 
 

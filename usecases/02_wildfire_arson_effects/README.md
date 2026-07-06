@@ -275,7 +275,13 @@ and Gaussian backends.
 To regenerate the 3-D plume-over-ground renders explicitly, pass a terrain/GEO
 NetCDF built from the same DEM and land-cover rasters. `tools/render3d.py`
 draws the DEM as the ground surface, colors it by terrain elevation or
-land-cover class, and renders the concentration plume above that ground surface:
+land-cover class, and renders the concentration plume above that ground
+surface. Concentration `field_z` levels remain altitudes above mean sea level,
+consistent with the WRF/SpritzMet forcing. The dispersion backends convert
+source `height_agl_m` to ASL with the DEM at the source, and gridded
+concentration cells whose ASL level is below the local DEM are written as zero.
+The renderer then uses the configured `field_z` values as z-axis ticks and
+draws DEM blue only where `surface_altitude <= 0`.
 
 ```bash
 python tools/render3d.py data/output/wildfire_case/model_compare/particles/concentration.nc \
@@ -310,7 +316,9 @@ Use these options to express the run timing requested in the generated JSON:
 - `--firefighters-start`, `--firefighters-end`, and
   `--firefighters-emission-factor`: suppression period and emission multiplier.
 - `--height-agl-m`: release height above local ground level, useful for small
-  stacks or chimney-style sources.
+  stacks or chimney-style sources. When the suite is run with a terrain/GEO
+  input, this value is added to the DEM elevation at the source before Gaussian
+  or particle dispersion is evaluated on ASL SpritzMet levels.
 - `--material`: one of `generic`, `paper`, or `plastic`.
 - `--temperature-k`: optional override for the selected material preset.
 - `--precipitation-washout`: use WRF/SpritzMet `precipitation_rate` as an
@@ -398,7 +406,10 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 The particle backend now advects particles through the full
 `time,z,y,x` SpritzMet wind cube. The Gaussian backend samples the same
 time-varying wind field along each source/receptor path and treats the active
-wildfire as a continuous output-window source. The two backends are screening
+wildfire as a continuous output-window source. Both backends keep gridded
+`field_z` levels in the SpritzMet vertical reference, normally ASL for this WRF
+workflow, while applying terrain-aware ASL source release heights from
+`height_agl_m`. The two backends are screening
 models with different numerical assumptions, so compare their spatial patterns
 and timing as well as the summary metrics. Step 3 checks that particle and
 Gaussian `time`, `field_z`, `field_y`, and `field_x` coordinates match before

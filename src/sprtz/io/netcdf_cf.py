@@ -377,7 +377,8 @@ def _concentration_field(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
         "y": {value: i for i, value in enumerate(ys)},
         "x": {value: i for i, value in enumerate(xs)},
     }
-    payload: dict[str, Any] = {"time": times, "x": xs, "y": ys, "z": zs}
+    z_reference = str(selected[0].get("z_reference", "height_above_sea_level"))
+    payload: dict[str, Any] = {"time": times, "x": xs, "y": ys, "z": zs, "z_reference": z_reference}
     for name in ("concentration", "dry_flux", "wet_flux"):
         values = np.full((len(times), len(zs), len(ys), len(xs)), np.nan, dtype=float)
         for row in selected:

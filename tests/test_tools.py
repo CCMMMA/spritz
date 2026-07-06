@@ -737,6 +737,19 @@ def test_render3d_reads_dem_and_land_cover_terrain(tmp_path: Path) -> None:
     np.testing.assert_allclose(terrain.land_cover, [[80, 80, 50], [311, 311, 50]])
 
 
+def test_render3d_terrain_colormap_uses_blue_only_for_sea() -> None:
+    pytest.importorskip("matplotlib")
+    render3d = load_render3d_tool()
+    plt = render3d._load_matplotlib()
+    elevation = np.asarray([[-3.0, 0.0, 1.0, 25.0]], dtype=float)
+
+    colors = render3d._terrain_facecolors(elevation, plt)
+
+    np.testing.assert_allclose(colors[0, 0, :3], colors[0, 1, :3])
+    assert not np.allclose(colors[0, 1, :3], colors[0, 2, :3])
+    assert not np.allclose(colors[0, 1, :3], colors[0, 3, :3])
+
+
 def test_render3d_detects_vertical_reference_and_model_top(tmp_path: Path) -> None:
     pytest.importorskip("netCDF4")
     from netCDF4 import Dataset  # type: ignore
@@ -788,6 +801,33 @@ def test_render3d_sea_level_heights_mask_below_dem(tmp_path: Path) -> None:
     assert field.z_reference == "height_above_sea_level"
     assert np.isnan(altitude[0, 0, 0])
     assert altitude[1, 0, 0] == 250.0
+
+
+def test_render3d_ground_level_heights_are_added_to_dem(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "concentration_agl.nc"
+    with Dataset(path, "w") as ds:
+        ds.spritz_concentration_field_z_reference = "height_above_ground"
+        ds.createDimension("time", 1)
+        ds.createDimension("field_z", 2)
+        ds.createDimension("field_y", 1)
+        ds.createDimension("field_x", 1)
+        z = ds.createVariable("field_z", "f8", ("field_z",))
+        z.units = "m"
+        z.long_name = "model grid height above local ground"
+        z[:] = [2.5, 50.0]
+        concentration = ds.createVariable("concentration_field", "f8", ("time", "field_z", "field_y", "field_x"))
+        concentration[:, :, :, :] = np.ones((1, 2, 1, 1), dtype=float)
+
+    render3d = load_render3d_tool()
+    field = render3d.read_volume_field(path, variable_name="concentration_field", time_index=0)
+    terrain = np.asarray([[[375.0]], [[375.0]]], dtype=float)
+    altitude = render3d._plume_altitude(field, field.z_axis[:, np.newaxis, np.newaxis], terrain)
+
+    assert field.z_reference == "height_above_ground"
+    np.testing.assert_allclose(altitude[:, 0, 0], [377.5, 425.0])
 
 
 def test_render3d_uses_concentration_field_asl_reference(tmp_path: Path) -> None:

@@ -11,6 +11,15 @@ python -m pip install -e .[netcdf,viz]
 sprtz doctor --require-netcdf
 ```
 
+## Shared vertical-coordinate convention
+
+WRF/SpritzMet-driven dispersion use cases keep gridded concentration
+`field_z_levels` in the meteorological vertical reference, normally altitude
+above mean sea level. Source `height_agl_m` remains a release height above local
+ground and is converted with the DEM when a terrain/GEO product is supplied.
+Terrain-aware gridded outputs write zero concentration where an ASL `field_z`
+level is below the local DEM.
+
 ## Shared-memory and multicore execution
 
 The use cases can run on laptops, workstations, and single-node servers without

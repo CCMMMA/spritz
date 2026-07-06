@@ -6,6 +6,14 @@ This document describes the particle-based Sprtz alternative to the Gaussian bac
 
 `sprtz.models.particles` implements a Lagrangian particle screening backend that accepts the same `SuiteConfig`, the same SpritzMet meteorology files, and writes the same receptor table and optional gridded field schema as the Gaussian Spritz backend. For SpritzMet NetCDF inputs, particles are advected through the full `eastward_wind(time,z,y,x)` / `northward_wind(time,z,y,x)` cube with deterministic substeps; when diagnostic `U10M/V10M` is available and the first physical `z` level is aloft, that 10 m above-ground wind is used as the lower-boundary layer. 2D legacy meteorology still uses a deterministic fallback.
 
+Vertical coordinates follow the SpritzMet product. WRF-downscaled meteorology
+and the corresponding concentration field usually use altitude above mean sea
+level. Source `height_agl_m` is still interpreted as release height above local
+ground: when terrain is supplied, the particle backend samples the DEM at the
+source and initializes particles at `DEM + source.z + height_agl_m`. Complete
+gridded outputs mask cells where an ASL `field_z` level lies below the local
+DEM, so terrain-aware NetCDF fields do not carry subsurface plume values.
+
 CLI:
 
 ```bash
@@ -57,7 +65,9 @@ configured firefighter window the source contribution is multiplied by
 the backend adds the WRF/SpritzMet `precipitation_rate` wet-removal term to the
 particle loss rate. Heat-release plume rise is evaluated from each particle's
 sampled travel age, so newly released particles remain near the release height
-while older particles rise through the buoyant plume.
+while older particles rise through the buoyant plume. In terrain-aware runs the
+release height is the absolute ASL altitude computed from local DEM elevation
+plus `height_agl_m`.
 
 When `concentration_output` requests a complete grid, `--format calpuff` writes
 a clean-room CALPUFF-style binary concentration export with the same horizontal,

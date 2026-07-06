@@ -307,7 +307,8 @@ The backend can also be selected in the JSON file:
 ```
 
 For a gridded 3D concentration field, request model-grid output and vertical
-levels in the same `run` block:
+levels in the same `run` block. In WRF/SpritzMet workflows these levels are
+altitudes above mean sea level, matching the meteorological `z` coordinate:
 
 ```json
 {
@@ -324,6 +325,9 @@ field_x)` in addition to the receptor table. When the configuration metadata
 contains `center_lat` and `center_lon`, generated gridded-field receptor rows
 also include latitude/longitude; for centered odd grids the middle field cell is
 `x=0, y=0` and maps back to the configured geographic center.
+If a terrain/GEO input is supplied, source `height_agl_m` is added to the local
+DEM before dispersion, and concentration grid cells with `field_z` below the
+DEM are zeroed.
 
 For binary comparison workflows, use `spritz --format calpuff` with a complete
 gridded concentration field, or use case 02 `--calpuff-binary`. The binary file

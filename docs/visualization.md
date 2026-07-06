@@ -78,9 +78,10 @@ default. When passed `--terrain geo.nc`, it renders DEM-shaped ground from
 default, and can switch to land-cover coloring with
 `--ground-color land-cover`. Height-above-ground plume coordinates are offset by
 the local DEM, height-above-sea-level plume coordinates below the DEM are
-masked, ASL vertical ticks are selected from the model levels, and 3-D
-horizontal tick labels show WGS84 longitude and latitude when those axes are
-present. Use `--vertical-exaggeration N` with `N >= 1` to
+masked, ASL vertical ticks are the configured model levels, and DEM sea-blue
+coloring is used only where `surface_altitude <= 0`. 3-D horizontal tick labels
+show WGS84 longitude and latitude when those axes are present. Use
+`--vertical-exaggeration N` with `N >= 1` to
 exaggerate vertical relief in the display. Use
 `tools/plotter.py --animate --gif-loop 0` for endlessly looping simulation-long
 map GIFs.

@@ -360,7 +360,9 @@ per-source random stream so changing rank count does not change the stream used
 for a given source. Heat-release plume rise is sampled by particle travel age:
 young particles stay close to release height, while older particles are lifted
 according to the same clean-room plume-rise screening relation used by the
-Gaussian backend.
+Gaussian backend. In terrain-aware runs, source `height_agl_m` is converted to
+altitude above mean sea level with the DEM at the source before advection, while
+gridded concentration `field_z` follows the SpritzMet vertical reference.
 
 ## Receptor Tables And 3D Fields
 
@@ -493,7 +495,9 @@ voxel views of compatible gridded volume variables. It uses all vertical levels
 by default. With `--terrain geo.nc`, it offsets height-above-ground plume levels
 by the local DEM, masks height-above-sea-level plume levels below the DEM, and
 uses ASL model levels as vertical ticks. It draws the ground with a terrain
-elevation color scale unless `--ground-color land-cover` is selected. Use
+elevation color scale unless `--ground-color land-cover` is selected; the
+terrain palette uses blue only where DEM elevation is less than or equal to sea
+level. Use
 `--vertical-exaggeration N` with `N >= 1` to exaggerate vertical relief in the
 display; longitude and latitude are used for 3-D horizontal tick labels when
 available.
