@@ -74,3 +74,12 @@ def test_shared_json_config_defaults_flatten_sections(tmp_path):
     assert defaults["dx"] == 100.0
     assert defaults["dem"] == "dem.tif"
     assert defaults["level_index"] == 2
+
+
+def test_spritzmet_field_z_levels_default_flattens_for_wind_cli(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"spritzmet": {"field_z_levels": [10.0, 50.0]}}', encoding="utf-8")
+
+    defaults = config_defaults(path, sections=("spritzmet",))
+
+    assert defaults["field_z_levels"] == [10.0, 50.0]

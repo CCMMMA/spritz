@@ -47,7 +47,7 @@ export NUMEXPR_NUM_THREADS=1
 Run a use-case step in shared-memory mode:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --parallel serial \
   --thread-backend auto \
   --threads-per-rank ${SPRITZ_THREADS:-8}
@@ -56,7 +56,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
 Run the wildfire/arson concentration step on multicore CPU:
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py \
   --backend particles \
   --parallel serial \
   --thread-backend auto \
@@ -68,7 +68,7 @@ On a single workstation with one CUDA GPU, keep the process count at one and use
 CUDA for dense array kernels:
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py \
   --backend particles \
   --parallel serial \
   --thread-backend auto \
@@ -80,7 +80,7 @@ For multi-GPU or multi-node runs, use MPI and normally assign one MPI rank per
 GPU:
 
 ```bash
-mpiexec -n 4 python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+mpiexec -n 4 python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py \
   --backend particles \
   --parallel mpi \
   --thread-backend serial \
@@ -102,13 +102,13 @@ For deterministic comparisons, first run a small serial baseline and then
 compare a parallel run:
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py \
   --backend gaussian \
   --parallel serial \
   --thread-backend serial \
   --gpu-backend numpy
 
-mpiexec -n 2 python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+mpiexec -n 2 python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py \
   --backend gaussian \
   --parallel mpi \
   --thread-backend auto \
@@ -153,13 +153,23 @@ tools/meteouniparthenope-wrf-download.py 20260601Z0000 \
   --data-root data/wrf/d03
 
 python3 tools/copernicus-cop30-dem-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --buffer-m 1000 \
   --output data/dem/cop30_naples.tif
 
 python3 tools/copernicus-lc100-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
+  --center-lat 40.75 \
+  --center-lon 14.30 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --buffer-m 1000 \
   --output data/landcover/lc100_naples.tif
 ```
 
@@ -169,6 +179,10 @@ matching categorical land-cover GeoTIFF. Use both rasters with `--dem` and
 `--land-cover` in WRF/SpritzMet downscaling use cases, or through
 `sprtz-terrain fetch` when generating standalone GEO products. Install
 `sprtz[geo]` when using GeoTIFF inputs.
+For best `geo.nc` quality, pass the same center, spacing, node count, and
+projection to the download helpers and to `sprtz-terrain fetch`; keep
+`--buffer-m` positive so the downloaded DEM and land-cover rasters extend beyond
+the model-domain edge.
 
 Before a use case calls `tools/render3d.py --terrain .../geo.nc`, build that
 GEO file from the same DEM and land-cover rasters and with the same grid center,
@@ -205,26 +219,76 @@ coastline behavior, 3-D terrain/plume rendering, and optional dependency notes.
 
 ## Use-case sequence
 
+## Folder organization
+
+Use cases are organized as numbered scenario folders:
+
+```text
+usecases/
+  README.md
+  common/
+    datetime_args.py
+    plotting.py
+  NN_descriptive_use_case_name/
+    demo/
+      README.md
+      step_*.py
+      scenario helper modules and tiny local demo inputs
+    pipeline/
+      README.md
+      pipeline.sh
+    workflow/
+      README.md
+      usecase.wcl
+    dagonstar/
+      README.md
+      workflow.py
+```
+
+The `common/` folder contains shared didactic helpers used by multiple
+scenarios, such as compact UTC datetime parsing and optional plotting hooks.
+Scenario-specific Python modules live inside the matching `demo/` folder next
+to the runnable `step_*.py` scripts. Large meteorological, terrain, satellite,
+NetCDF, rendered, or operational products belong under `data/` or `output/`,
+not in the use-case source tree.
+
+Each numbered use case may contain these subfolders:
+
+| Subfolder | Purpose |
+|---|---|
+| `demo/` | Runnable, step-by-step local scripts and tiny deterministic inputs for tests and teaching. |
+| `pipeline/` | Shell-oriented pipeline entry points for batch or scripted execution from the repository root. |
+| `workflow/` | Workflow-control examples for workflow engines or production-style orchestration. |
+| `dagonstar/` | Dagonstar workflow adapters and documentation where that execution mode is demonstrated. |
+
+The current numbered use cases are:
+
 1. `01_high_resolution_wind_field` — download or read WRF 1 km data, extract near-surface wind with SpritzWRF, and downscale it to a 100 m SpritzMet grid using both DEM and land cover when supplied.
 2. `02_wildfire_arson_effects` — build single- or multi-fire arson/wildfire source scenarios using DEM/LC-aware WRF/SpritzMet wind and precipitation, material presets, source heights, time windows, firefighter actions, side-by-side particle/Gaussian Spritz dispersion, comparison metrics, vertical profile plots, 3-D plume-over-terrain renders, and optional CALPUFF-style concentration binary sidecars.
 3. `03_satellite_ai_evaluation` — compare model output with a satellite-derived mask and compute deterministic skill metrics plus a lightweight AI calibration diagnostic.
 4. `04_production_incidents` — build catalog-driven production-style incident cases with receptor latitude/longitude and geographic maps.
 5. `05_sailing_wind_forecast` — build a high-resolution space-height-time wind forecast product for professional sailing race planning.
 6. `06_acerra_waste_to_energy` — run a 12-hour Acerra waste-to-energy chimney screening case starting on 2026-06-01 with a 110 m release height.
+7. `06_wildfire_fire_spread` — run a focused SpritzFire cellular-automata fire-spread demonstration.
+8. `07_wildfire_fire_and_smoke` — couple fire spread with smoke dispersion in a didactic two-step workflow.
+9. `08_firms_satellite_ignition` — demonstrate FIRMS-style satellite ignition inputs without hard-coding credentials.
+10. `09_gpu_accelerated_spread` — exercise the optional GPU fire-spread backend with NumPy fallback behavior.
+11. `10_backward_plume_origin` — estimate likely plume source regions from concentration evidence.
+12. `11_backward_fire_origin` — estimate likely fire ignition regions from observed spread state.
 
 Run the step scripts directly:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py --help
-python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py --help
-python usecases/02_wildfire_arson_effects/step_02_build_config.py --help
-python usecases/02_wildfire_arson_effects/step_03_run_model.py --help
-python usecases/03_satellite_ai_evaluation/step_02_evaluate.py --help
-python usecases/04_production_incidents/step_01_build_config.py --help
-python usecases/04_production_incidents/step_02_run_model.py --help
-python usecases/05_sailing_wind_forecast/step_01_build_forecast.py --help
-python usecases/06_acerra_waste_to_energy/step_01_build_config.py --help
-python usecases/06_acerra_waste_to_energy/step_02_run_model.py --help
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py --help
+python usecases/02_wildfire_arson_effects/demo/step_01_downscale_wind.py --help
+python usecases/02_wildfire_arson_effects/demo/step_02_build_config.py --help
+python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py --help
+python usecases/03_satellite_ai_evaluation/demo/step_02_evaluate.py --help
+python usecases/04_production_incidents/demo/step_01_build_config.py --help
+python usecases/04_production_incidents/demo/step_02_run_model.py --help
+python usecases/05_sailing_wind_forecast/demo/step_01_build_forecast.py --help
+python usecases/06_acerra_waste_to_energy/demo/step_01_build_config.py --help
+python usecases/06_acerra_waste_to_energy/demo/step_02_run_model.py --help
 ```
 
 ## Repository boundary

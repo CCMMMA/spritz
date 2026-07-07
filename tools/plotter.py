@@ -12,6 +12,7 @@ import argparse
 import logging
 import math
 import ast
+import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -158,6 +159,26 @@ class MapField:
     level_label: str | None = None
     color_levels: tuple[float, ...] | None = None
     color_palette: tuple[tuple[int, int, int, int], ...] | None = None
+    terrain_m: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class EmissionPoint:
+    id: str
+    x: float
+    y: float
+    release_height_agl_m: float
+    release_height_asl_m: float
+    longitude: float | None = None
+    latitude: float | None = None
+
+    @property
+    def label(self) -> str:
+        return (
+            f"{self.id}\n"
+            f"z ASL {_format_meters(self.release_height_asl_m)}\n"
+            f"z AGL {_format_meters(self.release_height_agl_m)}"
+        )
 
 
 def _decode_text(value: Any) -> str:
@@ -399,6 +420,22 @@ def _read_vectors(ds: Any, shape: tuple[int, int], *, time_index: int, level_ind
     return None
 
 
+def _read_surface_altitude(ds: Any, shape: tuple[int, int], *, time_index: int) -> np.ndarray | None:
+    variable = _find_variable(ds, ("surface_altitude", "terrain_m", "dem_elevation_m", "elevation_m"))
+    if variable is None:
+        return None
+    try:
+        values = _select_2d(
+            _variable_array(variable),
+            dimensions=getattr(variable, "dimensions", ()),
+            time_index=time_index,
+            level_index=0,
+        )
+    except Exception:
+        return None
+    return values if values.shape == shape else None
+
+
 def _read_time_label(ds: Any, *, time_index: int) -> str | None:
     time_datetime = _find_variable(ds, ("time_datetime",))
     if time_datetime is not None:
@@ -452,6 +489,131 @@ def _format_meters(value: float) -> str:
     if math.isfinite(value) and abs(value - round(value)) < 1.0e-6:
         return f"{value:.0f} m"
     return f"{value:.2f} m"
+
+
+def _format_geographic_coordinate(value: float, positive_suffix: str, negative_suffix: str, coordinate_format: str) -> str:
+    suffix = positive_suffix if value >= 0.0 else negative_suffix
+    absolute = abs(float(value))
+    if coordinate_format == "decimal":
+        return f"{absolute:.5f} deg{suffix}"
+    degrees = int(math.floor(absolute))
+    minutes_total = (absolute - degrees) * 60.0
+    if coordinate_format == "dms":
+        minutes = int(math.floor(minutes_total))
+        seconds = (minutes_total - minutes) * 60.0
+        return f"{degrees:02d}°{minutes:02d}'{seconds:04.1f}\"{suffix}"
+    return f"{degrees:02d}°{minutes_total:05.2f}'{suffix}"
+
+
+def _format_longitude(value: float, coordinate_format: str) -> str:
+    return _format_geographic_coordinate(value, "E", "W", coordinate_format)
+
+
+def _format_latitude(value: float, coordinate_format: str) -> str:
+    return _format_geographic_coordinate(value, "N", "S", coordinate_format)
+
+
+def _nearest_grid_value(values: np.ndarray, x_grid: np.ndarray | None, y_grid: np.ndarray | None, x: float, y: float) -> float | None:
+    if values.shape != getattr(x_grid, "shape", None) or values.shape != getattr(y_grid, "shape", None):
+        return None
+    distance2 = (np.asarray(x_grid, dtype=float) - float(x)) ** 2 + (np.asarray(y_grid, dtype=float) - float(y)) ** 2
+    if not np.isfinite(distance2).any():
+        return None
+    iy, ix = (int(index) for index in np.unravel_index(int(np.nanargmin(distance2)), distance2.shape))
+    value = float(values[iy, ix])
+    return value if math.isfinite(value) else None
+
+
+def _source_ground_asl_m(
+    source: dict[str, Any],
+    terrain: np.ndarray | None,
+    x_grid: np.ndarray | None,
+    y_grid: np.ndarray | None,
+    x: float,
+    y: float,
+) -> float:
+    terrain_ground = _nearest_grid_value(terrain, x_grid, y_grid, x, y) if terrain is not None else None
+    return float(terrain_ground if terrain_ground is not None else 0.0) + float(source.get("z", 0.0))
+
+
+def _source_json_candidates(config_path: str | Path | None, input_path: str | Path | None) -> list[Path]:
+    if config_path is not None:
+        return [Path(config_path)]
+    if input_path is None:
+        return []
+    input_parent = Path(input_path).resolve().parent
+    candidates: list[Path] = []
+    for directory in (input_parent, *input_parent.parents[:4]):
+        candidates.extend(directory.glob("config.json"))
+        candidates.extend(directory.glob("*event*.json"))
+    return list(dict.fromkeys(candidates))
+
+
+def _source_records_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(payload.get("sources"), list):
+        return [record for record in payload["sources"] if isinstance(record, dict)]
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("fire_events"), list):
+        return [record for record in metadata["fire_events"] if isinstance(record, dict)]
+    return []
+
+
+def _nearest_local_from_geographic(field: MapField, latitude: float, longitude: float) -> tuple[float, float] | None:
+    if not field.geographic:
+        return None
+    distance2 = (np.asarray(field.y, dtype=float) - float(latitude)) ** 2 + (np.asarray(field.x, dtype=float) - float(longitude)) ** 2
+    if not np.isfinite(distance2).any():
+        return None
+    iy, ix = (int(index) for index in np.unravel_index(int(np.nanargmin(distance2)), distance2.shape))
+    x = float(field.local_x[iy, ix]) if field.local_x is not None else float(field.x[iy, ix])
+    y = float(field.local_y[iy, ix]) if field.local_y is not None else float(field.y[iy, ix])
+    return x, y
+
+
+def read_emission_points(config_path: str | Path | None, field: MapField, *, input_path: str | Path | None = None) -> tuple[EmissionPoint, ...]:
+    config = None
+    for candidate in _source_json_candidates(config_path, input_path):
+        try:
+            with candidate.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if _source_records_from_payload(payload):
+            config = payload
+            break
+    if config is None:
+        return ()
+    terrain = field.terrain_m
+    if terrain is None and field.name.lower() in {"surface_altitude", "terrain_m", "dem_elevation_m", "elevation_m"}:
+        terrain = np.asarray(field.values, dtype=float)
+    points: list[EmissionPoint] = []
+    for index, source in enumerate(_source_records_from_payload(config)):
+        lat = float(source["latitude"]) if source.get("latitude") is not None else None
+        lon = float(source["longitude"]) if source.get("longitude") is not None else None
+        local_from_geo = _nearest_local_from_geographic(field, lat, lon) if lat is not None and lon is not None else None
+        x = float(source.get("x", local_from_geo[0] if local_from_geo is not None else 0.0))
+        y = float(source.get("y", local_from_geo[1] if local_from_geo is not None else 0.0))
+        agl = float(source.get("height_agl_m", source.get("stack_height", 0.0)))
+        ground_m = _source_ground_asl_m(
+            source,
+            terrain,
+            field.local_x if field.local_x is not None else field.x,
+            field.local_y if field.local_y is not None else field.y,
+            x,
+            y,
+        )
+        points.append(
+            EmissionPoint(
+                id=str(source.get("id", f"S{index + 1}")),
+                x=x,
+                y=y,
+                release_height_agl_m=agl,
+                release_height_asl_m=ground_m + agl,
+                longitude=lon,
+                latitude=lat,
+            )
+        )
+    return tuple(points)
 
 
 def _parse_float_list(value: Any) -> list[float]:
@@ -598,6 +760,7 @@ def read_map_field(
         vectors = _read_vectors(ds, values.shape, time_index=time_index, level_index=level_index)
         time_label = _read_time_label(ds, time_index=time_index)
         level_label = _read_level_label(ds, variable, level_index=level_index)
+        terrain_m = _read_surface_altitude(ds, values.shape, time_index=time_index)
         return MapField(
             variable.name,
             values,
@@ -613,6 +776,7 @@ def read_map_field(
             level_label=level_label,
             color_levels=color_levels,
             color_palette=color_palette,
+            terrain_m=terrain_m,
         )
 
 
@@ -650,6 +814,12 @@ def _transparent_zero_cmap(plt: Any, cmap: Any, *, transparent: bool) -> Any:
     copied = resolved.copy()
     copied.set_bad((0.0, 0.0, 0.0, 0.0))
     return copied
+
+
+def _emission_summary_text(emission_points: Sequence[EmissionPoint]) -> str | None:
+    if not emission_points:
+        return None
+    return "\n".join(point.label.replace("\n", " | ") for point in emission_points[:4])
 
 
 def _axis_center_line(grid: np.ndarray | None, axis: str) -> np.ndarray | None:
@@ -874,12 +1044,15 @@ def plot_map(
     coastline_source: str = "naturalearth",
     color_limits: tuple[float, float] | None = None,
     warn_missing_geographic: bool = True,
+    emission_points: Sequence[EmissionPoint] = (),
+    coordinate_format: str = "ddm",
 ) -> Path:
     try:
         import matplotlib
 
         matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
+        import matplotlib.ticker as mticker
         from matplotlib.colors import BoundaryNorm, ListedColormap, LogNorm, Normalize
     except Exception as exc:  # pragma: no cover - depends on optional extra
         raise RuntimeError("matplotlib is required for plotting; install sprtz[viz]") from exc
@@ -971,6 +1144,43 @@ def plot_map(
             **vector_kwargs,
         )
 
+    for point in emission_points:
+        px = point.longitude if field.geographic and point.longitude is not None else point.x
+        py = point.latitude if field.geographic and point.latitude is not None else point.y
+        marker_kwargs: dict[str, Any] = {
+            "marker": "^",
+            "s": 70.0,
+            "facecolors": "#d7191c",
+            "edgecolors": "white",
+            "linewidths": 0.7,
+            "zorder": 8,
+        }
+        label_kwargs: dict[str, Any] = {
+            "fontsize": 7,
+            "color": "0.05",
+            "ha": "left",
+            "va": "bottom",
+            "zorder": 9,
+            "bbox": {"boxstyle": "round,pad=0.18", "facecolor": "white", "edgecolor": "0.35", "alpha": 0.82},
+        }
+        if transform is not None:
+            marker_kwargs["transform"] = transform
+            label_kwargs["transform"] = transform
+        ax.scatter([px], [py], **marker_kwargs)
+        ax.text(px, py, point.label, **label_kwargs)
+
+    summary = _emission_summary_text(emission_points)
+    if summary:
+        fig.text(
+            0.012,
+            0.012,
+            summary,
+            fontsize=8,
+            ha="left",
+            va="bottom",
+            bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "edgecolor": "0.35", "alpha": 0.86},
+        )
+
     west, east, south, north = _extent(field.x, field.y, 0.04)
     if field.geographic:
         _add_cartopy_coastlines(
@@ -987,8 +1197,12 @@ def plot_map(
             gl = ax.gridlines(draw_labels=True, linewidth=0.25, color="0.35", alpha=0.45)
             gl.top_labels = False
             gl.right_labels = False
+            gl.xformatter = mticker.FuncFormatter(lambda value, _pos: _format_longitude(value, coordinate_format))
+            gl.yformatter = mticker.FuncFormatter(lambda value, _pos: _format_latitude(value, coordinate_format))
         except Exception:
             ax.grid(True, linewidth=0.25, alpha=0.45)
+            ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda value, _pos: _format_longitude(value, coordinate_format)))
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda value, _pos: _format_latitude(value, coordinate_format)))
     else:
         ax.set_xlim(west, east)
         ax.set_ylim(south, north)
@@ -1107,6 +1321,8 @@ def plot_animation(
     vector_scale: float | None,
     duration_ms: int,
     loop: int,
+    config_path: str | Path | None = None,
+    coordinate_format: str = "ddm",
 ) -> Path:
     time_indexes = _animation_time_indexes(input_path, variable_name)
     fields = [
@@ -1151,6 +1367,8 @@ def plot_animation(
                 vector_scale=vector_scale,
                 color_limits=color_limits,
                 warn_missing_geographic=False,
+                emission_points=read_emission_points(config_path, field, input_path=input_path),
+                coordinate_format=coordinate_format,
             )
             frame_paths.append(frame_path)
             LOGGER.info("animation frame %d/%d time_index=%d", len(frame_paths), len(time_indexes), time_index)
@@ -1168,6 +1386,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--level-index", type=int, default=0, help="vertical/level index for 3-D or 4-D fields")
     parser.add_argument("--center-lat", type=float, default=None, help="grid origin latitude for local x/y products")
     parser.add_argument("--center-lon", type=float, default=None, help="grid origin longitude for local x/y products")
+    parser.add_argument("--config", default=None, help="optional Sprtz JSON config; overlays emission points with z ASL and z AGL heights")
+    parser.add_argument(
+        "--coordinate-format",
+        choices=("ddm", "decimal", "dms"),
+        default="ddm",
+        help="latitude/longitude label format: ddm is DD°MM' (default), decimal is decimal degrees, dms is DD°MM'SS\"",
+    )
     parser.add_argument("--title", default=None, help="figure title")
     parser.add_argument("--dpi", type=int, default=600, help="output raster DPI")
     parser.add_argument("--cmap", default="viridis", help="matplotlib colormap")
@@ -1231,6 +1456,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 vector_stride=args.vector_stride,
                 vector_density=args.vector_density,
                 vector_scale=args.vector_scale,
+                config_path=args.config,
+                coordinate_format=args.coordinate_format,
                 duration_ms=args.frame_duration_ms,
                 loop=args.gif_loop,
             )
@@ -1258,6 +1485,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 vector_stride=args.vector_stride,
                 vector_density=args.vector_density,
                 vector_scale=args.vector_scale,
+                emission_points=read_emission_points(args.config, field, input_path=args.input),
+                coordinate_format=args.coordinate_format,
             )
     except KeyboardInterrupt:
         LOGGER.warning("interrupted; stopping plot generation")

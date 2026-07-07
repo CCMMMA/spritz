@@ -1,0 +1,7 @@
+WORKFLOW 08_firms_satellite_ignition {
+  DESCRIPTION = "Sprtz clean-room workflow for 08 Firms Satellite Ignition.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/08_firms_satellite_ignition/demo/step_01_run_firms_ignition.py";
+    }
+}

@@ -13,7 +13,7 @@ from sprtz.core.physics import exponential_loss_factor, random_walk_std_from_k, 
 from sprtz.exceptions import DataFormatError
 from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
-from sprtz.io.netcdf_cf import write_cf_concentration
+from sprtz.io.netcdf_cf import DenseConcentrationWriter, write_cf_concentration
 from sprtz.models.spritz import (
     _firefighters_emission_factor,
     _grid_receptors,
@@ -72,7 +72,7 @@ def _apply_vertical_boundary(
     z: np.ndarray,
     weights: np.ndarray,
     *,
-    ground_m: float,
+    ground_m: float | np.ndarray,
     top_m: float,
     ground_policy: str,
     top_policy: str,
@@ -80,24 +80,61 @@ def _apply_vertical_boundary(
     """Apply deterministic vertical boundary handling to particle positions."""
     bounded = np.asarray(z, dtype=float).copy()
     mass = np.asarray(weights, dtype=float).copy()
-    ground = float(ground_m)
-    top = max(float(top_m), ground + 1.0)
+    ground = np.asarray(ground_m, dtype=float)
+    if ground.ndim == 0:
+        ground = np.full_like(bounded, float(ground))
+    else:
+        ground = np.broadcast_to(ground, bounded.shape)
+    top = np.maximum(float(top_m), ground + 1.0)
     below = bounded < ground
     if np.any(below):
         if ground_policy == "absorb_deposit":
             mass[below] = 0.0
-            bounded[below] = ground
+            bounded[below] = ground[below]
         else:
-            bounded[below] = ground + (ground - bounded[below])
+            bounded[below] = ground[below] + (ground[below] - bounded[below])
     above = bounded > top
     if np.any(above):
         if top_policy == "open":
             mass[above] = 0.0
-            bounded[above] = top
+            bounded[above] = top[above]
         else:
-            bounded[above] = top - (bounded[above] - top)
+            bounded[above] = top[above] - (bounded[above] - top[above])
             bounded = np.clip(bounded, ground, top)
     return bounded, mass
+
+
+def _terrain_at_points(
+    terrain_m: np.ndarray,
+    grid: Grid,
+    x: np.ndarray,
+    y: np.ndarray,
+) -> np.ndarray:
+    """Sample DEM elevation at particle positions using bilinear interpolation."""
+    terrain = np.asarray(terrain_m, dtype=float)
+    x_values = np.asarray(x, dtype=float)
+    y_values = np.asarray(y, dtype=float)
+    if terrain.shape != (grid.ny, grid.nx) or grid.nx == 0 or grid.ny == 0:
+        return np.zeros_like(x_values, dtype=float)
+    if grid.nx == 1 and grid.ny == 1:
+        return np.full_like(x_values, float(terrain[0, 0]), dtype=float)
+
+    fx = (x_values - float(grid.x[0])) / float(grid.dx) if grid.nx > 1 else np.zeros_like(x_values)
+    fy = (y_values - float(grid.y[0])) / float(grid.dy) if grid.ny > 1 else np.zeros_like(y_values)
+    fx = np.nan_to_num(fx, nan=0.0, neginf=0.0, posinf=max(grid.nx - 1, 0))
+    fy = np.nan_to_num(fy, nan=0.0, neginf=0.0, posinf=max(grid.ny - 1, 0))
+    fx = np.clip(fx, 0.0, max(grid.nx - 1, 0))
+    fy = np.clip(fy, 0.0, max(grid.ny - 1, 0))
+    ix0 = np.floor(fx).astype(int)
+    iy0 = np.floor(fy).astype(int)
+    ix1 = np.clip(ix0 + 1, 0, grid.nx - 1)
+    iy1 = np.clip(iy0 + 1, 0, grid.ny - 1)
+    wx = fx - ix0
+    wy = fy - iy0
+
+    lower = terrain[iy0, ix0] * (1.0 - wx) + terrain[iy0, ix1] * wx
+    upper = terrain[iy1, ix0] * (1.0 - wx) + terrain[iy1, ix1] * wx
+    return lower * (1.0 - wy) + upper * wy
 
 
 def _wind(meteo: dict[str, Any]) -> tuple[float, float]:
@@ -155,6 +192,7 @@ def simulate_particles(
     parallel: str = "serial",
     gpu_backend: str | None = None,
     progress_callback: Callable[[int, float], None] | None = None,
+    dense_output: str | Path | None = None,
 ) -> list[dict[str, float | str]]:
     """Run a deterministic Lagrangian particle screening alternative to Spritz.
 
@@ -197,6 +235,8 @@ def simulate_particles(
     field_ids = {rec.id for rec in field_receptors}
     sampled_terrain = terrain_fields or {}
     point_receptors = tuple(rec for rec in receptors if rec.id not in field_ids)
+    if dense_output is not None:
+        receptors = point_receptors
     grid = Grid(**asdict(config.grid))
     terrain_m = np.asarray(sampled_terrain.get("terrain_m", np.zeros((grid.ny, grid.nx), dtype=float)), dtype=float)
     wind_sampler = WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy)
@@ -220,12 +260,54 @@ def simulate_particles(
     gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
     xp = gpu.xp
     local_sources = [(i, config.sources[i]) for i in ctx.partition(len(config.sources))]
+    times = output_times(config)
     rows: list[dict[str, float | str]] = []
-    for time_index, time_value in enumerate(output_times(config), start=1):
+    dense_writer: DenseConcentrationWriter | None = None
+    if dense_output is not None:
+        from sprtz.models.spritz import _field_lat_lon
+
+        latitude, longitude = _field_lat_lon(config)
+        point_templates: list[dict[str, float | str]] = []
+        for rec in point_receptors:
+            row: dict[str, float | str] = {
+                "receptor": rec.id,
+                "output_kind": "receptor",
+                "x": rec.x,
+                "y": rec.y,
+                "z": rec.z,
+                **_terrain_row_fields_for_receptor(sampled_terrain, rec.id),
+            }
+            if rec.latitude is not None and rec.longitude is not None:
+                row["latitude"] = float(rec.latitude)
+                row["longitude"] = float(rec.longitude)
+            point_templates.append(row)
+        datetimes = {
+            float(time_value): dt.isoformat()
+            for time_value in times
+            if (dt := sample_datetime(config, time_value)) is not None
+        }
+        dense_writer = DenseConcentrationWriter(
+            dense_output,
+            times=times,
+            x=grid.x,
+            y=grid.y,
+            z=field_levels,
+            point_receptors=point_templates,
+            z_reference=str(meteo.get("z_reference", "height_above_sea_level")),
+            latitude=latitude,
+            longitude=longitude,
+            surface_altitude=terrain_m if "terrain_m" in sampled_terrain else None,
+            land_cover=sampled_terrain.get("land_cover"),
+            datetimes=datetimes or None,
+        )
+    for time_index, time_value in enumerate(times, start=1):
         sample_dt = sample_datetime(config, time_value)
         firefighter_factor = _firefighters_emission_factor(config, sample_dt)
         receptor_values = {rec.id: {"concentration": 0.0, "dry_flux": 0.0, "wet_flux": 0.0} for rec in receptors}
         local_values = {rec.id: {"concentration": 0.0, "dry_flux": 0.0, "wet_flux": 0.0} for rec in receptors}
+        field_concentration = np.zeros((len(field_levels), grid.ny, grid.nx), dtype=float) if dense_writer is not None else None
+        field_dry_flux = np.zeros_like(field_concentration) if field_concentration is not None else None
+        field_wet_flux = np.zeros_like(field_concentration) if field_concentration is not None else None
         sample_window = min(duration, max(float(time_value), 0.0))
         if sample_window <= 0.0:
             sample_window = min(duration, float(config.run.get("output_interval_s", duration)))
@@ -338,13 +420,18 @@ def simulate_particles(
                     )
                     conc_grid = mass_grid * particle_mass / cell_volume * firefighter_factor
                     conc_grid = np.where(float(level) >= terrain_m, conc_grid, 0.0)
-                    for iy in range(grid.ny):
-                        for ix in range(grid.nx):
-                            rec_id = f"G{iy}_{ix}" if len(field_levels) == 1 else f"G{level_index}_{iy}_{ix}"
-                            value = float(conc_grid[iy, ix])
-                            local_values[rec_id]["concentration"] += value
-                            local_values[rec_id]["dry_flux"] += value * max(src.deposition_velocity, 0.0)
-                            local_values[rec_id]["wet_flux"] += value * (max(src.wet_scavenging, 0.0) + washout_rate)
+                    if dense_writer is not None and field_concentration is not None and field_dry_flux is not None and field_wet_flux is not None:
+                        field_concentration[level_index] += conc_grid
+                        field_dry_flux[level_index] += conc_grid * max(src.deposition_velocity, 0.0)
+                        field_wet_flux[level_index] += conc_grid * (max(src.wet_scavenging, 0.0) + washout_rate)
+                    else:
+                        for iy in range(grid.ny):
+                            for ix in range(grid.nx):
+                                rec_id = f"G{iy}_{ix}" if len(field_levels) == 1 else f"G{level_index}_{iy}_{ix}"
+                                value = float(conc_grid[iy, ix])
+                                local_values[rec_id]["concentration"] += value
+                                local_values[rec_id]["dry_flux"] += value * max(src.deposition_velocity, 0.0)
+                                local_values[rec_id]["wet_flux"] += value * (max(src.wet_scavenging, 0.0) + washout_rate)
         gathered = ctx.allgather(local_values)
         for partial in gathered:
             for rec_id, values in partial.items():
@@ -375,6 +462,14 @@ def simulate_particles(
                 row["latitude"] = float(rec.latitude)
                 row["longitude"] = float(rec.longitude)
             rows.append(row)
+        if dense_writer is not None and field_concentration is not None and field_dry_flux is not None and field_wet_flux is not None:
+            dense_writer.write_time(
+                time_value,
+                concentration=field_concentration,
+                dry_flux=field_dry_flux,
+                wet_flux=field_wet_flux,
+                receptor_rows=rows[-len(receptors):] if receptors else [],
+            )
         if ctx.is_root:
             if progress_callback is not None:
                 progress_callback(time_index, time_value)
@@ -384,6 +479,8 @@ def simulate_particles(
                     time_index,
                     time_value,
                 )
+    if dense_writer is not None:
+        dense_writer.close()
     return rows
 
 
@@ -413,6 +510,12 @@ def run(
 ) -> list[dict[str, float | str]]:
     ctx = get_mpi_context(parallel)
     terrain_fields = terrain_fields_for_grid(terrain_input, config)
+    fmt = infer_format(output, output_format)
+    dense_output = (
+        output
+        if ctx.is_root and ctx.size == 1 and fmt == "netcdf" and concentration_output_mode(config) in {"grid", "both"}
+        else None
+    )
     rows = simulate_particles(
         config,
         read_meteorology(meteo_path),
@@ -421,8 +524,9 @@ def run(
         parallel=parallel,
         gpu_backend=gpu_backend,
         progress_callback=progress_callback,
+        dense_output=dense_output,
     )
-    if ctx.is_root:
+    if ctx.is_root and dense_output is None:
         write_particle_output(output, rows, output_format)
     ctx.barrier()
     return rows

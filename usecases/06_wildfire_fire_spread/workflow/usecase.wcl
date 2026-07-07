@@ -1,0 +1,7 @@
+WORKFLOW 06_wildfire_fire_spread {
+  DESCRIPTION = "Sprtz clean-room workflow for 06 Wildfire Fire Spread.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/06_wildfire_fire_spread/demo/step_01_run_fire_spread.py";
+    }
+}

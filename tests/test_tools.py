@@ -17,6 +17,7 @@ SCRIPT = ROOT / "tools" / "meteouniparthenope-wrf-download.py"
 PLOTTER_SCRIPT = ROOT / "tools" / "plotter.py"
 PROFILER_SCRIPT = ROOT / "tools" / "profiler.py"
 RENDER3D_SCRIPT = ROOT / "tools" / "render3d.py"
+COP30_SCRIPT = ROOT / "tools" / "copernicus-cop30-dem-download.py"
 LC100_SCRIPT = ROOT / "tools" / "copernicus-lc100-download.py"
 
 
@@ -66,6 +67,17 @@ def load_render3d_tool():
 
 def load_lc100_download_tool():
     loader = SourceFileLoader("copernicus_lc100_download", str(LC100_SCRIPT))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_cop30_download_tool():
+    loader = SourceFileLoader("copernicus_cop30_download", str(COP30_SCRIPT))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
@@ -164,6 +176,77 @@ def test_lc100_download_overwrite_passes_gdal_overwrite(tmp_path: Path, monkeypa
     assert output.read_text() == "new"
     assert calls[0][-1] == str(output)
     assert "-overwrite" in calls[0]
+
+
+def test_cop30_download_resolves_domain_bbox_with_buffer() -> None:
+    tool = load_cop30_download_tool()
+
+    args = types.SimpleNamespace(
+        south=None,
+        north=None,
+        west=None,
+        east=None,
+        center_lat=40.827,
+        center_lon=14.518,
+        nx=201,
+        ny=201,
+        dx=100.0,
+        dy=100.0,
+        projection="auto-utm",
+        buffer_m=1000.0,
+    )
+
+    south, north, west, east = tool.resolve_bbox(args)
+
+    assert south < 40.736363
+    assert north > 40.917517
+    assert west < 14.398597
+    assert east > 14.637082
+
+
+def test_lc100_download_uses_domain_bbox_for_gdalwarp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tool = load_lc100_download_tool()
+    output = tmp_path / "lc100.tif"
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], check: bool) -> None:
+        calls.append(command)
+        Path(command[-1]).write_text("new")
+
+    monkeypatch.setattr(tool.shutil, "which", lambda name: "/usr/bin/gdalwarp")
+    monkeypatch.setattr(tool.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "copernicus-lc100-download.py",
+            "--center-lat",
+            "40.827",
+            "--center-lon",
+            "14.518",
+            "--nx",
+            "201",
+            "--ny",
+            "201",
+            "--dx",
+            "100",
+            "--dy",
+            "100",
+            "--buffer-m",
+            "1000",
+            "--output",
+            str(output),
+        ],
+    )
+
+    tool.main()
+
+    te_index = calls[0].index("-te")
+    west, south, east, north = [float(value) for value in calls[0][te_index + 1 : te_index + 5]]
+    assert south < 40.736363
+    assert north > 40.917517
+    assert west < 14.398597
+    assert east > 14.637082
 
 
 def test_plan_downloads_expands_hourly_duration_under_data_root() -> None:
@@ -614,6 +697,10 @@ def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
         ds.createVariable("field_x", "f8", ("field_x",))[:] = [-50.0, 50.0]
         ds.createVariable("latitude", "f8", ("field_y",))[:] = [40.0, 40.1]
         ds.createVariable("longitude", "f8", ("field_x",))[:] = [14.0, 14.1]
+        ds.createVariable("surface_altitude", "f8", ("field_y", "field_x"))[:, :] = [
+            [0.0, 0.0],
+            [0.0, 12.0],
+        ]
         concentration = ds.createVariable("concentration_field", "f8", ("time", "field_z", "field_y", "field_x"))
         concentration.units = "g m-3"
         concentration.long_name = "gridded mass concentration"
@@ -627,10 +714,40 @@ def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
     assert profile.variable_name == "concentration_field"
     assert profile.profiles.shape == (2, 3)
     np.testing.assert_allclose(profile.z_axis, [1.5, 10.0, 25.0])
-    np.testing.assert_allclose(profile.profiles[1], [2.0, 4.0, 6.0])
+    np.testing.assert_allclose(profile.profiles[1], [0.0, 0.0, 6.0])
+    assert profile.z_reference == "height_above_sea_level"
     assert profile.units == "g m-3"
     assert profile.origin_lat == pytest.approx(40.0)
     assert profile.origin_lon == pytest.approx(14.0)
+
+
+def test_profiler_emission_label_adds_dem_to_source_z(tmp_path: Path) -> None:
+    profiler = load_profiler_tool()
+    profile = profiler.ProfileData(
+        source_name="concentration.nc",
+        variable_name="concentration_field",
+        values=np.zeros((1, 1, 1, 1), dtype=float),
+        x_axis=np.asarray([0.0], dtype=float),
+        y_axis=np.asarray([0.0], dtype=float),
+        z_axis=np.asarray([0.0], dtype=float),
+        time_axis=np.asarray([0.0], dtype=float),
+        time_labels=["t=0"],
+        units="g m-3",
+        long_name="gridded mass concentration",
+        ix=0,
+        iy=0,
+        terrain_m=np.asarray([[68.0]], dtype=float),
+    )
+    config = tmp_path / "config.json"
+    config.write_text(
+        '{"sources": [{"id": "FIRE001", "x": 0.0, "y": 0.0, "z": 0.0, "height_agl_m": 0.0}]}',
+        encoding="utf-8",
+    )
+
+    points = profiler.read_emission_points(config, profile)
+
+    assert points[0].release_height_asl_m == pytest.approx(68.0)
+    assert points[0].release_height_agl_m == pytest.approx(0.0)
 
 
 def test_profiler_main_animates_selected_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -735,6 +852,25 @@ def test_render3d_reads_dem_and_land_cover_terrain(tmp_path: Path) -> None:
     np.testing.assert_allclose(terrain.longitude_axis, [14.0, 14.1, 14.2])
     np.testing.assert_allclose(terrain.y_axis, [-50.0, 50.0])
     np.testing.assert_allclose(terrain.land_cover, [[80, 80, 50], [311, 311, 50]])
+
+
+def test_render3d_emission_label_adds_dem_to_source_z(tmp_path: Path) -> None:
+    render3d = load_render3d_tool()
+    terrain = render3d.TerrainField(
+        elevation_m=np.asarray([[68.0]], dtype=float),
+        x_axis=np.asarray([0.0], dtype=float),
+        y_axis=np.asarray([0.0], dtype=float),
+    )
+    config = tmp_path / "config.json"
+    config.write_text(
+        '{"sources": [{"id": "FIRE001", "x": 0.0, "y": 0.0, "z": 0.0, "height_agl_m": 0.0}]}',
+        encoding="utf-8",
+    )
+
+    points = render3d.read_emission_points(config, terrain)
+
+    assert points[0].release_height_asl_m == pytest.approx(68.0)
+    assert points[0].release_height_agl_m == pytest.approx(0.0)
 
 
 def test_render3d_terrain_colormap_uses_blue_only_for_sea() -> None:
@@ -961,6 +1097,8 @@ def test_render3d_main_animates_selected_volume(monkeypatch: pytest.MonkeyPatch,
             "2",
             "--ground-color",
             "land-cover",
+            "--view",
+            "northeast",
         ]
     )
 
@@ -972,6 +1110,17 @@ def test_render3d_main_animates_selected_volume(monkeypatch: pytest.MonkeyPatch,
     assert calls[0]["loop"] == 2
     assert calls[0]["vertical_exaggeration"] == 2.0
     assert calls[0]["ground_color"] == "land-cover"
+    assert calls[0]["elevation"] == 28.0
+    assert calls[0]["azimuth"] == 45.0
+
+
+def test_render3d_camera_view_presets_can_be_overridden() -> None:
+    render3d = load_render3d_tool()
+
+    assert render3d._camera_angles(None, None, None) == (28.0, -55.0)
+    assert render3d._camera_angles("top", None, None) == (90.0, -90.0)
+    assert render3d._camera_angles("north", 35.0, None) == (35.0, 90.0)
+    assert render3d._camera_angles("east", None, -30.0) == (28.0, -30.0)
 
 
 def test_render3d_rejects_vertical_exaggeration_below_one(tmp_path: Path) -> None:

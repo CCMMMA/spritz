@@ -99,14 +99,14 @@ meters or `latitude,longitude` columns. Observation columns are
 Use case 01 exposes the same path from the command line:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --wrf data/wrf/d03/wrf5_d03_20260621Z0000.nc \
   --output data/output/wrf_100m_wind.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --nx 101 \
   --ny 101 \
-  --config usecases/01_high_resolution_wind_field/config.json \
+  --config usecases/01_high_resolution_wind_field/demo/config.json \
   --dem data/dem/cop30_naples.tif \
   --land-cover data/landcover/lc100_naples.tif \
   --station-measurements data/stations/weather_observations.csv \
@@ -135,8 +135,8 @@ interpreted as percent and converted to a 0-1 rate. If `RH2` is missing but
 specific humidity and saturation vapor pressure.
 
 Use case 01 can set the output vertical coordinate explicitly with
-`--vertical-levels-m` or through
-`usecases/01_high_resolution_wind_field/config.json`. The documented use-case
+`--field-z-levels` or through
+`usecases/01_high_resolution_wind_field/demo/config.json`. The documented use-case
 configuration sets fixed heights above mean sea level:
 `10, 15, 25, 50, 75, 100, 150, 250, 500, 750, 1000, 1250` m. Four-dimensional
 WRF wind is interpreted as `time, level, y, x` with levels in metres above sea

@@ -28,6 +28,8 @@ import subprocess
 import sys
 import uuid
 
+from sprtz.terrain.regrid import DomainDefinition, aoi_bounds
+
 COPERNICUS_LC100_2019_URL = (
     "https://zenodo.org/records/3939050/files/"
     "PROBAV_LC100_global_v3.0.1_2019-nrt_"
@@ -43,10 +45,23 @@ def parse_args():
         )
     )
 
-    parser.add_argument("--south", type=float, required=True, help="Southern latitude")
-    parser.add_argument("--north", type=float, required=True, help="Northern latitude")
-    parser.add_argument("--west", type=float, required=True, help="Western longitude")
-    parser.add_argument("--east", type=float, required=True, help="Eastern longitude")
+    parser.add_argument("--south", type=float, default=None, help="Southern latitude")
+    parser.add_argument("--north", type=float, default=None, help="Northern latitude")
+    parser.add_argument("--west", type=float, default=None, help="Western longitude")
+    parser.add_argument("--east", type=float, default=None, help="Eastern longitude")
+    parser.add_argument("--center-lat", type=float, default=None, help="Terrain domain center latitude")
+    parser.add_argument("--center-lon", type=float, default=None, help="Terrain domain center longitude")
+    parser.add_argument("--nx", type=int, default=None, help="Terrain grid node count in x")
+    parser.add_argument("--ny", type=int, default=None, help="Terrain grid node count in y")
+    parser.add_argument("--dx", type=float, default=None, help="Terrain grid x spacing in metres")
+    parser.add_argument("--dy", type=float, default=None, help="Terrain grid y spacing in metres; defaults to --dx")
+    parser.add_argument("--projection", default="auto-utm", help="Terrain grid projection")
+    parser.add_argument(
+        "--buffer-m",
+        type=float,
+        default=1000.0,
+        help="Extra source-raster buffer around the terrain grid in metres when using domain arguments",
+    )
     parser.add_argument("--output", required=True, help="Output GeoTIFF path")
 
     parser.add_argument(
@@ -64,23 +79,58 @@ def parse_args():
     return parser.parse_args()
 
 
-def validate_bbox(args):
-    if args.south >= args.north:
+def validate_bbox(south, north, west, east):
+    if south >= north:
         raise ValueError("--south must be smaller than --north")
 
-    if args.west >= args.east:
+    if west >= east:
         raise ValueError("--west must be smaller than --east")
 
-    if not (-90 <= args.south <= 90 and -90 <= args.north <= 90):
+    if not (-90 <= south <= 90 and -90 <= north <= 90):
         raise ValueError("Latitude values must be between -90 and 90")
 
-    if not (-180 <= args.west <= 180 and -180 <= args.east <= 180):
+    if not (-180 <= west <= 180 and -180 <= east <= 180):
         raise ValueError("Longitude values must be between -180 and 180")
+
+
+def resolve_bbox(args):
+    explicit = [args.south, args.north, args.west, args.east]
+    if all(value is not None for value in explicit):
+        south = float(args.south)
+        north = float(args.north)
+        west = float(args.west)
+        east = float(args.east)
+        validate_bbox(south, north, west, east)
+        return south, north, west, east
+    if any(value is not None for value in explicit):
+        raise ValueError(
+            "--south, --north, --west, and --east must be supplied together"
+        )
+    required = [args.center_lat, args.center_lon, args.nx, args.ny, args.dx]
+    if any(value is None for value in required):
+        raise ValueError(
+            "supply either --south/--north/--west/--east or "
+            "--center-lat/--center-lon/--nx/--ny/--dx"
+        )
+    west, south, east, north = aoi_bounds(
+        DomainDefinition(
+            center_lat=float(args.center_lat),
+            center_lon=float(args.center_lon),
+            nx=int(args.nx),
+            ny=int(args.ny),
+            dx_m=float(args.dx),
+            dy_m=float(args.dy if args.dy is not None else args.dx),
+            projection=str(args.projection),
+            buffer_m=float(args.buffer_m),
+        )
+    )
+    validate_bbox(south, north, west, east)
+    return south, north, west, east
 
 
 def main():
     args = parse_args()
-    validate_bbox(args)
+    south, north, west, east = resolve_bbox(args)
 
     if shutil.which("gdalwarp") is None:
         print(
@@ -102,10 +152,10 @@ def main():
     command = [
         "gdalwarp",
         "-te",
-        str(args.west),
-        str(args.south),
-        str(args.east),
-        str(args.north),
+        str(west),
+        str(south),
+        str(east),
+        str(north),
         "-te_srs",
         "EPSG:4326",
         "-t_srs",

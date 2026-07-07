@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -49,10 +50,29 @@ class ProfileData:
     iy: int
     origin_lat: float | None = None
     origin_lon: float | None = None
+    terrain_m: np.ndarray | None = None
+    z_reference: str = "height_above_sea_level"
 
     @property
     def profiles(self) -> np.ndarray:
-        return self.values[:, :, self.iy, self.ix]
+        profiles = np.asarray(self.values[:, :, self.iy, self.ix], dtype=float).copy()
+        if self.terrain_m is not None and self.z_reference == "height_above_sea_level":
+            ground = float(self.terrain_m[self.iy, self.ix])
+            profiles[:, self.z_axis < ground] = 0.0
+        return profiles
+
+
+@dataclass(frozen=True)
+class EmissionPoint:
+    id: str
+    x: float
+    y: float
+    release_height_agl_m: float
+    release_height_asl_m: float
+
+    @property
+    def label(self) -> str:
+        return f"{self.id}: z ASL {_format_meters(self.release_height_asl_m)}, z AGL {_format_meters(self.release_height_agl_m)}"
 
 
 def _load_netcdf4() -> Any:
@@ -88,6 +108,12 @@ def _variable_array(variable: Any) -> np.ndarray:
     if np.ma.isMaskedArray(values):
         values = np.asarray(values.filled(np.nan))
     return np.asarray(values, dtype=float)
+
+
+def _take_checked(values: np.ndarray, axis: int, index: int, *, name: str) -> np.ndarray:
+    if values.shape[axis] <= index:
+        raise ValueError(f"{name} index {index} is out of range for size {values.shape[axis]}")
+    return np.take(values, index, axis=axis)
 
 
 def _candidate_variable_name(ds: Any, requested: str | None) -> str:
@@ -132,6 +158,37 @@ def _axis_values(ds: Any, names: Sequence[str], size: int, dimension_name: str |
     if values.ndim == 1 and values.size == size:
         return values
     return np.arange(size, dtype=float)
+
+
+def _read_surface_altitude(ds: Any, y_count: int, x_count: int) -> np.ndarray | None:
+    variable = _find_variable(ds, ("surface_altitude", "terrain_m", "dem_elevation_m", "elevation_m"))
+    if variable is None:
+        return None
+    values = _variable_array(variable)
+    while values.ndim > 2:
+        values = _take_checked(values, 0, 0, name="time")
+    if values.shape == (y_count, x_count):
+        return values
+    return None
+
+
+def _vertical_reference(ds: Any, variable_name: str, z_axis_variable: Any | None) -> str:
+    for attr in (
+        f"spritz_{variable_name}_z_reference",
+        "spritz_concentration_field_z_reference",
+        "z_reference",
+    ):
+        value = getattr(ds, attr, None)
+        if value:
+            return str(value).strip().lower()
+    text = " ".join(
+        str(getattr(z_axis_variable, attr, ""))
+        for attr in ("standard_name", "long_name", "positive", "units")
+        if z_axis_variable is not None
+    ).lower()
+    if "ground" in text or "agl" in text:
+        return "height_above_ground"
+    return "height_above_sea_level"
 
 
 def _coordinate_value(
@@ -217,8 +274,11 @@ def read_profile_data(
         x_axis = _axis_values(ds, X_NAMES, x_count, dimensions[3])
         y_axis = _axis_values(ds, Y_NAMES, y_count, dimensions[2])
         z_axis = _axis_values(ds, Z_NAMES, z_count, dimensions[1])
+        z_variable = ds.variables.get(dimensions[1]) if dimensions[1] is not None else _find_variable(ds, Z_NAMES)
         time_axis = _axis_values(ds, TIME_NAMES, time_count, dimensions[0])
         labels = _time_labels(ds, time_count, time_axis)
+        terrain_m = _read_surface_altitude(ds, y_count, x_count)
+        z_reference = _vertical_reference(ds, actual, z_variable)
         origin_ix = int(np.argmin(np.abs(x_axis - 0.0)))
         origin_iy = int(np.argmin(np.abs(y_axis - 0.0)))
         origin_lat = _coordinate_value(ds, LATITUDE_NAMES, x_axis=x_axis, y_axis=y_axis, ix=origin_ix, iy=origin_iy)
@@ -245,6 +305,8 @@ def read_profile_data(
         iy=iy,
         origin_lat=origin_lat,
         origin_lon=origin_lon,
+        terrain_m=terrain_m,
+        z_reference=z_reference,
     )
 
 
@@ -270,10 +332,105 @@ def _is_concentration_profile(profile: ProfileData) -> bool:
     return "concentration" in text or "mass" in text
 
 
-def _origin_label(profile: ProfileData) -> str | None:
+def _format_geographic_coordinate(value: float, positive_suffix: str, negative_suffix: str, coordinate_format: str) -> str:
+    suffix = positive_suffix if value >= 0.0 else negative_suffix
+    absolute = abs(float(value))
+    if coordinate_format == "decimal":
+        return f"{absolute:.6f} deg{suffix}"
+    degrees = int(np.floor(absolute))
+    minutes_total = (absolute - degrees) * 60.0
+    if coordinate_format == "dms":
+        minutes = int(np.floor(minutes_total))
+        seconds = (minutes_total - minutes) * 60.0
+        return f"{degrees:02d}°{minutes:02d}'{seconds:04.1f}\"{suffix}"
+    return f"{degrees:02d}°{minutes_total:05.2f}'{suffix}"
+
+
+def _origin_label(profile: ProfileData, coordinate_format: str) -> str | None:
     if profile.origin_lat is None or profile.origin_lon is None:
         return None
-    return f"x=0, y=0: {profile.origin_lat:.6f} degN, {profile.origin_lon:.6f} degE"
+    latitude = _format_geographic_coordinate(profile.origin_lat, "N", "S", coordinate_format)
+    longitude = _format_geographic_coordinate(profile.origin_lon, "E", "W", coordinate_format)
+    return f"x=0, y=0: {latitude}, {longitude}"
+
+
+def _format_meters(value: float) -> str:
+    if np.isfinite(value) and abs(value - round(value)) < 1.0e-6:
+        return f"{value:.0f} m"
+    return f"{value:.2f} m"
+
+
+def _nearest_ground(profile: ProfileData, x: float, y: float) -> float | None:
+    if profile.terrain_m is None:
+        return None
+    ix = int(np.argmin(np.abs(profile.x_axis - float(x))))
+    iy = int(np.argmin(np.abs(profile.y_axis - float(y))))
+    value = float(profile.terrain_m[iy, ix])
+    return value if np.isfinite(value) else None
+
+
+def _source_ground_asl_m(source: dict[str, Any], profile: ProfileData, x: float, y: float) -> float:
+    terrain_ground = _nearest_ground(profile, x, y)
+    return float(terrain_ground if terrain_ground is not None else 0.0) + float(source.get("z", 0.0))
+
+
+def _source_json_candidates(config_path: str | Path | None, input_path: str | Path | None) -> list[Path]:
+    if config_path is not None:
+        return [Path(config_path)]
+    if input_path is None:
+        return []
+    input_parent = Path(input_path).resolve().parent
+    candidates: list[Path] = []
+    for directory in (input_parent, *input_parent.parents[:4]):
+        candidates.extend(directory.glob("config.json"))
+        candidates.extend(directory.glob("*event*.json"))
+    return list(dict.fromkeys(candidates))
+
+
+def _source_records_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(payload.get("sources"), list):
+        return [record for record in payload["sources"] if isinstance(record, dict)]
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("fire_events"), list):
+        return [record for record in metadata["fire_events"] if isinstance(record, dict)]
+    return []
+
+
+def read_emission_points(config_path: str | Path | None, profile: ProfileData, *, input_path: str | Path | None = None) -> tuple[EmissionPoint, ...]:
+    config = None
+    for candidate in _source_json_candidates(config_path, input_path):
+        try:
+            with candidate.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if _source_records_from_payload(payload):
+            config = payload
+            break
+    if config is None:
+        return ()
+    points: list[EmissionPoint] = []
+    for index, source in enumerate(_source_records_from_payload(config)):
+        x = float(source.get("x", 0.0))
+        y = float(source.get("y", 0.0))
+        agl = float(source.get("height_agl_m", source.get("stack_height", 0.0)))
+        ground = _source_ground_asl_m(source, profile, x, y)
+        points.append(
+            EmissionPoint(
+                id=str(source.get("id", f"S{index + 1}")),
+                x=x,
+                y=y,
+                release_height_agl_m=agl,
+                release_height_asl_m=ground + agl,
+            )
+        )
+    return tuple(points)
+
+
+def _emission_summary_text(emission_points: Sequence[EmissionPoint]) -> str | None:
+    if not emission_points:
+        return None
+    return "\n".join(point.label for point in emission_points[:4])
 
 
 def plot_profile(
@@ -283,6 +440,8 @@ def plot_profile(
     title: str | None,
     dpi: int,
     time_index: int | None = None,
+    emission_points: Sequence[EmissionPoint] = (),
+    coordinate_format: str = "ddm",
 ) -> Path:
     plt = _load_matplotlib()
     profiles = profile.profiles
@@ -310,7 +469,10 @@ def plot_profile(
     cbar.set_label(label)
     ax_heat.set_title("Time-height section")
     ax_heat.set_xlabel("time index")
-    ax_heat.set_ylabel("vertical level [m]")
+    ax_heat.set_ylabel(_vertical_axis_label(profile))
+    local_ground = _local_ground(profile)
+    if local_ground is not None:
+        ax_heat.axhline(local_ground, color="0.85", linewidth=1.0, linestyle="--")
     if time_index is not None:
         ax_heat.axvline(time_index, color="white", linewidth=1.6)
         indexes = [time_index]
@@ -323,22 +485,49 @@ def plot_profile(
         label_text = profile.time_labels[index] if index < len(profile.time_labels) else f"t={index}"
         ax_profiles.plot(profiles[index, :], profile.z_axis, color=color, linewidth=1.7, label=label_text)
     profile_title = f"Vertical profile at x={profile.x_axis[profile.ix]:.0f} m, y={profile.y_axis[profile.iy]:.0f} m"
-    origin_label = _origin_label(profile)
+    origin_label = _origin_label(profile, coordinate_format)
     if origin_label:
         profile_title = f"{profile_title}\n{origin_label}"
+    if emission_points:
+        profile_title = f"{profile_title}\n" + " | ".join(point.label for point in emission_points[:3])
     ax_profiles.set_title(profile_title)
     ax_profiles.set_xlabel(label)
-    ax_profiles.set_ylabel("vertical level [m]")
+    ax_profiles.set_ylabel(_vertical_axis_label(profile))
+    if local_ground is not None:
+        ax_profiles.axhline(local_ground, color="0.65", linewidth=1.0, linestyle="--")
     finite = profiles[np.isfinite(profiles)]
     maximum = float(np.nanmax(finite)) if finite.size else 0.0
     if maximum > 0.0:
         ax_profiles.set_xlim(left=0.0, right=maximum * 1.05)
     ax_profiles.grid(True, alpha=0.25)
     ax_profiles.legend(fontsize=6, loc="best")
+    summary = _emission_summary_text(emission_points)
+    if summary:
+        fig.text(
+            0.012,
+            0.012,
+            summary,
+            fontsize=8,
+            ha="left",
+            va="bottom",
+            bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "edgecolor": "0.35", "alpha": 0.86},
+        )
     fig.suptitle(title or f"{profile.source_name}: time-varying vertical {profile.long_name}")
     fig.savefig(out)
     plt.close(fig)
     return out
+
+
+def _local_ground(profile: ProfileData) -> float | None:
+    if profile.terrain_m is None or profile.z_reference != "height_above_sea_level":
+        return None
+    return float(profile.terrain_m[profile.iy, profile.ix])
+
+
+def _vertical_axis_label(profile: ProfileData) -> str:
+    if profile.z_reference == "height_above_ground":
+        return "height above ground [m]"
+    return "altitude above mean sea level [m]"
 
 
 def _write_gif(frame_paths: Sequence[Path], output_path: str | Path, *, duration_ms: int, loop: int) -> Path:
@@ -372,12 +561,22 @@ def plot_profile_animation(
     dpi: int,
     duration_ms: int,
     loop: int,
+    emission_points: Sequence[EmissionPoint] = (),
+    coordinate_format: str = "ddm",
 ) -> Path:
     with tempfile.TemporaryDirectory(prefix="sprtz_profiler_frames_") as tmp:
         frame_paths: list[Path] = []
         for time_index in range(profile.values.shape[0]):
             frame_path = Path(tmp) / f"profile_{time_index:05d}.png"
-            plot_profile(profile, frame_path, title=title, dpi=dpi, time_index=time_index)
+            plot_profile(
+                profile,
+                frame_path,
+                title=title,
+                dpi=dpi,
+                time_index=time_index,
+                emission_points=emission_points,
+                coordinate_format=coordinate_format,
+            )
             frame_paths.append(frame_path)
             LOGGER.info("animation frame %d/%d time_index=%d", len(frame_paths), profile.values.shape[0], time_index)
         return _write_gif(frame_paths, output_path, duration_ms=duration_ms, loop=loop)
@@ -392,6 +591,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--y", "--y-m", dest="y_m", type=float, default=0.0, help="local y coordinate for the sampled column")
     parser.add_argument("--time-index", type=int, default=None, help="single time index to highlight in a static profile")
     parser.add_argument("--title", default=None, help="figure title")
+    parser.add_argument("--config", default=None, help="optional Sprtz JSON config; shows emission point z ASL and z AGL heights")
+    parser.add_argument(
+        "--coordinate-format",
+        choices=("ddm", "decimal", "dms"),
+        default="ddm",
+        help="latitude/longitude label format: ddm is DD°MM' (default), decimal is decimal degrees, dms is DD°MM'SS\"",
+    )
     parser.add_argument("--dpi", type=int, default=300, help="output raster DPI")
     parser.add_argument("--animate", action="store_true", help="write an animated GIF with every simulation time frame")
     parser.add_argument("--frame-duration-ms", type=int, default=300, help="animated GIF frame duration in milliseconds")
@@ -410,6 +616,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         profile = read_profile_data(args.input, variable_name=args.variable, x_m=args.x_m, y_m=args.y_m)
+        emission_points = read_emission_points(args.config, profile, input_path=args.input)
         if args.animate:
             out = plot_profile_animation(
                 profile,
@@ -418,11 +625,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dpi=args.dpi,
                 duration_ms=args.frame_duration_ms,
                 loop=args.gif_loop,
+                emission_points=emission_points,
+                coordinate_format=args.coordinate_format,
             )
         else:
             if args.time_index is not None and (args.time_index < 0 or args.time_index >= profile.values.shape[0]):
                 raise IndexError(f"time index {args.time_index} is out of range for size {profile.values.shape[0]}")
-            out = plot_profile(profile, args.output, title=args.title, dpi=args.dpi, time_index=args.time_index)
+            out = plot_profile(
+                profile,
+                args.output,
+                title=args.title,
+                dpi=args.dpi,
+                time_index=args.time_index,
+                emission_points=emission_points,
+                coordinate_format=args.coordinate_format,
+            )
     except KeyboardInterrupt:
         LOGGER.warning("interrupted; stopping profile generation")
         return 130

@@ -1,0 +1,7 @@
+WORKFLOW 11_backward_fire_origin {
+  DESCRIPTION = "Sprtz clean-room workflow for 11 Backward Fire Origin.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/11_backward_fire_origin/demo/step_01_estimate_ignition.py";
+    }
+}

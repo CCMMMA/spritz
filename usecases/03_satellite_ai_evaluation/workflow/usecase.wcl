@@ -1,0 +1,10 @@
+WORKFLOW 03_satellite_ai_evaluation {
+  DESCRIPTION = "Sprtz clean-room workflow for 03 Satellite Ai Evaluation.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/03_satellite_ai_evaluation/demo/step_01_make_demo_mask.py";
+    }
+    STEP step_02 {
+      COMMAND = "python usecases/03_satellite_ai_evaluation/demo/step_02_evaluate.py";
+    }
+}

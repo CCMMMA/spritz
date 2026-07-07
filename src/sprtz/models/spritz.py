@@ -23,7 +23,7 @@ from sprtz.exceptions import DataFormatError
 from sprtz.io.calpuff import write_calpuff_concentration_dat
 from sprtz.io.jsonio import read_json
 from sprtz.io.legacy_outputs import infer_format, write_legacy_table
-from sprtz.io.netcdf_cf import read_cf_meteorology, write_cf_concentration
+from sprtz.io.netcdf_cf import DenseConcentrationWriter, read_cf_meteorology, write_cf_concentration
 from sprtz.parallel import get_gpu_context, get_mpi_context
 
 LOGGER = logging.getLogger(__name__)
@@ -176,7 +176,7 @@ def _source_ground_altitude_m(src: Source, terrain_fields: dict[str, np.ndarray]
 def _source_release_height_agl_m(src: Source) -> float:
     if src.height_agl_m is not None:
         return float(src.height_agl_m)
-    return float(src.stack_height)
+    return 0.0
 
 
 def _wind_4d(meteo: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
@@ -753,6 +753,207 @@ def _compute_gaussian_grid_concentrations(
     return rows
 
 
+def _field_lat_lon(config: SuiteConfig) -> tuple[np.ndarray, np.ndarray] | tuple[None, None]:
+    grid = Grid(**asdict(config.grid))
+    transformer = _grid_geographic_transformer(config)
+    if transformer is None:
+        return None, None
+    x2d, y2d = np.meshgrid(grid.x.astype(float), grid.y.astype(float))
+    longitude, latitude = transformer.transform(x2d, y2d)
+    return np.asarray(latitude, dtype=float), np.asarray(longitude, dtype=float)
+
+
+def _stream_gaussian_grid_concentrations(
+    *,
+    config: SuiteConfig,
+    meteo: dict[str, Any],
+    output: str | Path,
+    times: tuple[float, ...],
+    stability: str,
+    interval_mass_time: float,
+    puff_samples: int,
+    initial_sigma_h: float,
+    initial_sigma_z: float,
+    ambient_temperature: float,
+    mixing_height: float,
+    washout_rate: float,
+    wind_sampler: WindSampler,
+    terrain_fields: dict[str, np.ndarray],
+    progress_callback: Callable[[int, float], None] | None,
+) -> list[dict[str, float | str]]:
+    """Write gridded Gaussian puff arrays directly to NetCDF-CF."""
+    grid = Grid(**asdict(config.grid))
+    field_levels = field_z_levels(config)
+    x2d, y2d = np.meshgrid(grid.x.astype(float), grid.y.astype(float))
+    terrain_m = np.asarray(terrain_fields.get("terrain_m", np.zeros((grid.ny, grid.nx), dtype=float)), dtype=float)
+    land_cover = terrain_fields.get("land_cover")
+    latitude, longitude = _field_lat_lon(config)
+    point_receptors = tuple(config.receptors) if concentration_output_mode(config) == "both" else ()
+    point_templates: list[dict[str, float | str]] = []
+    for rec in point_receptors:
+        row: dict[str, float | str] = {
+            "receptor": rec.id,
+            "output_kind": "receptor",
+            "x": rec.x,
+            "y": rec.y,
+            "z": rec.z,
+            **_terrain_row_fields_for_receptor(terrain_fields, rec.id),
+        }
+        if rec.latitude is not None and rec.longitude is not None:
+            row["latitude"] = float(rec.latitude)
+            row["longitude"] = float(rec.longitude)
+        point_templates.append(row)
+    datetimes = {
+        float(time_value): dt.isoformat()
+        for time_value in times
+        if (dt := sample_datetime(config, time_value)) is not None
+    }
+    rows: list[dict[str, float | str]] = []
+    downwash = bool(config.run.get("stack_tip_downwash", True))
+
+    with DenseConcentrationWriter(
+        output,
+        times=times,
+        x=grid.x,
+        y=grid.y,
+        z=field_levels,
+        point_receptors=point_templates,
+        z_reference=str(meteo.get("z_reference", "height_above_sea_level")),
+        latitude=latitude,
+        longitude=longitude,
+        surface_altitude=terrain_m if "terrain_m" in terrain_fields else None,
+        land_cover=land_cover,
+        datetimes=datetimes or None,
+    ) as writer:
+        for time_index, sample_time in enumerate(times, start=1):
+            sample_dt = sample_datetime(config, sample_time)
+            firefighter_factor = _firefighters_emission_factor(config, sample_dt)
+            concentration = np.zeros((len(field_levels), grid.ny, grid.nx), dtype=float)
+            dry_flux = np.zeros_like(concentration)
+            wet_flux = np.zeros_like(concentration)
+            point_values = {
+                rec.id: {"concentration": 0.0, "dry_flux": 0.0, "wet_flux": 0.0}
+                for rec in point_receptors
+            }
+            emission_window = min(interval_mass_time, max(float(sample_time), 1.0))
+            dt = emission_window / float(max(puff_samples, 1))
+
+            for src in config.sources:
+                if not _source_active(config, src, sample_dt):
+                    continue
+                source_ground_asl = _source_ground_altitude_m(src, terrain_fields, grid)
+                release_height_agl = _source_release_height_agl_m(src)
+                source_wet_rate = max(src.wet_scavenging, 0.0) + washout_rate
+                emission_rate = src.emission_rate * firefighter_factor
+                for sample_index in range(max(puff_samples, 1)):
+                    age_s = (sample_index + 0.5) * dt
+                    release_time = max(float(sample_time) - age_s, 0.0)
+                    u, v, speed = wind_sampler.vector(
+                        src.x,
+                        src.y,
+                        max(source_ground_asl + release_height_agl, 0.0),
+                        release_time,
+                    )
+                    center_x = src.x + u * age_s
+                    center_y = src.y + v * age_s
+                    travel_distance = max(speed * age_s, 1.0)
+                    eff_h = effective_release_height(
+                        stack_height=release_height_agl,
+                        source_z=source_ground_asl,
+                        receptor_z=0.0,
+                        wind_speed=speed,
+                        downwind_distance=travel_distance,
+                        stack_diameter=src.stack_diameter,
+                        exit_velocity=src.exit_velocity,
+                        exit_temperature=src.exit_temperature,
+                        ambient_temperature=ambient_temperature,
+                        heat_release=src.heat_release,
+                        downwash=downwash,
+                    )
+                    depletion = depletion_factor(
+                        travel_time_s=age_s,
+                        decay_rate_s=src.decay_rate,
+                        deposition_velocity_m_s=src.deposition_velocity,
+                        mixing_height_m=mixing_height,
+                        wet_scavenging_s=source_wet_rate,
+                        settling_velocity_m_s=src.settling_velocity,
+                    )
+                    sigmas = dispersion_parameters(
+                        travel_distance,
+                        stability,
+                        elapsed_s=age_s,
+                        initial_sigma_y=initial_sigma_h,
+                        initial_sigma_z=initial_sigma_z,
+                        source_width=src.width,
+                        source_length=src.length,
+                        source_height=max(src.height, 0.0),
+                    )
+                    mass = emission_rate * dt * depletion
+                    for level_index, level in enumerate(field_levels):
+                        value = _gaussian_puff_array(
+                            mass=mass,
+                            x_receptor=x2d,
+                            y_receptor=y2d,
+                            z_receptor=float(level),
+                            x_center=center_x,
+                            y_center=center_y,
+                            z_center=eff_h,
+                            sigma_x=sigmas.sigma_x,
+                            sigma_y=sigmas.sigma_y,
+                            sigma_z=sigmas.sigma_z,
+                        )
+                        concentration[level_index] += value
+                        dry_flux[level_index] += value * max(src.deposition_velocity, 0.0)
+                        wet_flux[level_index] += value * source_wet_rate * mixing_height
+                    for rec in point_receptors:
+                        value = gaussian_puff(
+                            mass=mass,
+                            x_receptor=rec.x,
+                            y_receptor=rec.y,
+                            z_receptor=rec.z,
+                            x_center=center_x,
+                            y_center=center_y,
+                            z_center=eff_h,
+                            sigmas=sigmas,
+                        )
+                        point_values[rec.id]["concentration"] += value
+                        point_values[rec.id]["dry_flux"] += value * max(src.deposition_velocity, 0.0)
+                        point_values[rec.id]["wet_flux"] += value * source_wet_rate * mixing_height
+
+            for level_index, level in enumerate(field_levels):
+                below_ground = float(level) < terrain_m
+                concentration[level_index][below_ground] = 0.0
+                dry_flux[level_index][below_ground] = 0.0
+                wet_flux[level_index][below_ground] = 0.0
+                concentration[level_index][concentration[level_index] < 1.0e-30] = 0.0
+                dry_flux[level_index][dry_flux[level_index] < 1.0e-30] = 0.0
+                wet_flux[level_index][wet_flux[level_index] < 1.0e-30] = 0.0
+
+            point_rows: list[dict[str, float | str]] = []
+            for template, rec in zip(point_templates, point_receptors):
+                values = point_values[rec.id]
+                row = {
+                    **template,
+                    "time": sample_time,
+                    **({} if sample_dt is None else {"datetime": sample_dt.isoformat()}),
+                    "concentration": float(values["concentration"]),
+                    "dry_flux": float(values["dry_flux"]),
+                    "wet_flux": float(values["wet_flux"]),
+                }
+                point_rows.append(row)
+                rows.append(row)
+            writer.write_time(sample_time, concentration=concentration, dry_flux=dry_flux, wet_flux=wet_flux, receptor_rows=point_rows)
+            if progress_callback is not None:
+                progress_callback(time_index, sample_time)
+            else:
+                LOGGER.info(
+                    "Spritz Gaussian puff: concentration output interval reached index=%d output_time_s=%.0f",
+                    time_index,
+                    sample_time,
+                )
+    return rows
+
+
 def compute_concentrations(
     config: SuiteConfig,
     meteo: dict[str, Any],
@@ -1045,6 +1246,50 @@ def run(
     ctx = get_mpi_context(parallel)
     meteo = read_meteorology(meteo_path)
     terrain_fields = terrain_fields_for_grid(terrain_input, config)
+    fmt = infer_format(output, output_format)
+    if ctx.is_root and ctx.size == 1 and fmt == "netcdf" and concentration_output_mode(config) in {"grid", "both"}:
+        config.validate()
+        stability = str(config.run.get("stability", config.run.get("STABILITY", "D")))
+        numerical_mode = str(config.run.get("numerical_mode", config.run.get("NUMERICAL_MODE", "puff"))).lower()
+        if numerical_mode == "puff":
+            times = output_times(config)
+            output_interval = config.run.get("output_interval_s", config.run.get("OUTPUT_INTERVAL_S"))
+            averaging_time = float(config.run.get("averaging_time_s", config.run.get("AVERAGING_TIME_S", 3600.0)))
+            interval_mass_time = float(output_interval) if output_interval is not None else averaging_time
+            puff_samples = max(1, int(config.run.get("gaussian_puff_samples", config.run.get("GAUSSIAN_PUFF_SAMPLES", 6))))
+            initial_sigma_h = float(
+                config.run.get(
+                    "gaussian_initial_sigma_h",
+                    config.run.get("GAUSSIAN_INITIAL_SIGMA_H", config.run.get("particle_sigma_h", 0.0)),
+                )
+            )
+            initial_sigma_z = float(
+                config.run.get(
+                    "gaussian_initial_sigma_z",
+                    config.run.get("GAUSSIAN_INITIAL_SIGMA_Z", config.run.get("particle_sigma_z", 0.0)),
+                )
+            )
+            ambient_temperature = float(np.nanmean(np.asarray(meteo.get("temperature", [[293.15]]), dtype=float)))
+            mixing_height = float(np.nanmean(np.asarray(meteo.get("mixing_height", [[1000.0]]), dtype=float)))
+            rows = _stream_gaussian_grid_concentrations(
+                config=config,
+                meteo=meteo,
+                output=output,
+                times=times,
+                stability=stability,
+                interval_mass_time=interval_mass_time,
+                puff_samples=puff_samples,
+                initial_sigma_h=initial_sigma_h,
+                initial_sigma_z=initial_sigma_z,
+                ambient_temperature=ambient_temperature,
+                mixing_height=mixing_height,
+                washout_rate=precipitation_washout_rate(config, meteo),
+                wind_sampler=WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy),
+                terrain_fields=terrain_fields,
+                progress_callback=progress_callback,
+            )
+            ctx.barrier()
+            return rows
     rows = compute_concentrations(
         config,
         meteo,

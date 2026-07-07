@@ -1,0 +1,10 @@
+WORKFLOW 04_production_incidents {
+  DESCRIPTION = "Sprtz clean-room workflow for 04 Production Incidents.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/04_production_incidents/demo/step_01_build_config.py";
+    }
+    STEP step_02 {
+      COMMAND = "python usecases/04_production_incidents/demo/step_02_run_model.py";
+    }
+}

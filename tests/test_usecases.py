@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import logging
 import sys
@@ -15,7 +16,18 @@ from sprtz.io.netcdf_cf import available as netcdf_available
 from sprtz.models import spritzmet, spritzwrf
 
 USECASES = Path(__file__).resolve().parents[1] / "usecases"
-sys.path.insert(0, str(USECASES))
+USECASE_IMPORT_DIRS = [
+    USECASES / "common",
+    USECASES / "01_high_resolution_wind_field" / "demo",
+    USECASES / "02_wildfire_arson_effects" / "demo",
+    USECASES / "03_satellite_ai_evaluation" / "demo",
+    USECASES / "04_production_incidents" / "demo",
+    USECASES / "05_sailing_wind_forecast" / "demo",
+    USECASES / "06_acerra_waste_to_energy" / "demo",
+]
+for path in USECASE_IMPORT_DIRS:
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 from acerra_waste_to_energy import (  # noqa: E402
     ACERRA_STACK_HEIGHT_M,
@@ -54,7 +66,7 @@ from wildfire import (  # noqa: E402
 
 
 def _load_usecase_step(folder: str, script: str):
-    path = USECASES / folder / script
+    path = USECASES / folder / "demo" / script
     spec = importlib.util.spec_from_file_location(f"test_{folder}_{script}", path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
@@ -110,7 +122,7 @@ def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
                 "--output",
                 str(out),
                 "--config",
-                "usecases/01_high_resolution_wind_field/config.json",
+                "usecases/01_high_resolution_wind_field/demo/config.json",
                 "--center-lat",
                 "40.85",
                 "--center-lon",
@@ -423,7 +435,7 @@ def test_plot_workflow_netcdfs_writes_3d_concentration(monkeypatch: pytest.Monke
     assert calls[0]["variable"] == "concentration_field"
 
 
-def test_wildfire_step3_writes_explicit_plume_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_wildfire_step3_plots_only_when_requested(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     module = _load_usecase_step("02_wildfire_arson_effects", "step_03_run_model.py")
     config = tmp_path / "wildfire.json"
     config.write_text("{}", encoding="utf-8")
@@ -451,6 +463,9 @@ def test_wildfire_step3_writes_explicit_plume_profile(monkeypatch: pytest.Monkey
     monkeypatch.setattr(module, "plot_3d_volume_if_available", fake_plot_concentration)
 
     assert module.main(["--config", str(config), "--output-dir", str(output_dir), "--backend", "particles"]) == 0
+    assert plotted == []
+
+    assert module.main(["--config", str(config), "--output-dir", str(output_dir), "--backend", "particles", "--plot"]) == 0
     assert plotted == [
         output_dir / "particles_concentration_vertical_profiles.png",
         output_dir / "particles_concentration_3d.png",
@@ -1039,6 +1054,30 @@ def test_high_resolution_wind_vertical_level_preset_points_to_config() -> None:
     module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
     with pytest.raises(ValueError, match="config.json"):
         module._parse_vertical_levels_m("usecase01-exponential")
+
+
+def test_wildfire_wind_step_accepts_field_z_levels() -> None:
+    _load_usecase_step("02_wildfire_arson_effects", "step_01_downscale_wind.py")
+    impl = importlib.import_module("step_01_downscale_wind_impl")
+    parser = impl.build_parser()
+    args = parser.parse_args(
+        [
+            "--output",
+            "wind.nc",
+            "--field-z-levels",
+            "2.5,5,10,20",
+        ]
+    )
+
+    assert impl._parse_vertical_levels_m(args.field_z_levels) == [2.5, 5.0, 10.0, 20.0]
+
+
+def test_high_resolution_wind_step_rejects_removed_vertical_levels_flag() -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    parser = module.build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--output", "wind.nc", "--vertical-levels-m", "10,20"])
 
 
 def test_high_resolution_wind_hourly_resolver_skips_unreadable_netcdf(
@@ -1788,9 +1827,9 @@ def test_fire_workflow_run_entrypoints_route_backends(monkeypatch, tmp_path: Pat
             "09_gpu_accelerated_spread": "step_01_run_gpu_spread.py",
         }[folder]
         module = _load_usecase_step(folder, script)
-        module.__file__ = str(tmp_path / "repo" / "usecases" / folder / script)
+        module.__file__ = str(tmp_path / "repo" / "usecases" / folder / "demo" / script)
         monkeypatch.setattr(module, "run_workflow", fake_run_workflow)
-        assert module.main() is None
+        assert module.main([]) == 0
 
     assert [call["backend"] for call in calls] == [
         "firefront",
@@ -1826,13 +1865,19 @@ def test_backward_run_entrypoints_route_models(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setattr(plume_met, "load_config", lambda path: {"path": str(path)})
     monkeypatch.setattr(plume_back, "load_config", lambda path: {"path": str(path)})
     monkeypatch.setattr(fire, "load_config", lambda path: {"path": str(path)})
-    plume_met.__file__ = str(tmp_path / "repo" / "usecases" / "10_backward_plume_origin" / "step_01_prepare_meteorology.py")
-    plume_back.__file__ = str(tmp_path / "repo" / "usecases" / "10_backward_plume_origin" / "step_02_estimate_source.py")
-    fire.__file__ = str(tmp_path / "repo" / "usecases" / "11_backward_fire_origin" / "step_01_estimate_ignition.py")
+    plume_met.__file__ = str(
+        tmp_path / "repo" / "usecases" / "10_backward_plume_origin" / "demo" / "step_01_prepare_meteorology.py"
+    )
+    plume_back.__file__ = str(
+        tmp_path / "repo" / "usecases" / "10_backward_plume_origin" / "demo" / "step_02_estimate_source.py"
+    )
+    fire.__file__ = str(
+        tmp_path / "repo" / "usecases" / "11_backward_fire_origin" / "demo" / "step_01_estimate_ignition.py"
+    )
 
-    assert plume_met.main() is None
-    assert plume_back.main() is None
-    assert fire.main() is None
+    assert plume_met.main([]) == 0
+    assert plume_back.main([]) == 0
+    assert fire.main([]) == 0
 
     assert ("spritzmet", "meteo.nc", "netcdf") in calls
     assert ("backward", "meteo.nc", "source_likelihood.json", "gaussian") in calls

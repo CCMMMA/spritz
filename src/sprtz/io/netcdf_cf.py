@@ -60,6 +60,18 @@ def annotate_surface_altitude(var: Any) -> None:
     var.coordinates = "latitude longitude"
 
 
+def _write_relative_time_coordinate(ds: Any, times: list[float] | tuple[float, ...]) -> Any:
+    time = ds.createVariable("time", "f8", ("time",))
+    time.standard_name = "time"
+    time.long_name = "model output time"
+    time.axis = "T"
+    time.calendar = "proleptic_gregorian"
+    time.units = "seconds since 1970-01-01 00:00:00 UTC"
+    time.comment = "No absolute UTC datetime was available; value is seconds since simulation start."
+    time[:] = np.asarray(times, dtype=float)
+    return time
+
+
 def set_spatiotemporal_coordinates(var: Any, dims: tuple[str, ...] | list[str]) -> None:
     names = list(dims)
     coords: list[str] = []
@@ -427,6 +439,193 @@ def _concentration_field(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     return payload
 
 
+class DenseConcentrationWriter:
+    """Append gridded concentration arrays directly to a NetCDF-CF product."""
+
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        times: tuple[float, ...],
+        x: Any,
+        y: Any,
+        z: Any,
+        point_receptors: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+        z_reference: str = "height_above_sea_level",
+        latitude: Any | None = None,
+        longitude: Any | None = None,
+        surface_altitude: Any | None = None,
+        land_cover: Any | None = None,
+        datetimes: dict[float, str] | None = None,
+    ) -> None:
+        if not available():
+            raise DataFormatError("direct dense NetCDF concentration writing requires netCDF4")
+        from netCDF4 import Dataset  # type: ignore
+
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.times = tuple(float(value) for value in times)
+        self._time_index = {value: index for index, value in enumerate(self.times)}
+        self.point_receptors = list(point_receptors)
+        self.ds = Dataset(self.path, "w")
+        ds = self.ds
+        field_x = np.asarray(x, dtype=float)
+        field_y = np.asarray(y, dtype=float)
+        field_z = np.asarray(z, dtype=float)
+        ds.createDimension("time", len(self.times))
+        if self.point_receptors:
+            ds.createDimension("receptor", len(self.point_receptors))
+        ds.createDimension("field_z", len(field_z))
+        ds.createDimension("field_y", len(field_y))
+        ds.createDimension("field_x", len(field_x))
+        ds.Conventions = "CF-1.8"
+        ds.title = "Spritz receptor concentration"
+
+        if datetimes:
+            time = write_cf_time_coordinate(ds, [datetimes.get(value, "") for value in self.times])
+            time.long_name = "model output time"
+        else:
+            _write_relative_time_coordinate(ds, self.times)
+
+        if self.point_receptors:
+            rec = ds.createVariable("receptor", "i4", ("receptor",))
+            rec.long_name = "receptor index"
+            rec[:] = np.arange(len(self.point_receptors), dtype=np.int32)
+            rec_id = ds.createVariable("receptor_id", str, ("receptor",))
+            rec_id.long_name = "receptor identifier"
+            rec_id[:] = np.asarray([str(row.get("receptor", f"R{i}")) for i, row in enumerate(self.point_receptors)], dtype=object)
+            for name, annotator in (("x", annotate_local_x), ("y", annotate_local_y)):
+                var = ds.createVariable(name, "f8", ("receptor",), zlib=True)
+                annotator(var)
+                var[:] = [float(row.get(name, np.nan)) for row in self.point_receptors]
+            receptor_z = ds.createVariable("z", "f8", ("receptor",), zlib=True)
+            annotate_height(receptor_z, long_name="receptor height above local ground")
+            receptor_z[:] = [float(row.get("z", np.nan)) for row in self.point_receptors]
+            kind = ds.createVariable("output_kind", str, ("receptor",))
+            kind.long_name = "concentration output receptor kind"
+            kind[:] = np.asarray(["receptor"] * len(self.point_receptors), dtype=object)
+            if any("latitude" in row and "longitude" in row for row in self.point_receptors):
+                for name, annotator in (("latitude", annotate_latitude), ("longitude", annotate_longitude)):
+                    var = ds.createVariable(name, "f8", ("receptor",), zlib=True)
+                    annotator(var)
+                    var.long_name = f"receptor {name}"
+                    var[:] = [float(row.get(name, np.nan)) for row in self.point_receptors]
+            for name, units, long_name in [
+                ("concentration", "g m-3", "mass_concentration_of_air_pollutant_in_air"),
+                ("dry_flux", "g m-2 s-1", "dry_deposition_flux"),
+                ("wet_flux", "g m-2 s-1", "wet_deposition_flux"),
+            ]:
+                var = ds.createVariable(name, "f8", ("time", "receptor"), zlib=True)
+                var.units = units
+                var.long_name = long_name
+                var[:, :] = np.nan
+
+        ds.spritz_concentration_field_z_reference = z_reference
+        z_long_name = (
+            "model grid altitude above mean sea level"
+            if z_reference == "height_above_sea_level"
+            else "model grid height above local ground"
+        )
+        for name, values, units, long_name in [
+            ("field_x", field_x, "m", "model grid x coordinate"),
+            ("field_y", field_y, "m", "model grid y coordinate"),
+            ("field_z", field_z, "m", z_long_name),
+        ]:
+            var = ds.createVariable(name, "f8", (name,), zlib=True)
+            var.long_name = long_name
+            if name == "field_x":
+                annotate_local_x(var)
+                var.long_name = long_name
+            elif name == "field_y":
+                annotate_local_y(var)
+                var.long_name = long_name
+            elif z_reference == "height_above_sea_level":
+                var.standard_name = "altitude"
+                var.units = units
+                var.positive = "up"
+                var.axis = "Z"
+                var.long_name = long_name
+            else:
+                annotate_height(var, long_name=long_name)
+            var[:] = values
+        if latitude is not None and longitude is not None:
+            for name, values, annotator, long_name in [
+                ("field_latitude", latitude, annotate_latitude, "model grid latitude"),
+                ("field_longitude", longitude, annotate_longitude, "model grid longitude"),
+            ]:
+                var = ds.createVariable(name, "f8", ("field_y", "field_x"), zlib=True)
+                annotator(var)
+                var.long_name = long_name
+                var[:, :] = np.asarray(values, dtype=float)
+        if surface_altitude is not None:
+            surface = np.asarray(surface_altitude, dtype=float)
+            var = ds.createVariable("surface_altitude", "f8", ("field_y", "field_x"), zlib=True)
+            annotate_surface_altitude(var)
+            var.coordinates = "field_latitude field_longitude" if latitude is not None and longitude is not None else "field_y field_x"
+            var[:, :] = surface
+            altitude = ds.createVariable("field_altitude", "f8", ("field_z", "field_y", "field_x"), zlib=True)
+            altitude.standard_name = "altitude"
+            altitude.long_name = "model grid altitude above mean sea level"
+            altitude.units = "m"
+            altitude.positive = "up"
+            altitude.coordinates = (
+                "field_z field_latitude field_longitude"
+                if latitude is not None and longitude is not None
+                else "field_z field_y field_x"
+            )
+            if z_reference == "height_above_sea_level":
+                altitude[:, :, :] = np.broadcast_to(field_z[:, np.newaxis, np.newaxis], (len(field_z), len(field_y), len(field_x)))
+            else:
+                altitude[:, :, :] = field_z[:, np.newaxis, np.newaxis] + surface[np.newaxis, :, :]
+        if land_cover is not None:
+            var = ds.createVariable("land_cover", "i4", ("field_y", "field_x"), zlib=True)
+            var.long_name = "categorical land-cover class"
+            var.coordinates = "field_latitude field_longitude" if latitude is not None and longitude is not None else "field_y field_x"
+            var[:, :] = np.asarray(np.rint(land_cover), dtype=np.int32)
+        for name, units, long_name in [
+            ("concentration_field", "g m-3", "gridded mass concentration"),
+            ("dry_flux_field", "g m-2 s-1", "gridded dry deposition flux"),
+            ("wet_flux_field", "g m-2 s-1", "gridded wet deposition flux"),
+        ]:
+            var = ds.createVariable(name, "f8", ("time", "field_z", "field_y", "field_x"), zlib=True)
+            var.units = units
+            var.long_name = long_name
+            coordinates = "time field_z field_y field_x"
+            if surface_altitude is not None:
+                coordinates += " field_altitude"
+            if latitude is not None and longitude is not None:
+                coordinates += " field_latitude field_longitude"
+            var.coordinates = coordinates
+
+    def write_time(
+        self,
+        time_value: float,
+        *,
+        concentration: Any,
+        dry_flux: Any,
+        wet_flux: Any,
+        receptor_rows: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+    ) -> None:
+        ti = self._time_index[float(time_value)]
+        self.ds.variables["concentration_field"][ti, :, :, :] = np.asarray(concentration, dtype=float)
+        self.ds.variables["dry_flux_field"][ti, :, :, :] = np.asarray(dry_flux, dtype=float)
+        self.ds.variables["wet_flux_field"][ti, :, :, :] = np.asarray(wet_flux, dtype=float)
+        if receptor_rows:
+            for ri, row in enumerate(receptor_rows):
+                self.ds.variables["concentration"][ti, ri] = float(row.get("concentration", 0.0))
+                self.ds.variables["dry_flux"][ti, ri] = float(row.get("dry_flux", 0.0))
+                self.ds.variables["wet_flux"][ti, ri] = float(row.get("wet_flux", 0.0))
+
+    def close(self) -> None:
+        self.ds.close()
+
+    def __enter__(self) -> "DenseConcentrationWriter":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        self.close()
+
+
 def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -638,6 +837,8 @@ def read_cf_concentration(path: str | Path) -> list[dict[str, Any]]:
     from netCDF4 import Dataset  # type: ignore
 
     with Dataset(p) as ds:
+        if "concentration" not in ds.variables:
+            return []
         c_all = np.asarray(ds.variables["concentration"][:], dtype=float)
         if c_all.ndim == 1:
             c_all = c_all[np.newaxis, :]

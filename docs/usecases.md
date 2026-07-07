@@ -18,13 +18,23 @@ tools/meteouniparthenope-wrf-download.py 20260601Z0000 \
   --data-root data/wrf/d03
 
 python3 tools/copernicus-cop30-dem-download.py \
-  --south 40.78 --north 40.85 \
-  --west 14.18 --east 14.33 \
+  --center-lat 40.85 \
+  --center-lon 14.27 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --buffer-m 1000 \
   --output data/dem/cop30_naples.tif
 
 python3 tools/copernicus-lc100-download.py \
-  --south 40.78 --north 40.85 \
-  --west 14.18 --east 14.33 \
+  --center-lat 40.85 \
+  --center-lon 14.27 \
+  --nx 101 \
+  --ny 101 \
+  --dx 100 \
+  --dy 100 \
+  --buffer-m 1000 \
   --output data/landcover/lc100_naples.tif
 ```
 
@@ -35,6 +45,9 @@ precipitation; the same rasters also feed `sprtz-terrain fetch` with
 `docs/meteouniparthenope-wrf-download.md`,
 `docs/copernicus-cop30-dem-download.md`, and
 `docs/copernicus-lc100-download.md`.
+For best `geo.nc` quality, use the same grid definition for raster downloads
+and `sprtz-terrain fetch`, and keep `--buffer-m` positive so the source rasters
+cover the model edges during DEM interpolation and land-cover sampling.
 
 All date-time values passed as script arguments or script parameters use compact
 UTC `YYYYMMDDZhhmm` format, such as `20260601Z0000`.
@@ -133,8 +146,8 @@ For SLURM, wrap each command in a batch file with environment setup:
 #SBATCH --time=00:20:00
 module load python/3.11 openmpi/4.1
 source .venv/bin/activate
-python usecases/10_backward_plume_origin/step_01_prepare_meteorology.py
-mpiexec -n $SLURM_NTASKS python usecases/10_backward_plume_origin/step_02_estimate_source.py
+python usecases/10_backward_plume_origin/demo/step_01_prepare_meteorology.py
+mpiexec -n $SLURM_NTASKS python usecases/10_backward_plume_origin/demo/step_02_estimate_source.py
 ```
 
 See `docs/hpc.md` for full SLURM templates.

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import tempfile
@@ -35,6 +36,20 @@ VARIABLE_CANDIDATES = (
 )
 DEM_NAMES = ("surface_altitude", "elevation_m", "dem_elevation_m", "terrain_m", "terrain")
 LAND_COVER_NAMES = ("land_cover", "landuse_class", "landuse", "land_use")
+DEFAULT_CAMERA_ELEVATION = 28.0
+DEFAULT_CAMERA_AZIMUTH = -55.0
+VIEW_PRESETS: dict[str, tuple[float, float]] = {
+    "default": (DEFAULT_CAMERA_ELEVATION, DEFAULT_CAMERA_AZIMUTH),
+    "north": (28.0, 90.0),
+    "south": (28.0, -90.0),
+    "east": (28.0, 0.0),
+    "west": (28.0, 180.0),
+    "northeast": (28.0, 45.0),
+    "northwest": (28.0, 135.0),
+    "southeast": (28.0, -45.0),
+    "southwest": (28.0, -135.0),
+    "top": (90.0, -90.0),
+}
 
 
 @dataclass(frozen=True)
@@ -71,6 +86,23 @@ class VolumeField:
     def title(self) -> str:
         detail = f" | {self.time_label}" if self.time_label else ""
         return f"{self.source_name}: {self.long_name or self.variable_name}{detail}"
+
+
+@dataclass(frozen=True)
+class EmissionPoint:
+    id: str
+    x: float
+    y: float
+    release_height_agl_m: float
+    release_height_asl_m: float
+
+    @property
+    def label(self) -> str:
+        return (
+            f"{self.id}\n"
+            f"z ASL {_format_axis_tick(self.release_height_asl_m)} m\n"
+            f"z AGL {_format_axis_tick(self.release_height_agl_m)} m"
+        )
 
 
 def _load_netcdf4() -> Any:
@@ -583,17 +615,117 @@ def _format_axis_tick(value: float) -> str:
     return f"{value:.0f}" if math.isfinite(value) and abs(value - round(value)) < 1.0e-6 else f"{value:.1f}"
 
 
-def _format_longitude(value: float) -> str:
-    suffix = "E" if value >= 0.0 else "W"
-    return f"{abs(value):.5f} deg{suffix}"
+def _format_geographic_coordinate(value: float, positive_suffix: str, negative_suffix: str, coordinate_format: str) -> str:
+    suffix = positive_suffix if value >= 0.0 else negative_suffix
+    absolute = abs(float(value))
+    if coordinate_format == "decimal":
+        return f"{absolute:.5f} deg{suffix}"
+    degrees = int(math.floor(absolute))
+    minutes_total = (absolute - degrees) * 60.0
+    if coordinate_format == "dms":
+        minutes = int(math.floor(minutes_total))
+        seconds = (minutes_total - minutes) * 60.0
+        return f"{degrees:02d}°{minutes:02d}'{seconds:04.1f}\"{suffix}"
+    return f"{degrees:02d}°{minutes_total:05.2f}'{suffix}"
 
 
-def _format_latitude(value: float) -> str:
-    suffix = "N" if value >= 0.0 else "S"
-    return f"{abs(value):.5f} deg{suffix}"
+def _format_longitude(value: float, coordinate_format: str) -> str:
+    return _format_geographic_coordinate(value, "E", "W", coordinate_format)
 
 
-def _apply_geographic_horizontal_ticks(ax: Any, field: VolumeField, terrain: TerrainField) -> None:
+def _format_latitude(value: float, coordinate_format: str) -> str:
+    return _format_geographic_coordinate(value, "N", "S", coordinate_format)
+
+
+def _nearest_terrain_value(terrain: TerrainField, x: float, y: float) -> float | None:
+    xx, yy = np.meshgrid(terrain.x_axis, terrain.y_axis)
+    distance2 = (xx - float(x)) ** 2 + (yy - float(y)) ** 2
+    if not np.isfinite(distance2).any():
+        return None
+    iy, ix = (int(index) for index in np.unravel_index(int(np.nanargmin(distance2)), distance2.shape))
+    value = float(terrain.elevation_m[iy, ix])
+    return value if math.isfinite(value) else None
+
+
+def _source_ground_asl_m(source: dict[str, Any], terrain: TerrainField, x: float, y: float) -> float:
+    terrain_ground = _nearest_terrain_value(terrain, x, y)
+    return float(terrain_ground if terrain_ground is not None else 0.0) + float(source.get("z", 0.0))
+
+
+def _source_json_candidates(config_path: str | Path | None, input_path: str | Path | None) -> list[Path]:
+    if config_path is not None:
+        return [Path(config_path)]
+    if input_path is None:
+        return []
+    input_parent = Path(input_path).resolve().parent
+    candidates: list[Path] = []
+    for directory in (input_parent, *input_parent.parents[:4]):
+        candidates.extend(directory.glob("config.json"))
+        candidates.extend(directory.glob("*event*.json"))
+    return list(dict.fromkeys(candidates))
+
+
+def _source_records_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(payload.get("sources"), list):
+        return [record for record in payload["sources"] if isinstance(record, dict)]
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("fire_events"), list):
+        return [record for record in metadata["fire_events"] if isinstance(record, dict)]
+    return []
+
+
+def _nearest_local_from_geographic(terrain: TerrainField, latitude: float, longitude: float) -> tuple[float, float] | None:
+    if terrain.latitude_axis is None or terrain.longitude_axis is None:
+        return None
+    lat_grid, lon_grid = np.meshgrid(terrain.latitude_axis, terrain.longitude_axis, indexing="ij")
+    distance2 = (lat_grid - float(latitude)) ** 2 + (lon_grid - float(longitude)) ** 2
+    if not np.isfinite(distance2).any():
+        return None
+    iy, ix = (int(index) for index in np.unravel_index(int(np.nanargmin(distance2)), distance2.shape))
+    return float(terrain.x_axis[ix]), float(terrain.y_axis[iy])
+
+
+def read_emission_points(config_path: str | Path | None, terrain: TerrainField, *, input_path: str | Path | None = None) -> tuple[EmissionPoint, ...]:
+    config = None
+    for candidate in _source_json_candidates(config_path, input_path):
+        try:
+            with candidate.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if _source_records_from_payload(payload):
+            config = payload
+            break
+    if config is None:
+        return ()
+    points: list[EmissionPoint] = []
+    for index, source in enumerate(_source_records_from_payload(config)):
+        lat = float(source["latitude"]) if source.get("latitude") is not None else None
+        lon = float(source["longitude"]) if source.get("longitude") is not None else None
+        local_from_geo = _nearest_local_from_geographic(terrain, lat, lon) if lat is not None and lon is not None else None
+        x = float(source.get("x", local_from_geo[0] if local_from_geo is not None else 0.0))
+        y = float(source.get("y", local_from_geo[1] if local_from_geo is not None else 0.0))
+        agl = float(source.get("height_agl_m", source.get("stack_height", 0.0)))
+        ground = _source_ground_asl_m(source, terrain, x, y)
+        points.append(
+            EmissionPoint(
+                id=str(source.get("id", f"S{index + 1}")),
+                x=x,
+                y=y,
+                release_height_agl_m=agl,
+                release_height_asl_m=ground + agl,
+            )
+        )
+    return tuple(points)
+
+
+def _emission_summary_text(emission_points: Sequence[EmissionPoint]) -> str | None:
+    if not emission_points:
+        return None
+    return "\n".join(point.label.replace("\n", " | ") for point in emission_points[:4])
+
+
+def _apply_geographic_horizontal_ticks(ax: Any, field: VolumeField, terrain: TerrainField, coordinate_format: str) -> None:
     lon_axis = terrain.longitude_axis if terrain.longitude_axis is not None else field.longitude_axis
     lat_axis = terrain.latitude_axis if terrain.latitude_axis is not None else field.latitude_axis
     ax.set_xticks(np.linspace(float(np.nanmin(field.x_axis)), float(np.nanmax(field.x_axis)), min(4, field.x_axis.size)))
@@ -602,7 +734,7 @@ def _apply_geographic_horizontal_ticks(ax: Any, field: VolumeField, terrain: Ter
         xticks = ax.get_xticks()
         lon_values = np.interp(xticks, field.x_axis, lon_axis)
         ax.set_xticks(xticks)
-        ax.set_xticklabels([_format_longitude(lon) for lon in lon_values], fontsize=7)
+        ax.set_xticklabels([_format_longitude(lon, coordinate_format) for lon in lon_values], fontsize=7)
         ax.set_xlabel("longitude")
     else:
         ax.set_xlabel("x [m]")
@@ -610,7 +742,7 @@ def _apply_geographic_horizontal_ticks(ax: Any, field: VolumeField, terrain: Ter
         yticks = ax.get_yticks()
         lat_values = np.interp(yticks, field.y_axis, lat_axis)
         ax.set_yticks(yticks)
-        ax.set_yticklabels([_format_latitude(lat) for lat in lat_values], fontsize=7)
+        ax.set_yticklabels([_format_latitude(lat, coordinate_format) for lat in lat_values], fontsize=7)
         ax.set_ylabel("latitude")
     else:
         ax.set_ylabel("y [m]")
@@ -661,6 +793,14 @@ def _nanmax_or_nan(values: np.ndarray, axis: int) -> np.ndarray:
     return np.where(np.isfinite(maximum), maximum, np.nan)
 
 
+def _camera_angles(view: str | None, elevation: float | None, azimuth: float | None) -> tuple[float, float]:
+    base_elevation, base_azimuth = VIEW_PRESETS[view or "default"]
+    return (
+        float(base_elevation if elevation is None else elevation),
+        float(base_azimuth if azimuth is None else azimuth),
+    )
+
+
 def plot_volume(
     field: VolumeField,
     output_path: str | Path,
@@ -679,6 +819,8 @@ def plot_volume(
     vertical_exaggeration: float,
     ground_color: str,
     color_limits: tuple[float, float] | None = None,
+    emission_points: Sequence[EmissionPoint] = (),
+    coordinate_format: str = "ddm",
 ) -> Path:
     plt = _load_matplotlib()
     from matplotlib.colors import LogNorm, Normalize
@@ -767,10 +909,36 @@ def plot_volume(
             shade=False,
         )
         ax.set_box_aspect((np.ptp(field.x_axis[x_idx]) or 1.0, np.ptp(field.y_axis[y_idx]) or 1.0, (display_z_limits[1] - display_z_limits[0]) or 1.0))
+    for point in emission_points:
+        z_display = _scale_z(max(point.release_height_asl_m, z_limits[0]), z_limits[0], vertical_exaggeration)
+        ax.scatter(
+            [point.x],
+            [point.y],
+            [z_display],
+            marker="^",
+            s=56.0,
+            c="#d7191c",
+            edgecolors="white",
+            linewidths=0.7,
+            depthshade=False,
+            zorder=5,
+        )
+        ax.text(point.x, point.y, z_display, point.label, fontsize=7, color="0.05", zorder=6)
+    summary = _emission_summary_text(emission_points)
+    if summary:
+        fig.text(
+            0.012,
+            0.012,
+            summary,
+            fontsize=8,
+            ha="left",
+            va="bottom",
+            bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "edgecolor": "0.35", "alpha": 0.86},
+        )
     mappable = plt.cm.ScalarMappable(norm=norm, cmap=plot_cmap)
     mappable.set_array([])
     fig.colorbar(mappable, ax=ax, shrink=0.72, pad=0.16, label=field.label)
-    _apply_geographic_horizontal_ticks(ax, field, terrain_field)
+    _apply_geographic_horizontal_ticks(ax, field, terrain_field, coordinate_format)
     _apply_vertical_axis(ax, field, z_limits, vertical_exaggeration)
     ax.view_init(elev=elevation, azim=azimuth)
     ax.set_title(title or field.title, fontsize=11)
@@ -800,6 +968,7 @@ def _write_gif(frame_paths: Sequence[Path], output_path: str | Path, *, duration
 def plot_animation(input_path: str | Path, output_path: str | Path, **kwargs: Any) -> Path:
     variable_name = kwargs.pop("variable_name")
     terrain_path = kwargs.pop("terrain_path", None)
+    config_path = kwargs.pop("config_path", None)
     duration_ms = kwargs.pop("duration_ms")
     loop = kwargs.pop("loop")
     time_indexes = _animation_time_indexes(input_path, variable_name)
@@ -810,7 +979,15 @@ def plot_animation(input_path: str | Path, output_path: str | Path, **kwargs: An
         frame_paths: list[Path] = []
         for index, field in zip(time_indexes, fields):
             frame_path = Path(tmp) / f"render3d_{index:05d}.png"
-            plot_volume(field, frame_path, terrain=terrain, color_limits=color_limits, **kwargs)
+            terrain_field = _terrain_like_volume(terrain, field)
+            plot_volume(
+                field,
+                frame_path,
+                terrain=terrain_field,
+                color_limits=color_limits,
+                emission_points=read_emission_points(config_path, terrain_field, input_path=input_path),
+                **kwargs,
+            )
             frame_paths.append(frame_path)
             LOGGER.info("animation frame %d/%d time_index=%d", len(frame_paths), len(time_indexes), index)
         return _write_gif(frame_paths, output_path, duration_ms=duration_ms, loop=loop)
@@ -824,6 +1001,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--time-index", type=int, default=0, help="time index for multidimensional variables")
     parser.add_argument("--level-index", type=int, default=0, help="accepted for CLI parity; 3-D rendering uses all vertical levels")
     parser.add_argument("--terrain", default=None, help="optional terrain/GEO NetCDF with surface_altitude and land_cover variables")
+    parser.add_argument("--config", default=None, help="optional Sprtz JSON config; overlays emission points with z ASL and z AGL heights")
+    parser.add_argument(
+        "--coordinate-format",
+        choices=("ddm", "decimal", "dms"),
+        default="ddm",
+        help="latitude/longitude label format: ddm is DD°MM' (default), decimal is decimal degrees, dms is DD°MM'SS\"",
+    )
     parser.add_argument("--title", default=None, help="figure title")
     parser.add_argument("--dpi", type=int, default=600, help="output raster DPI")
     parser.add_argument("--cmap", default="viridis", help="matplotlib colormap")
@@ -831,8 +1015,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=("surface", "voxel"), default="surface", help="3-D rendering style")
     parser.add_argument("--threshold-quantile", type=float, default=0.85, help="quantile threshold used for 3-D extraction")
     parser.add_argument("--max-points", type=int, default=56, help="maximum sampled points per axis for responsive rendering")
-    parser.add_argument("--elevation", type=float, default=28.0, help="3-D camera elevation in degrees")
-    parser.add_argument("--azimuth", type=float, default=-55.0, help="3-D camera azimuth in degrees")
+    parser.add_argument(
+        "--view",
+        choices=tuple(VIEW_PRESETS),
+        default=None,
+        help="named 3-D camera point of view; overridden by --elevation or --azimuth",
+    )
+    parser.add_argument("--elevation", type=float, default=None, help="3-D camera elevation in degrees")
+    parser.add_argument("--azimuth", type=float, default=None, help="3-D camera azimuth in degrees")
     parser.add_argument("--vertical-exaggeration", type=float, default=1.0, help="vertical display exaggeration factor; must be >= 1")
     parser.add_argument(
         "--ground-color",
@@ -860,6 +1050,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.vertical_exaggeration < 1.0:
             raise ValueError("--vertical-exaggeration must be >= 1")
+        elevation, azimuth = _camera_angles(args.view, args.elevation, args.azimuth)
         common = {
             "title": args.title,
             "dpi": args.dpi,
@@ -869,21 +1060,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             "mode": args.mode,
             "threshold_quantile": min(1.0, max(0.0, args.threshold_quantile)),
             "max_points": max(2, args.max_points),
-            "elevation": args.elevation,
-            "azimuth": args.azimuth,
+            "elevation": elevation,
+            "azimuth": azimuth,
             "vertical_exaggeration": args.vertical_exaggeration,
             "ground_color": args.ground_color,
+            "coordinate_format": args.coordinate_format,
             "duration_ms": args.frame_duration_ms,
             "loop": args.gif_loop,
         }
         if args.animate:
-            out = plot_animation(args.input, args.output, variable_name=args.variable, terrain_path=args.terrain, **common)
+            out = plot_animation(args.input, args.output, variable_name=args.variable, terrain_path=args.terrain, config_path=args.config, **common)
         else:
             field = read_volume_field(args.input, variable_name=args.variable, time_index=args.time_index)
             terrain = read_terrain_field(args.terrain or args.input, time_index=args.time_index)
             common.pop("duration_ms")
             common.pop("loop")
-            out = plot_volume(field, args.output, terrain=terrain, **common)
+            terrain_field = _terrain_like_volume(terrain, field)
+            out = plot_volume(
+                field,
+                args.output,
+                terrain=terrain_field,
+                emission_points=read_emission_points(args.config, terrain_field, input_path=args.input),
+                **common,
+            )
     except KeyboardInterrupt:
         LOGGER.warning("interrupted; stopping 3-D render generation")
         return 130

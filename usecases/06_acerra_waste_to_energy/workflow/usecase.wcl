@@ -1,0 +1,10 @@
+WORKFLOW 06_acerra_waste_to_energy {
+  DESCRIPTION = "Sprtz clean-room workflow for 06 Acerra Waste To Energy.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/06_acerra_waste_to_energy/demo/step_01_build_config.py";
+    }
+    STEP step_02 {
+      COMMAND = "python usecases/06_acerra_waste_to_energy/demo/step_02_run_model.py";
+    }
+}

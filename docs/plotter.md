@@ -173,7 +173,10 @@ MPLBACKEND=Agg python tools/render3d.py \
 ```
 
 Use `--max-points` to limit per-axis sampling for large NetCDF products and
-`--elevation` / `--azimuth` to make camera angles reproducible in manuscripts.
+`--view` to choose a named point of view such as `north`, `south`, `east`,
+`west`, `northeast`, `southwest`, or `top`. Use `--elevation` / `--azimuth` to
+override the named preset and make exact camera angles reproducible in
+manuscripts.
 Use `--vertical-exaggeration N` with `N >= 1` to exaggerate vertical relief in
 the display while keeping tick labels in true metres.
 

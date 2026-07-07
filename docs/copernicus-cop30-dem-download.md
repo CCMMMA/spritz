@@ -19,8 +19,10 @@ Run the script from the repository root:
 
 ```bash
 python3 tools/copernicus-cop30-dem-download.py \
-  --south 40.40 --north 41.10 \
-  --west 13.80 --east 14.80 \
+  --center-lat 40.75 --center-lon 14.30 \
+  --nx 101 --ny 101 \
+  --dx 100 --dy 100 \
+  --buffer-m 1000 \
   --output data/dem/cop30_naples.tif
 ```
 
@@ -56,9 +58,15 @@ The bounding box is geographic WGS84:
 - `--south`: minimum latitude in degrees, from `-90` to `90`;
 - `--north`: maximum latitude in degrees, from `-90` to `90`;
 - `--west`: minimum longitude in degrees, from `-180` to `180`;
-- `--east`: maximum longitude in degrees, from `-180` to `180`.
+- `--east`: maximum longitude in degrees, from `-180` to `180`;
+- `--center-lat`, `--center-lon`, `--nx`, `--ny`, `--dx`, `--dy`,
+  `--projection`, and `--buffer-m`: alternatively compute the WGS84 bbox from
+  the same terrain-domain definition used by `sprtz-terrain fetch`.
 
 `south` must be smaller than `north`, and `west` must be smaller than `east`.
+When using domain arguments, keep `--buffer-m` positive so the downloaded DEM
+extends beyond the target GEO grid and bilinear interpolation does not depend on
+source edge pixels.
 Anti-meridian-crossing boxes are not supported by this helper.
 
 Choose a box that fully covers the Sprtz modeling domain plus a buffer. For

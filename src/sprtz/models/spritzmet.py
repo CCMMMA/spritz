@@ -1695,6 +1695,7 @@ def terrain_downscaling_inputs_from_rasters(
     dy_m: float,
     dem_path: str | Path | None = None,
     land_cover_path: str | Path | None = None,
+    allow_outside_raster: bool = False,
 ) -> tuple[np.ndarray | None, np.ndarray | None, dict[str, Any]]:
     """Read optional DEM and land-cover rasters on the exact SpritzMet grid.
 
@@ -1738,13 +1739,14 @@ def terrain_downscaling_inputs_from_rasters(
             RasterRequest("dem", domain, ".")
         )
         LOGGER.info("SpritzMet: resampling DEM raster to local grid")
-        dem = resample_dem(raster, grid)
+        dem = resample_dem(raster, grid, allow_outside=allow_outside_raster)
         metadata.update(
             {
                 "dem_source": raster.source,
                 "dem_dataset": raster.dataset,
                 "dem_crs": raster.crs,
                 "dem_resampling": "bilinear",
+                "dem_source_coverage": "edge_clamped" if allow_outside_raster else "complete",
             }
         )
     if land_cover_path is not None:
@@ -1753,13 +1755,14 @@ def terrain_downscaling_inputs_from_rasters(
             RasterRequest("landcover", domain, ".")
         )
         LOGGER.info("SpritzMet: resampling land-cover raster to local grid")
-        land_cover = resample_land_cover(raster, grid)
+        land_cover = resample_land_cover(raster, grid, allow_outside=allow_outside_raster)
         metadata.update(
             {
                 "land_cover_source": raster.source,
                 "land_cover_dataset": raster.dataset,
                 "land_cover_crs": raster.crs,
                 "land_cover_resampling": "nearest",
+                "land_cover_source_coverage": "edge_clamped" if allow_outside_raster else "complete",
             }
         )
     return dem, land_cover, metadata
@@ -2200,6 +2203,7 @@ def write_local_meteorology(
                 )
                 z.units = "m"
                 z[:] = np.asarray(z_levels, dtype=float)
+            z.axis = "Z"
             z.positive = "up"
             variables = [
                 ("x", met.x[0], ("x",), "m", "local projection x coordinate"),

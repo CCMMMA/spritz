@@ -77,7 +77,7 @@ https://data.meteo.uniparthenope.it/files/wrf5/d03/history/2026/05/27/wrf5_d03_2
 To ask Spritz to print the exact URL without downloading:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --output ignored.nc \
   --center-lat 40.85 \
@@ -95,7 +95,7 @@ coordinate:
 ```bash
 mkdir -p data/wrf output
 
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --date 20260527Z0000 \
   --hours 24 \
   --download-dir data/wrf \
@@ -119,7 +119,7 @@ count. In this mode, `--dx` and `--dy` remain hard constraints; Spritz expands
 the actual covered area outward to the nearest exact 100 m grid multiple:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wrf_100m_wind_bbox.nc \
@@ -155,7 +155,7 @@ WRF filename.
 To rerun from a WRF file already downloaded:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
   --output output/wrf_100m_wind.nc \
   --center-lat 40.85 \
@@ -173,7 +173,7 @@ python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
 For training, CI, or offline classroom sessions, the same workflow can use a deterministic synthetic WRF-like field:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --allow-synthetic \
   --json \
   --output output/demo_wind.json \
@@ -200,7 +200,7 @@ Use case 02 creates a Spritz scenario for a burning place at a known latitude an
 Prepare the local wind product:
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
+python usecases/02_wildfire_arson_effects/demo/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --download-dir data/wrf \
   --output output/wildfire_case/wrf_100m_wind.nc \
@@ -215,7 +215,7 @@ python usecases/02_wildfire_arson_effects/step_01_downscale_wind.py \
 Build the fire configuration:
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_02_build_config.py \
+python usecases/02_wildfire_arson_effects/demo/step_02_build_config.py \
   --output output/wildfire_case/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
@@ -230,7 +230,7 @@ python usecases/02_wildfire_arson_effects/step_02_build_config.py \
 Run the model:
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_03_run_model.py \
+python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py \
   --config output/wildfire_case/wildfire_event.json \
   --output-dir output/wildfire_case/model_compare \
   --backend both \
@@ -251,7 +251,7 @@ temperature or emission overrides. Date-time values passed through scripts use
 compact UTC `YYYYMMDDZhhmm`:
 
 ```bash
-python usecases/02_wildfire_arson_effects/step_02_build_config.py \
+python usecases/02_wildfire_arson_effects/demo/step_02_build_config.py \
   --output output/multi_fire/wildfire_event.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
@@ -385,14 +385,14 @@ Use case 03 compares the model concentration field with a satellite-derived smok
 Create a tiny deterministic demo mask:
 
 ```bash
-python usecases/03_satellite_ai_evaluation/step_01_make_demo_mask.py \
+python usecases/03_satellite_ai_evaluation/demo/step_01_make_demo_mask.py \
   output/demo_mask.json
 ```
 
 Run evaluation:
 
 ```bash
-python usecases/03_satellite_ai_evaluation/step_02_evaluate.py \
+python usecases/03_satellite_ai_evaluation/demo/step_02_evaluate.py \
   --concentration output/wildfire_case/model_compare/particles/concentration.nc \
   --satellite-mask output/demo_mask.json \
   --output output/wildfire_case/evaluation.json \
@@ -408,9 +408,9 @@ Acerra at `40.978473 N, 14.384058 E`, with a 110 m chimney release height and a
 start datetime of `2026-06-01T00:00:00+00:00`.
 
 ```bash
-python usecases/06_acerra_waste_to_energy/step_01_build_config.py \
+python usecases/06_acerra_waste_to_energy/demo/step_01_build_config.py \
   --output output/acerra_wte/acerra_waste_to_energy.json
-python usecases/06_acerra_waste_to_energy/step_02_run_model.py \
+python usecases/06_acerra_waste_to_energy/demo/step_02_run_model.py \
   --config output/acerra_wte/acerra_waste_to_energy.json \
   --output-dir output/acerra_wte/model \
   --interchange netcdf
@@ -419,7 +419,7 @@ python usecases/06_acerra_waste_to_energy/step_02_run_model.py \
 For configuration review only:
 
 ```bash
-python usecases/06_acerra_waste_to_energy/step_01_build_config.py \
+python usecases/06_acerra_waste_to_energy/demo/step_01_build_config.py \
   --output output/acerra_wte/acerra_waste_to_energy.json
 ```
 
@@ -488,7 +488,7 @@ python -m pip install -e .[viz]
 Check the URL first:
 
 ```bash
-python usecases/01_high_resolution_wind_field/step_01_downscale_wind.py \
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --download-time 20260527Z0000 \
   --output ignored.nc \
   --center-lat 40.85 \

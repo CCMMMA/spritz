@@ -1,0 +1,10 @@
+WORKFLOW 01_high_resolution_wind_field {
+  DESCRIPTION = "Sprtz clean-room workflow for 01 High Resolution Wind Field.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py";
+    }
+    STEP step_02 {
+      COMMAND = "python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind_impl.py";
+    }
+}

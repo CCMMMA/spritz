@@ -132,6 +132,29 @@ def build_target_grid(domain: DomainDefinition) -> TargetGrid:
 def aoi_bounds(domain: DomainDefinition) -> tuple[float, float, float, float]:
     """Return a WGS84 bounding box for the model domain plus buffer."""
     grid = build_target_grid(domain)
+    if domain.buffer_m > 0.0:
+        x_min = float(np.nanmin(grid.x)) - domain.buffer_m
+        x_max = float(np.nanmax(grid.x)) + domain.buffer_m
+        y_min = float(np.nanmin(grid.y)) - domain.buffer_m
+        y_max = float(np.nanmax(grid.y)) + domain.buffer_m
+        xx, yy = np.meshgrid(
+            np.asarray([x_min, x_max], dtype=float),
+            np.asarray([y_min, y_max], dtype=float),
+        )
+        crs = target_crs(domain)
+        if domain.projection.lower() == "auto-utm":
+            to_target = Transformer.from_crs(CRS.from_epsg(4326), crs, always_xy=True)
+            center_x, center_y = to_target.transform(domain.center_lon, domain.center_lat)
+            xx = center_x + xx
+            yy = center_y + yy
+        to_wgs84 = Transformer.from_crs(crs, CRS.from_epsg(4326), always_xy=True)
+        lon, lat = to_wgs84.transform(xx, yy)
+        return (
+            float(np.nanmin(lon)),
+            float(np.nanmin(lat)),
+            float(np.nanmax(lon)),
+            float(np.nanmax(lat)),
+        )
     return (
         float(np.nanmin(grid.longitude)),
         float(np.nanmin(grid.latitude)),
@@ -199,6 +222,36 @@ def _target_points_for_source(
     return np.asarray(source_x, dtype=float), np.asarray(source_y, dtype=float)
 
 
+def _require_source_coverage(
+    raster: RasterData,
+    src_x: np.ndarray,
+    src_y: np.ndarray,
+    dst_x: np.ndarray,
+    dst_y: np.ndarray,
+) -> None:
+    outside = (
+        (dst_x < src_x[0])
+        | (dst_x > src_x[-1])
+        | (dst_y < src_y[0])
+        | (dst_y > src_y[-1])
+    )
+    if not np.any(outside):
+        return
+    total = int(outside.size)
+    outside_count = int(np.count_nonzero(outside))
+    raise TerrainConfigurationError(
+        "source raster does not cover the requested terrain grid: "
+        f"{outside_count}/{total} target points "
+        f"({outside_count / total:.1%}) fall outside {raster.source}; "
+        f"source x=[{float(src_x[0]):.8g}, {float(src_x[-1]):.8g}], "
+        f"y=[{float(src_y[0]):.8g}, {float(src_y[-1]):.8g}], "
+        f"target x=[{float(np.nanmin(dst_x)):.8g}, {float(np.nanmax(dst_x)):.8g}], "
+        f"y=[{float(np.nanmin(dst_y)):.8g}, {float(np.nanmax(dst_y)):.8g}]. "
+        "Download or provide a DEM/land-cover raster with enough buffer around "
+        "the full model domain."
+    )
+
+
 def sanitize_dem(raster: RasterData) -> np.ndarray:
     """Return DEM values with nodata converted to NaN and finite checks applied."""
     values = np.asarray(raster.values, dtype=float)
@@ -211,7 +264,7 @@ def sanitize_dem(raster: RasterData) -> np.ndarray:
     return values
 
 
-def resample_dem(raster: RasterData, grid: TargetGrid) -> np.ndarray:
+def resample_dem(raster: RasterData, grid: TargetGrid, *, allow_outside: bool = False) -> np.ndarray:
     """Resample continuous elevation to the model grid.
 
     DEM/DTM/DSM elevations are continuous scalar fields, so bilinear
@@ -223,10 +276,15 @@ def resample_dem(raster: RasterData, grid: TargetGrid) -> np.ndarray:
     values = sanitize_dem(source)
     values, src_x, src_y = _ascending_source(values, src_x, src_y)
     dst_x, dst_y = _target_points_for_source(source, grid)
+    if allow_outside:
+        dst_x = np.clip(np.asarray(dst_x, dtype=float), src_x[0], src_x[-1])
+        dst_y = np.clip(np.asarray(dst_y, dtype=float), src_y[0], src_y[-1])
+    else:
+        _require_source_coverage(source, src_x, src_y, dst_x, dst_y)
     return _bilinear_regular_grid(values, src_x, src_y, dst_x, dst_y)
 
 
-def resample_land_cover(raster: RasterData, grid: TargetGrid) -> np.ndarray:
+def resample_land_cover(raster: RasterData, grid: TargetGrid, *, allow_outside: bool = False) -> np.ndarray:
     """Nearest-neighbor resampling for categorical land-cover classes.
 
     Land-cover values are labels, not magnitudes. Bilinear resampling would
@@ -239,6 +297,8 @@ def resample_land_cover(raster: RasterData, grid: TargetGrid) -> np.ndarray:
     values = np.asarray(source.values, dtype=float)
     values, src_x, src_y = _ascending_source(values, src_x, src_y)
     dst_x, dst_y = _target_points_for_source(source, grid)
+    if not allow_outside:
+        _require_source_coverage(source, src_x, src_y, dst_x, dst_y)
     x = np.clip(np.asarray(dst_x, dtype=float).ravel(), src_x[0], src_x[-1])
     y = np.clip(np.asarray(dst_y, dtype=float).ravel(), src_y[0], src_y[-1])
     ix = np.abs(src_x[:, None] - x[None, :]).argmin(axis=0)

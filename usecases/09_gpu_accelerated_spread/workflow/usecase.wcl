@@ -1,0 +1,7 @@
+WORKFLOW 09_gpu_accelerated_spread {
+  DESCRIPTION = "Sprtz clean-room workflow for 09 Gpu Accelerated Spread.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/09_gpu_accelerated_spread/demo/step_01_run_gpu_spread.py";
+    }
+}

@@ -1,0 +1,13 @@
+WORKFLOW 02_wildfire_arson_effects {
+  DESCRIPTION = "Sprtz clean-room workflow for 02 Wildfire Arson Effects.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/02_wildfire_arson_effects/demo/step_01_downscale_wind.py";
+    }
+    STEP step_02 {
+      COMMAND = "python usecases/02_wildfire_arson_effects/demo/step_02_build_config.py";
+    }
+    STEP step_03 {
+      COMMAND = "python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py";
+    }
+}

@@ -14,10 +14,12 @@ from sprtz.terrain.providers import (
     LocalRasterProvider,
     RasterData,
     RasterRequest,
+    TerrainConfigurationError,
     TerrainNetworkDisabledError,
 )
 from sprtz.terrain.regrid import (
     DomainDefinition,
+    aoi_bounds,
     build_target_grid,
     resample_dem,
     resample_land_cover,
@@ -80,6 +82,40 @@ def test_domain_auto_utm_grid() -> None:
     assert grid.x.shape == (5, 5)
     assert grid.target_crs == "EPSG:32633"
     assert abs(float(grid.latitude[2, 2]) - 40.85) < 1.0e-8
+
+
+def test_aoi_bounds_include_domain_buffer() -> None:
+    base = DomainDefinition.from_mapping(
+        {
+            "center_lat": 40.827,
+            "center_lon": 14.518,
+            "nx": 201,
+            "ny": 201,
+            "dx_m": 100.0,
+            "dy_m": 100.0,
+            "projection": "auto-utm",
+        }
+    )
+    buffered = DomainDefinition.from_mapping(
+        {
+            "center_lat": 40.827,
+            "center_lon": 14.518,
+            "nx": 201,
+            "ny": 201,
+            "dx_m": 100.0,
+            "dy_m": 100.0,
+            "projection": "auto-utm",
+            "buffer_m": 1000.0,
+        }
+    )
+
+    west, south, east, north = aoi_bounds(base)
+    west_b, south_b, east_b, north_b = aoi_bounds(buffered)
+
+    assert west_b < west
+    assert south_b < south
+    assert east_b > east
+    assert north_b > north
 
 
 def test_local_raster_provider_reads_ascii(tmp_path: Path) -> None:
@@ -229,6 +265,49 @@ def test_resample_dem_uses_geotiff_source_crs_coordinates() -> None:
 
     expected = 100.0 * grid.latitude + 10.0 * grid.longitude
     assert np.allclose(elevation, expected, atol=1.0e-6)
+
+
+def test_resample_dem_rejects_insufficient_source_coverage() -> None:
+    domain = DomainDefinition.from_mapping(
+        {
+            "center_lat": 40.85,
+            "center_lon": 14.27,
+            "nx": 5,
+            "ny": 5,
+            "dx_m": 100.0,
+            "dy_m": 100.0,
+            "projection": "auto-utm",
+        }
+    )
+    grid = build_target_grid(domain)
+    lon_axis = np.linspace(
+        float(grid.longitude.min()) + 0.001,
+        float(grid.longitude.max()) - 0.001,
+        3,
+    )
+    lat_axis = np.linspace(
+        float(grid.latitude.min()) + 0.001,
+        float(grid.latitude.max()) - 0.001,
+        3,
+    )
+    raster = RasterData(
+        values=np.ones((3, 3), dtype=float),
+        kind="dem",
+        source="too-small-dem.tif",
+        provider="local",
+        dataset="test",
+        resolution="30m",
+        crs="EPSG:4326",
+        metadata={"x_coords": lon_axis.tolist(), "y_coords": lat_axis.tolist()},
+    )
+
+    try:
+        resample_dem(raster, grid)
+    except TerrainConfigurationError as exc:
+        assert "does not cover the requested terrain grid" in str(exc)
+        assert "too-small-dem.tif" in str(exc)
+    else:  # pragma: no cover - defensive guard
+        raise AssertionError("insufficient DEM coverage was not rejected")
 
 
 def test_acquisition_writes_json_with_provenance(tmp_path: Path) -> None:

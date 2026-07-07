@@ -1,0 +1,10 @@
+WORKFLOW 10_backward_plume_origin {
+  DESCRIPTION = "Sprtz clean-room workflow for 10 Backward Plume Origin.";
+  WORKDIR = ".";
+    STEP step_01 {
+      COMMAND = "python usecases/10_backward_plume_origin/demo/step_01_prepare_meteorology.py";
+    }
+    STEP step_02 {
+      COMMAND = "python usecases/10_backward_plume_origin/demo/step_02_estimate_source.py";
+    }
+}

@@ -360,7 +360,7 @@ def test_spritz_can_write_3d_concentration_field(tmp_path):
         "netcdf",
         terrain_input=terrain_path if netcdf_available() else None,
     )
-    assert len(rows) == cfg.grid.nx * cfg.grid.ny * 2
+    assert rows == []
     if netcdf_available():
         from netCDF4 import Dataset  # type: ignore
 
@@ -422,6 +422,31 @@ def test_gaussian_grid_uses_terrain_lifted_asl_source_and_masks_subsurface_level
     above = [row for row in rows if row["z"] == 115.0]
     assert all(row["concentration"] == 0.0 for row in below)
     assert max(row["concentration"] for row in above) > 0.0
+
+
+def test_source_release_defaults_to_ground_and_honors_explicit_height():
+    ground_source = from_mapping(
+        {
+            "grid": {"nx": 1, "ny": 1, "dx": 100.0, "dy": 100.0},
+            "sources": [{"id": "S1", "x": 0.0, "y": 0.0}],
+        }
+    ).sources[0]
+    chimney_source = from_mapping(
+        {
+            "grid": {"nx": 1, "ny": 1, "dx": 100.0, "dy": 100.0},
+            "sources": [{"id": "S1", "x": 0.0, "y": 0.0, "height_agl_m": 15.0}],
+        }
+    ).sources[0]
+    legacy_stack_source = from_mapping(
+        {
+            "grid": {"nx": 1, "ny": 1, "dx": 100.0, "dy": 100.0},
+            "sources": [{"id": "S1", "x": 0.0, "y": 0.0, "stack_height": 12.0}],
+        }
+    ).sources[0]
+
+    assert spritz._source_release_height_agl_m(ground_source) == 0.0
+    assert spritz._source_release_height_agl_m(chimney_source) == 15.0
+    assert spritz._source_release_height_agl_m(legacy_stack_source) == 12.0
 
 
 def test_calpuff_style_concentration_binary_records(tmp_path: Path) -> None:
@@ -502,6 +527,35 @@ def test_particles_emit_time_dependent_grid_field():
     assert max(second) > 0.0
     assert first != second
     assert all("terrain_m" in row and "land_cover" in row for row in rows)
+
+
+def test_particles_vertical_boundary_uses_local_dem():
+    z, weights = particles._apply_vertical_boundary(
+        np.asarray([95.0, 110.0, 190.0]),
+        np.ones(3, dtype=float),
+        ground_m=np.asarray([100.0, 150.0, 175.0]),
+        top_m=300.0,
+        ground_policy="reflect",
+        top_policy="reflect",
+    )
+
+    np.testing.assert_allclose(z, [105.0, 190.0, 190.0])
+    np.testing.assert_allclose(weights, [1.0, 1.0, 1.0])
+
+
+def test_particles_terrain_sampler_handles_nonfinite_and_outside_points():
+    grid = Grid(nx=2, ny=2, dx=100.0, dy=100.0, x0=0.0, y0=0.0)
+    terrain = np.asarray([[10.0, 20.0], [30.0, 40.0]], dtype=float)
+
+    sampled = particles._terrain_at_points(
+        terrain,
+        grid,
+        np.asarray([np.nan, -1000.0, np.inf, 50.0]),
+        np.asarray([np.nan, -1000.0, np.inf, 50.0]),
+    )
+
+    assert np.isfinite(sampled).all()
+    np.testing.assert_allclose(sampled, [10.0, 10.0, 40.0, 25.0])
 
 
 def test_particles_report_progress_after_each_output_time():
