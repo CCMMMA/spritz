@@ -360,6 +360,29 @@ def test_wildfire_step3_logs_seconds_per_simulated_hour(tmp_path: Path, caplog: 
     assert not any("step 3/3 progress: backend=particles computed_hour=" in message for message in messages)
 
 
+def test_usecase_plotting_shim_imports_from_usecases_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    repo_root = USECASES.parent.resolve()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "path",
+        [
+            entry
+            for entry in sys.path
+            if entry
+            and Path(entry).resolve() != repo_root
+            and Path(entry).resolve() != Path.cwd().resolve()
+        ],
+    )
+    monkeypatch.syspath_prepend(str(USECASES))
+    sys.modules.pop("plotting", None)
+    sys.modules.pop("usecases", None)
+
+    module = importlib.import_module("plotting")
+
+    assert callable(module.add_plot_argument)
+
+
 def test_plot_netcdf_can_overlay_plume_vectors_from_meteo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import plotting  # noqa: PLC0415
 
