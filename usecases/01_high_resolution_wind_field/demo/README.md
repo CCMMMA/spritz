@@ -57,7 +57,7 @@ Prepare WRF input with the repository downloader:
 
 ```bash
 tools/meteouniparthenope-wrf-download.py 20260621Z0000 \
-  --hours 1 \
+  --hours 24 \
   --domain d03 \
   --data-root data/wrf/d03
 ```
@@ -121,8 +121,8 @@ sprtz-terrain fetch \
   --dem data/dem/cop30_naples.tif \
   --landuse data/landcover/lc100_naples.tif \
   --landuse-mapping copernicus-lc100 \
-  --cache-dir output/terrain-cache \
-  --output data/output/geo.nc
+  --cache-dir data/output/high_resolution_wind_field/terrain-cache \
+  --output data/output/high_resolution_wind_field/geo.nc
 ```
 
 ## Run with automatic download
@@ -132,7 +132,7 @@ python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --date 20260621Z0000 \
   --hours 24 \
   --download-dir data/wrf/d03/ \
-  --output data/output/wrf_100m_wind.nc \
+  --output data/output/high_resolution_wind_field/wrf_100m_wind.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --nx 101 --ny 101 \
@@ -167,10 +167,10 @@ MPI is unavailable.
 
 ```bash
 python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
-  --date 20260626Z0000 \
+  --date 20260621Z0000 \
   --hours 24 \
   --download-dir data/wrf/d03/ \
-  --output data/output/wrf_100m_wind_bbox.nc \
+  --output data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
   --dx 100 --dy 100 \
   --config usecases/01_high_resolution_wind_field/demo/config.json \
@@ -200,7 +200,7 @@ python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
 ```bash
 python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
-  --output data/output/wrf_100m_wind.nc \
+  --output data/output/high_resolution_wind_field/wrf_100m_wind.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --dem data/dem/cop30_naples.tif \
@@ -216,7 +216,7 @@ thermodynamic variables. To extract only one WRF slice, pass explicit indices:
 ```bash
 python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
-  --output data/output/wrf_100m_wind_t000_z000.nc \
+  --output data/output/high_resolution_wind_field/wrf_100m_wind_t000_z000.nc \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --time-index 0 \
@@ -233,11 +233,11 @@ convenience wind-speed PNG beside the NetCDF. To generate or regenerate the
 publication map explicitly after a compute-only run, use `tools/plotter.py`:
 
 ```bash
-python tools/plotter.py data/output/wrf_100m_wind.nc \
+python tools/plotter.py data/output/high_resolution_wind_field/wrf_100m_wind.nc \
   --variable wind_speed \
   --time-index 12 \
   --level-index 0 \
-  --output data/output/wrf_100m_wind.png
+  --output data/output/high_resolution_wind_field/wrf_100m_wind.png
 ```
 
 To plot the diagnostic 10 m wind as a vector field, shade `wind_speed_10m`.
@@ -245,31 +245,32 @@ The plotter converts the shaded speed to knots and overlays vectors from
 `U10M`/`V10M` automatically:
 
 ```bash
-python tools/plotter.py data/output/wrf_100m_wind.nc \
+python tools/plotter.py data/output/high_resolution_wind_field/wrf_100m_wind.nc \
   --variable wind_speed_10m \
   --time-index 12 \
   --vector-density 20 \
-  --output data/output/wrf_100m_wind_10m.png
+  --output data/output/high_resolution_wind_field/wrf_100m_wind_10m.png
 ```
 
 For a bounding-box product, use the matching NetCDF path:
 
 ```bash
-python tools/plotter.py data/output/wrf_100m_wind_bbox.nc \
+python tools/plotter.py data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
   --time-index 12 \
   --level-index 0 \
-  --output data/output/wrf_100m_wind_bbox.png
+  --output data/output/high_resolution_wind_field/wrf_100m_wind_bbox.png
 ```
 
 For finer harbor-scale coastline detail, request GSHHS coastlines explicitly:
 
 ```bash
-python tools/plotter.py data/output/wrf_100m_wind_bbox.nc \
+python tools/plotter.py data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
   --time-index 12 \
   --level-index 0 \
-  --output data/output/wrf_100m_wind_bbox.png \
+  --vector-density 20 \
+  --output data/output/high_resolution_wind_field/wrf_100m_wind_bbox_10m_12.png \
   --coastline-source gshhs \
   --coastline-resolution 10m \
   --allow-cartopy-download
@@ -282,13 +283,13 @@ elevation and terrain colors. The z-axis ticks are the configured ASL model
 levels, with any ASL sample below the DEM hidden by the renderer:
 
 ```bash
-python tools/render3d.py data/output/wrf_100m_wind.nc \
+python tools/render3d.py data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
   --time-index 12 \
-  --terrain data/output/geo.nc \
+  --terrain data/output/high_resolution_wind_field/geo.nc \
   --mode surface \
   --ground-color terrain \
-  --output data/output/wrf_100m_wind_3d.png
+  --output data/output/high_resolution_wind_field/wrf_100m_wind_3d.png
 ```
 
 ## Classroom/demo run without WRF data
@@ -297,7 +298,7 @@ python tools/render3d.py data/output/wrf_100m_wind.nc \
 python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --allow-synthetic \
   --json \
-  --output data/output/demo_wind.json \
+  --output data/output/high_resolution_wind_field/demo_wind.json \
   --center-lat 40.85 \
   --center-lon 14.27 \
   --nx 21 --ny 21
