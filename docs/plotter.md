@@ -107,6 +107,9 @@ MPLBACKEND=Agg python tools/plotter.py \
 
 When both local `x/y` and WGS84 longitude/latitude are available, map figures
 show longitude/latitude on the primary axes and local metres on secondary axes.
+The local-metre overlays are derived from the geographic centerlines of the
+displayed domain, so `x=0` and `y=0` align with the actual model-grid center
+for centered odd-node grids instead of drifting with Cartopy axis internals.
 
 Use-case plotting helpers also generate `meteo_vertical_profiles.png` beside
 workflow meteo maps and plume concentration profile figures beside concentration
@@ -181,6 +184,11 @@ Use `--vertical-exaggeration N` with `N >= 1` to exaggerate vertical relief in
 the display while keeping tick labels in true metres.
 
 ## Animations
+
+`tools/plotter.py` follows the same animation CLI family as
+`tools/render3d.py`: use `--animate`, `--frame-duration-ms`, `--gif-loop`, and
+an `.gif` `--output` path to render every available frame of a selected map
+variable into one animation.
 
 `tools/plotter.py` can render a simulation-long animated GIF from every time
 frame of a gridded map variable:

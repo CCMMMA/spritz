@@ -20,11 +20,10 @@ for path in (COMMON_DIR, USECASES_ROOT):
         sys.path.insert(0, str(path))
 
 from datetime_args import parse_script_datetime, script_datetime_to_date_and_hour
-from plotting import add_plot_argument, plot_netcdf_if_available
 from sprtz.config import config_defaults
 from sprtz.logging import configure_logging
 from sprtz.models import spritzmet, spritzwrf
-from sprtz.parallel import get_parallel_context
+from sprtz.parallel import get_mpi_context, get_parallel_context
 
 
 LOGGER = logging.getLogger(__name__)
@@ -665,8 +664,11 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
         args.dx,
         args.dy,
     )
-    met_items = [
-        spritzmet.downscale_wrf_to_local_grid(
+    met_items: list[spritzmet.LocalMeteorology] = []
+    mpi_ctx = get_mpi_context(args.parallel)
+    fmt = "NetCDF-CF" if not args.json else "json"
+    for frame_index, wrf in enumerate(wrf_fields):
+        frame = spritzmet.downscale_wrf_to_local_grid(
             wrf,
             center_lat=center_lat,
             center_lon=center_lon,
@@ -681,8 +683,24 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
             station_measurements=station_measurements,
             parallel=args.parallel,
         )
-        for wrf in wrf_fields
-    ]
+        met_items.append(frame)
+        # Persist every completed time frame. Rewriting the accumulated product
+        # keeps the on-disk file CF-valid and readable if a later frame fails.
+        # In MPI runs every rank computes and gathers, but only rank 0 writes
+        # the shared output.
+        if mpi_ctx.is_root:
+            partial_met = _combine_local_meteorology(met_items) if len(met_items) > 1 else frame
+            fmt = spritzmet.write_local_meteorology(
+                args.output,
+                partial_met,
+                prefer_netcdf=not args.json,
+            )
+            LOGGER.info(
+                "step 4/4 output: persisted completed time frame %s/%s to %s",
+                frame_index + 1,
+                len(wrf_fields),
+                args.output,
+            )
     met = _combine_local_meteorology(met_items) if len(met_items) > 1 else met_items[0]
     _teach(
         "downscaled output wind has shape=%s after NetCDF expansion; derived wind speed min/max are %.3f/%.3f m s-1",
@@ -700,25 +718,12 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
             actual_bounds["east"],
         )
 
-    LOGGER.info("step 4/4 output: spritzmet.write_local_meteorology")
     _teach("strict NetCDF-CF is preferred for interchange; --json selects the lightweight JSON fallback")
-    fmt = spritzmet.write_local_meteorology(args.output, met, prefer_netcdf=not args.json)
-    _teach("wrote %s output to %s", fmt, args.output)
+    if mpi_ctx.is_root:
+        _teach("wrote %s output to %s", fmt, args.output)
     if args.calmet_dat is not None:
         calmet_fmt = spritzmet.write_calmet_dat(args.calmet_dat, met)
         _teach("wrote %s binary evaluation output to %s", calmet_fmt, args.calmet_dat)
-    plot_path = None
-    if args.plot:
-        plot_path = plot_netcdf_if_available(
-            args.output,
-            Path(args.output).with_suffix(".png"),
-            variable="wind_speed",
-            title="SpritzMet Wind Speed",
-            center_lat=center_lat,
-            center_lon=center_lon,
-        )
-        if plot_path is not None:
-            _teach("plotted intermediate wind-speed map to %s with tools/plotter.py", plot_path)
     return WindDownscalingResult(
         Path(args.output),
         nx,
@@ -729,7 +734,6 @@ def run_workflow(args: argparse.Namespace, download_date: str | None, download_c
         center_lon,
         met.source,
         fmt,
-        plot_path=plot_path,
         requested_bounds=requested_bounds,
         actual_bounds=actual_bounds,
     )
@@ -792,7 +796,6 @@ def build_parser(description: str | None = None) -> argparse.ArgumentParser:
     )
     parser.add_argument("--json", action="store_true", help="write JSON even when netCDF4 is available")
     parser.add_argument("--calmet-dat", default=None, help="Optional CALMET.DAT-compatible binary output for model-evaluation workflows")
-    add_plot_argument(parser)
     parser.add_argument("--allow-synthetic", action="store_true")
     return parser
 

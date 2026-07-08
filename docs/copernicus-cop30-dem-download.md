@@ -64,6 +64,12 @@ The bounding box is geographic WGS84:
   the same terrain-domain definition used by `sprtz-terrain fetch`.
 
 `south` must be smaller than `north`, and `west` must be smaller than `east`.
+Bounds may be combined with `--dx` and optional `--dy` to derive the terrain
+grid automatically. In that form, omitting both center options derives
+`--center-lat` and `--center-lon` from the geographic box midpoint, then snaps
+the projected grid outward to the requested spacing before buffering the AOI.
+If `--nx` or `--ny` is supplied, both must be supplied together.
+Supplying one center coordinate requires supplying the other.
 When using domain arguments, keep `--buffer-m` positive so the downloaded DEM
 extends beyond the target GEO grid and bilinear interpolation does not depend on
 source edge pixels.

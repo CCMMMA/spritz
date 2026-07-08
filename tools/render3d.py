@@ -15,6 +15,10 @@ from typing import Any, Sequence
 import numpy as np
 
 from sprtz.logging import LOG_DATE_FORMAT, LOG_FORMAT_VERBOSE
+try:
+    from tools.plotter import MPS_TO_KNOTS, WIND_SPEED_KNOT_COLORS, WIND_SPEED_KNOT_LEVELS
+except ModuleNotFoundError:
+    from plotter import MPS_TO_KNOTS, WIND_SPEED_KNOT_COLORS, WIND_SPEED_KNOT_LEVELS
 
 LOGGER = logging.getLogger("sprtz.render3d")
 
@@ -86,6 +90,11 @@ class VolumeField:
     def title(self) -> str:
         detail = f" | {self.time_label}" if self.time_label else ""
         return f"{self.source_name}: {self.long_name or self.variable_name}{detail}"
+
+    @property
+    def is_wind_speed(self) -> bool:
+        text = f"{self.variable_name} {self.long_name}".lower()
+        return "wind_speed" in text or "wind speed" in text
 
 
 @dataclass(frozen=True)
@@ -341,6 +350,27 @@ def read_volume_field(input_path: str | Path, *, variable_name: str | None, time
         lat_axis,
         z_reference,
     )
+
+
+def read_wind_vector_components(
+    input_path: str | Path, *, time_index: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Read aligned three-dimensional eastward/northward wind components."""
+    Dataset = _load_netcdf4()
+    with Dataset(input_path) as ds:
+        u_var = _find_variable(ds, ("eastward_wind", "u"))
+        v_var = _find_variable(ds, ("northward_wind", "v"))
+        if u_var is None or v_var is None:
+            raise ValueError(
+                "3-D quiver rendering requires eastward_wind and northward_wind"
+            )
+        u, _, _, _ = _as_z_y_x(ds, str(u_var.name), time_index=time_index)
+        v, _, _, _ = _as_z_y_x(ds, str(v_var.name), time_index=time_index)
+    if u.shape != v.shape:
+        raise ValueError(
+            f"eastward_wind shape {u.shape} does not match northward_wind shape {v.shape}"
+        )
+    return u, v
 
 
 def _terrain_like_volume(terrain: TerrainField | None, field: VolumeField) -> TerrainField:
@@ -821,9 +851,10 @@ def plot_volume(
     color_limits: tuple[float, float] | None = None,
     emission_points: Sequence[EmissionPoint] = (),
     coordinate_format: str = "ddm",
+    vector_components: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> Path:
     plt = _load_matplotlib()
-    from matplotlib.colors import LogNorm, Normalize
+    from matplotlib.colors import BoundaryNorm, ListedColormap, LogNorm, Normalize
 
     if log_scale and not np.any(np.isfinite(field.values) & (field.values > 0.0)):
         raise ValueError("--log-scale requires at least one positive value")
@@ -832,7 +863,12 @@ def plot_volume(
         raise ValueError("selected variable has no finite values")
     if color_limits is None:
         color_limits = _color_limits((field,), log_scale=log_scale)
-    norm = LogNorm(vmin=color_limits[0], vmax=color_limits[1]) if log_scale and color_limits else Normalize(*(color_limits or (None, None)))
+    if field.is_wind_speed:
+        plot_cmap = ListedColormap(np.asarray(WIND_SPEED_KNOT_COLORS, dtype=float) / 255.0)
+        norm = BoundaryNorm(WIND_SPEED_KNOT_LEVELS, plot_cmap.N, clip=True)
+    else:
+        plot_cmap = plt.get_cmap(cmap)
+        norm = LogNorm(vmin=color_limits[0], vmax=color_limits[1]) if log_scale and color_limits else Normalize(*(color_limits or (None, None)))
     x_idx = _subsample_axis(field.x_axis, max_points)
     y_idx = _subsample_axis(field.y_axis, max_points)
     z_idx = np.arange(field.z_axis.size)
@@ -845,7 +881,6 @@ def plot_volume(
 
     fig = plt.figure(figsize=figure_size, dpi=dpi)
     ax = fig.add_subplot(1, 1, 1, projection="3d")
-    plot_cmap = plt.get_cmap(cmap)
     xx, yy = np.meshgrid(field.x_axis[x_idx], field.y_axis[y_idx])
     if ground_color == "land-cover":
         terrain_colors = _land_cover_facecolors(
@@ -867,8 +902,51 @@ def plot_volume(
         alpha=0.78,
         zorder=1,
     )
-    if mode == "voxel":
+    if mode == "quiver":
+        if vector_components is None:
+            raise ValueError("quiver mode requires three-dimensional wind components")
+        u_full, v_full = vector_components
+        if u_full.shape != field.values.shape or v_full.shape != field.values.shape:
+            raise ValueError("quiver wind components must match the rendered volume shape")
+        # Keep arrows legible by sampling all three spatial axes. The arrow
+        # locations retain physical model heights; only their displayed
+        # vertical positions receive the requested visual exaggeration.
+        z_vector_idx = _subsample_axis(field.z_axis, max(2, min(max_points, 12)))
+        u = u_full[np.ix_(z_vector_idx, y_idx, x_idx)]
+        v = v_full[np.ix_(z_vector_idx, y_idx, x_idx)]
+        speed = np.hypot(u, v) * MPS_TO_KNOTS
+        zz, yy3, xx3 = np.meshgrid(
+            field.z_axis[z_vector_idx],
+            field.y_axis[y_idx],
+            field.x_axis[x_idx],
+            indexing="ij",
+        )
+        terrain3 = np.broadcast_to(terrain_sample, speed.shape)
+        altitude = _plume_altitude(field, zz, terrain3)
+        valid = np.isfinite(u) & np.isfinite(v) & np.isfinite(altitude)
+        valid &= altitude >= terrain3
+        if np.any(valid):
+            ax.quiver(
+                xx3[valid],
+                yy3[valid],
+                _scale_z(altitude[valid], z_limits[0], vertical_exaggeration),
+                u[valid],
+                v[valid],
+                np.zeros(np.count_nonzero(valid), dtype=float),
+                colors=plot_cmap(norm(speed[valid])),
+                normalize=True,
+                length=max(
+                    (np.ptp(field.x_axis[x_idx]) or 1.0) / max(4, x_idx.size),
+                    (np.ptp(field.y_axis[y_idx]) or 1.0) / max(4, y_idx.size),
+                ),
+                arrow_length_ratio=0.35,
+                linewidth=0.7,
+            )
+        ax.set_box_aspect((np.ptp(field.x_axis[x_idx]) or 1.0, np.ptp(field.y_axis[y_idx]) or 1.0, (display_z_limits[1] - display_z_limits[0]) or 1.0))
+    elif mode == "voxel":
         sampled = _positive_render_values(field, field.values[np.ix_(z_idx, y_idx, x_idx)])
+        if field.is_wind_speed:
+            sampled = sampled * MPS_TO_KNOTS
         threshold = _threshold(sampled, threshold_quantile)
         occupied = np.isfinite(sampled) & (sampled >= threshold) if threshold is not None else np.zeros(sampled.shape, dtype=bool)
         if np.any(occupied):
@@ -893,6 +971,8 @@ def plot_volume(
         ax.set_box_aspect((np.ptp(field.x_axis[x_idx]) or 1.0, np.ptp(field.y_axis[y_idx]) or 1.0, (display_z_limits[1] - display_z_limits[0]) or 1.0))
     else:
         sampled = _positive_render_values(field, field.values[:, :, x_idx][:, y_idx, :])
+        if field.is_wind_speed:
+            sampled = sampled * MPS_TO_KNOTS
         threshold = _threshold(sampled, threshold_quantile)
         plume_height = _surface_z(sampled, field.z_axis, threshold) if threshold is not None else np.full_like(terrain_sample, np.nan)
         surface = _plume_altitude(field, plume_height, terrain_sample)
@@ -937,11 +1017,19 @@ def plot_volume(
         )
     mappable = plt.cm.ScalarMappable(norm=norm, cmap=plot_cmap)
     mappable.set_array([])
-    fig.colorbar(mappable, ax=ax, shrink=0.72, pad=0.16, label=field.label)
+    colorbar_label = (
+        f"{field.long_name or field.variable_name} [kt]"
+        if field.is_wind_speed
+        else field.label
+    )
+    fig.colorbar(mappable, ax=ax, shrink=0.72, pad=0.16, label=colorbar_label)
     _apply_geographic_horizontal_ticks(ax, field, terrain_field, coordinate_format)
     _apply_vertical_axis(ax, field, z_limits, vertical_exaggeration)
     ax.view_init(elev=elevation, azim=azimuth)
-    ax.set_title(title or field.title, fontsize=11)
+    title_text = title or f"{field.source_name}: {field.long_name or field.variable_name}"
+    if field.time_label:
+        title_text = f"{title_text}\n{field.time_label}"
+    ax.set_title(title_text, fontsize=11)
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
@@ -986,6 +1074,11 @@ def plot_animation(input_path: str | Path, output_path: str | Path, **kwargs: An
                 terrain=terrain_field,
                 color_limits=color_limits,
                 emission_points=read_emission_points(config_path, terrain_field, input_path=input_path),
+                vector_components=(
+                    read_wind_vector_components(input_path, time_index=index)
+                    if kwargs["mode"] == "quiver"
+                    else None
+                ),
                 **kwargs,
             )
             frame_paths.append(frame_path)
@@ -1012,7 +1105,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dpi", type=int, default=600, help="output raster DPI")
     parser.add_argument("--cmap", default="viridis", help="matplotlib colormap")
     parser.add_argument("--log-scale", action="store_true", help="use logarithmic color normalization")
-    parser.add_argument("--mode", choices=("surface", "voxel"), default="surface", help="3-D rendering style")
+    parser.add_argument(
+        "--mode",
+        choices=("surface", "voxel", "quiver"),
+        default="surface",
+        help="3-D rendering style; quiver uses eastward_wind and northward_wind",
+    )
     parser.add_argument("--threshold-quantile", type=float, default=0.85, help="quantile threshold used for 3-D extraction")
     parser.add_argument("--max-points", type=int, default=56, help="maximum sampled points per axis for responsive rendering")
     parser.add_argument(
@@ -1081,6 +1179,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.output,
                 terrain=terrain_field,
                 emission_points=read_emission_points(args.config, terrain_field, input_path=args.input),
+                vector_components=(
+                    read_wind_vector_components(args.input, time_index=args.time_index)
+                    if args.mode == "quiver"
+                    else None
+                ),
                 **common,
             )
     except KeyboardInterrupt:

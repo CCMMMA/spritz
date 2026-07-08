@@ -830,6 +830,56 @@ def _axis_center_line(grid: np.ndarray | None, axis: str) -> np.ndarray | None:
     return np.asarray(grid[:, grid.shape[1] // 2], dtype=float)
 
 
+def _format_axis_tick(value: float) -> str:
+    rounded = round(float(value))
+    if math.isclose(float(value), rounded, rel_tol=0.0, abs_tol=1.0e-9):
+        return f"{rounded:d}"
+    return f"{float(value):.1f}"
+
+
+def _mapped_axis_ticks(
+    source: np.ndarray,
+    target: np.ndarray,
+    *,
+    count: int = 7,
+) -> tuple[np.ndarray, list[str]]:
+    source_arr = np.asarray(source, dtype=float)
+    target_arr = np.asarray(target, dtype=float)
+    finite = np.isfinite(source_arr) & np.isfinite(target_arr)
+    if np.count_nonzero(finite) < 2:
+        return np.asarray([], dtype=float), []
+    source_arr = source_arr[finite]
+    target_arr = target_arr[finite]
+    order = np.argsort(source_arr)
+    source_arr = source_arr[order]
+    target_arr = target_arr[order]
+    if float(np.nanmin(source_arr)) == float(np.nanmax(source_arr)):
+        return np.asarray([], dtype=float), []
+    source_ticks = np.linspace(float(source_arr[0]), float(source_arr[-1]), max(2, int(count)))
+    target_ticks = np.interp(source_ticks, source_arr, target_arr)
+    labels = [_format_axis_tick(value) for value in target_ticks]
+    return source_ticks, labels
+
+
+def _add_overlay_axis(ax: Any, *, kind: str) -> Any:
+    figure = getattr(ax, "figure", None)
+    if figure is None or not hasattr(figure, "add_axes") or not hasattr(ax, "get_position"):
+        return ax.twiny() if kind == "x" else ax.twinx()
+    overlay = figure.add_axes(ax.get_position(), frameon=False)
+    overlay.patch.set_alpha(0.0)
+    if kind == "x":
+        overlay.set_xlim(ax.get_xlim())
+        overlay.xaxis.set_ticks_position("top")
+        overlay.xaxis.set_label_position("top")
+        overlay.yaxis.set_visible(False)
+    else:
+        overlay.set_ylim(ax.get_ylim())
+        overlay.yaxis.set_ticks_position("right")
+        overlay.yaxis.set_label_position("right")
+        overlay.xaxis.set_visible(False)
+    return overlay
+
+
 def _add_local_secondary_axes(ax: Any, field: MapField) -> None:
     if not field.geographic or field.local_x is None or field.local_y is None:
         return
@@ -840,28 +890,20 @@ def _add_local_secondary_axes(ax: Any, field: MapField) -> None:
     if lon_line is None or x_line is None or lat_line is None or y_line is None:
         return
     if np.ptp(lon_line) > 0.0 and np.ptp(x_line) > 0.0:
-        order = np.argsort(lon_line)
-
-        def lon_to_x(value: Any) -> np.ndarray:
-            return np.interp(value, lon_line[order], x_line[order])
-
-        def x_to_lon(value: Any) -> np.ndarray:
-            reverse = np.argsort(x_line)
-            return np.interp(value, x_line[reverse], lon_line[reverse])
-
-        top = ax.secondary_xaxis("top", functions=(lon_to_x, x_to_lon))
+        top = _add_overlay_axis(ax, kind="x")
+        top.set_xlim(ax.get_xlim())
+        x_ticks, x_labels = _mapped_axis_ticks(lon_line, x_line)
+        if x_labels:
+            top.set_xticks(x_ticks)
+            top.set_xticklabels(x_labels)
         top.set_xlabel("x [m]")
     if np.ptp(lat_line) > 0.0 and np.ptp(y_line) > 0.0:
-        order = np.argsort(lat_line)
-
-        def lat_to_y(value: Any) -> np.ndarray:
-            return np.interp(value, lat_line[order], y_line[order])
-
-        def y_to_lat(value: Any) -> np.ndarray:
-            reverse = np.argsort(y_line)
-            return np.interp(value, y_line[reverse], lat_line[reverse])
-
-        right = ax.secondary_yaxis("right", functions=(lat_to_y, y_to_lat))
+        right = _add_overlay_axis(ax, kind="y")
+        right.set_ylim(ax.get_ylim())
+        y_ticks, y_labels = _mapped_axis_ticks(lat_line, y_line)
+        if y_labels:
+            right.set_yticks(y_ticks)
+            right.set_yticklabels(y_labels)
         right.set_ylabel("y [m]")
 
 
@@ -1380,7 +1422,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Plot publication-ready maps from Sprtz NetCDF-CF products."
     )
     parser.add_argument("input", help="input NetCDF file produced by a Sprtz module")
-    parser.add_argument("-o", "--output", required=True, help="output figure path, e.g. map.png or map.pdf")
+    parser.add_argument("-o", "--output", required=True, help="output figure path, e.g. map.png, map.pdf, or map.gif")
     parser.add_argument("-v", "--variable", default=None, help="NetCDF variable to plot; auto-detected by default")
     parser.add_argument("--time-index", type=int, default=0, help="time index for multidimensional variables")
     parser.add_argument("--level-index", type=int, default=0, help="vertical/level index for 3-D or 4-D fields")
@@ -1436,26 +1478,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         datefmt=LOG_DATE_FORMAT,
     )
     try:
+        common = {
+            "variable_name": args.variable,
+            "level_index": args.level_index,
+            "center_lat": args.center_lat,
+            "center_lon": args.center_lon,
+            "title": args.title,
+            "dpi": args.dpi,
+            "cmap": args.cmap,
+            "coastline_source": args.coastline_source,
+            "coastline_resolution": args.coastline_resolution,
+            "allow_cartopy_download": args.allow_cartopy_download,
+            "figure_size": (args.width, args.height),
+            "log_scale": args.log_scale,
+            "vector_overlay": not args.no_vectors,
+            "vector_stride": args.vector_stride,
+            "vector_density": args.vector_density,
+            "vector_scale": args.vector_scale,
+        }
         if args.animate:
             out = plot_animation(
                 args.input,
                 args.output,
-                variable_name=args.variable,
-                level_index=args.level_index,
-                center_lat=args.center_lat,
-                center_lon=args.center_lon,
-                title=args.title,
-                dpi=args.dpi,
-                cmap=args.cmap,
-                coastline_source=args.coastline_source,
-                coastline_resolution=args.coastline_resolution,
-                allow_cartopy_download=args.allow_cartopy_download,
-                figure_size=(args.width, args.height),
-                log_scale=args.log_scale,
-                vector_overlay=not args.no_vectors,
-                vector_stride=args.vector_stride,
-                vector_density=args.vector_density,
-                vector_scale=args.vector_scale,
+                **common,
                 config_path=args.config,
                 coordinate_format=args.coordinate_format,
                 duration_ms=args.frame_duration_ms,
@@ -1464,27 +1509,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             field = read_map_field(
                 args.input,
-                variable_name=args.variable,
+                variable_name=common["variable_name"],
                 time_index=args.time_index,
-                level_index=args.level_index,
-                center_lat=args.center_lat,
-                center_lon=args.center_lon,
+                level_index=common["level_index"],
+                center_lat=common["center_lat"],
+                center_lon=common["center_lon"],
             )
             out = plot_map(
                 field,
                 args.output,
-                title=args.title,
-                dpi=args.dpi,
-                cmap=args.cmap,
-                coastline_source=args.coastline_source,
-                coastline_resolution=args.coastline_resolution,
-                allow_cartopy_download=args.allow_cartopy_download,
-                figure_size=(args.width, args.height),
-                log_scale=args.log_scale,
-                vector_overlay=not args.no_vectors,
-                vector_stride=args.vector_stride,
-                vector_density=args.vector_density,
-                vector_scale=args.vector_scale,
+                title=common["title"],
+                dpi=common["dpi"],
+                cmap=common["cmap"],
+                coastline_source=common["coastline_source"],
+                coastline_resolution=common["coastline_resolution"],
+                allow_cartopy_download=common["allow_cartopy_download"],
+                figure_size=common["figure_size"],
+                log_scale=common["log_scale"],
+                vector_overlay=common["vector_overlay"],
+                vector_stride=common["vector_stride"],
+                vector_density=common["vector_density"],
+                vector_scale=common["vector_scale"],
                 emission_points=read_emission_points(args.config, field, input_path=args.input),
                 coordinate_format=args.coordinate_format,
             )

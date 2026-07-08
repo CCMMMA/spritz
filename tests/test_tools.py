@@ -204,6 +204,82 @@ def test_cop30_download_resolves_domain_bbox_with_buffer() -> None:
     assert east > 14.637082
 
 
+@pytest.mark.parametrize("loader", [load_cop30_download_tool, load_lc100_download_tool])
+def test_copernicus_download_bbox_computes_grid_center(loader) -> None:
+    tool = loader()
+    args = types.SimpleNamespace(
+        south=40.78,
+        north=40.85,
+        west=14.18,
+        east=14.33,
+        center_lat=None,
+        center_lon=None,
+        nx=129,
+        ny=79,
+        dx=100.0,
+        dy=100.0,
+        projection="auto-utm",
+        buffer_m=5000.0,
+    )
+
+    south, north, west, east = tool.resolve_bbox(args)
+
+    # The midpoint (40.815, 14.255) is used to construct the projected grid,
+    # and the returned source AOI expands that grid by the requested buffer.
+    assert south < 40.78
+    assert north > 40.85
+    assert west < 14.18
+    assert east > 14.33
+
+
+@pytest.mark.parametrize("loader", [load_cop30_download_tool, load_lc100_download_tool])
+def test_copernicus_download_bbox_computes_shape_from_spacing(loader) -> None:
+    tool = loader()
+    args = types.SimpleNamespace(
+        south=40.78,
+        north=40.85,
+        west=14.18,
+        east=14.33,
+        center_lat=None,
+        center_lon=None,
+        ny=None,
+        nx=None,
+        dx=100.0,
+        dy=100.0,
+        projection="auto-utm",
+        buffer_m=5000.0,
+    )
+
+    south, north, west, east = tool.resolve_bbox(args)
+
+    assert south < 40.78
+    assert north > 40.85
+    assert west < 14.18
+    assert east > 14.33
+
+
+@pytest.mark.parametrize("loader", [load_cop30_download_tool, load_lc100_download_tool])
+def test_copernicus_download_bbox_rejects_partial_shape(loader) -> None:
+    tool = loader()
+    args = types.SimpleNamespace(
+        south=40.78,
+        north=40.85,
+        west=14.18,
+        east=14.33,
+        center_lat=None,
+        center_lon=None,
+        nx=129,
+        ny=None,
+        dx=100.0,
+        dy=100.0,
+        projection="auto-utm",
+        buffer_m=5000.0,
+    )
+
+    with pytest.raises(ValueError, match="--nx and --ny"):
+        tool.resolve_bbox(args)
+
+
 def test_lc100_download_uses_domain_bbox_for_gdalwarp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     tool = load_lc100_download_tool()
     output = tmp_path / "lc100.tif"
@@ -524,6 +600,96 @@ def test_plotter_normalizes_wind_vectors_for_quiver() -> None:
     assert np.isfinite(v).all()
 
 
+def test_plotter_adds_local_secondary_axes_with_twin_axes() -> None:
+    plotter = load_plotter_tool()
+
+    class FakeAxis:
+        def __init__(self) -> None:
+            self.xlim = (14.17, 14.34)
+            self.ylim = (40.77, 40.85)
+            self.xticks = None
+            self.xticklabels = None
+            self.yticks = None
+            self.yticklabels = None
+            self.xlabel = None
+            self.ylabel = None
+            self.aspect = None
+            self.adjustable = None
+            self.patch = types.SimpleNamespace(alpha=None, set_alpha=lambda value: setattr(self.patch, "alpha", value))
+
+        def get_xlim(self):
+            return self.xlim
+
+        def get_ylim(self):
+            return self.ylim
+
+        def set_xlim(self, limits):
+            self.xlim = limits
+
+        def set_ylim(self, limits):
+            self.ylim = limits
+
+        def set_xticks(self, ticks):
+            self.xticks = np.asarray(ticks, dtype=float)
+
+        def set_xticklabels(self, labels):
+            self.xticklabels = list(labels)
+
+        def set_yticks(self, ticks):
+            self.yticks = np.asarray(ticks, dtype=float)
+
+        def set_yticklabels(self, labels):
+            self.yticklabels = list(labels)
+
+        def set_xlabel(self, label):
+            self.xlabel = label
+
+        def set_ylabel(self, label):
+            self.ylabel = label
+
+        def set_aspect(self, value):
+            self.aspect = value
+
+        def set_adjustable(self, value):
+            self.adjustable = value
+
+    class FakeAxes(FakeAxis):
+        def __init__(self) -> None:
+            super().__init__()
+            self.top = FakeAxis()
+            self.right = FakeAxis()
+
+        def twiny(self):
+            return self.top
+
+        def twinx(self):
+            return self.right
+
+    lon, lat = np.meshgrid(np.linspace(14.18, 14.33, 5), np.linspace(40.78, 40.85, 3))
+    local_x, local_y = np.meshgrid(np.linspace(-200.0, 200.0, 5), np.linspace(-100.0, 100.0, 3))
+    field = plotter.MapField(
+        name="wind_speed_10m",
+        values=np.ones((3, 5), dtype=float),
+        x=lon,
+        y=lat,
+        local_x=local_x,
+        local_y=local_y,
+        geographic=True,
+        label="diagnostic 10 m wind speed [kt]",
+        title="Wind",
+    )
+    ax = FakeAxes()
+
+    plotter._add_local_secondary_axes(ax, field)
+
+    assert ax.top.xlabel == "x [m]"
+    assert ax.right.ylabel == "y [m]"
+    assert ax.top.xlim == ax.get_xlim()
+    assert ax.right.ylim == ax.get_ylim()
+    assert "0" in ax.top.xticklabels
+    assert "0" in ax.right.yticklabels
+
+
 def test_plotter_animation_time_indexes_follow_selected_variable(tmp_path: Path) -> None:
     pytest.importorskip("netCDF4")
     from netCDF4 import Dataset  # type: ignore
@@ -822,6 +988,39 @@ def test_render3d_reads_time_varying_volume(tmp_path: Path) -> None:
     assert field.time_label == "Time: 3600 seconds"
     np.testing.assert_allclose(field.latitude_axis, [40.0, 40.1])
     np.testing.assert_allclose(field.longitude_axis, [14.0, 14.2])
+
+
+def test_render3d_reads_aligned_3d_wind_vectors(tmp_path: Path) -> None:
+    pytest.importorskip("netCDF4")
+    from netCDF4 import Dataset  # type: ignore
+
+    path = tmp_path / "wind3d.nc"
+    with Dataset(path, "w") as ds:
+        ds.createDimension("time", 2)
+        ds.createDimension("z", 2)
+        ds.createDimension("y", 2)
+        ds.createDimension("x", 3)
+        shape = (2, 2, 2, 3)
+        u = ds.createVariable("eastward_wind", "f8", ("time", "z", "y", "x"))
+        v = ds.createVariable("northward_wind", "f8", ("time", "z", "y", "x"))
+        u[:] = np.arange(np.prod(shape), dtype=float).reshape(shape)
+        v[:] = -np.arange(np.prod(shape), dtype=float).reshape(shape)
+
+    render3d = load_render3d_tool()
+    u, v = render3d.read_wind_vector_components(path, time_index=1)
+
+    assert u.shape == (2, 2, 3)
+    np.testing.assert_allclose(v, -u)
+    assert u[0, 0, 0] == 12.0
+
+
+def test_render3d_parser_accepts_quiver_mode() -> None:
+    render3d = load_render3d_tool()
+    args = render3d.build_parser().parse_args(
+        ["wind.nc", "--output", "wind.png", "--mode", "quiver"]
+    )
+
+    assert args.mode == "quiver"
 
 
 def test_render3d_reads_dem_and_land_cover_terrain(tmp_path: Path) -> None:

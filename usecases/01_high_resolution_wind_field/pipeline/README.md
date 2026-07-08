@@ -1,12 +1,20 @@
 # High-Resolution Wind Field Pipeline
 
-## Scientific Purpose
+## Scientific purpose
 
-This pipeline builds a deterministic local 100 m meteorological grid using only command-line wrappers from the repository-level `scripts/` directory. It is an operational decomposition of the high-resolution wind-field use case: the script prepares a minimal local-grid configuration, validates it through the public Sprtz CLI, and runs SpritzMet to produce a NetCDF-CF wind product.
+This pipeline now follows the same real-data Velalonga 2026 workflow as
+`usecases/01_high_resolution_wind_field/demo/`. It downloads 24 hourly WRF d03
+files for `20260621Z0000`, prepares buffered COP30 and LC100 rasters for the
+Bay of Naples bounding box, builds the matching GEO terrain product, runs the
+SpritzWRF -> SpritzMet downscaling chain, and renders the same 2-D, profile,
+and 3-D products.
 
-The pipeline is intentionally constrained to externally invocable suite wrappers suitable for workflow engines.
+The pipeline remains a shell-oriented operational wrapper, but it is no longer
+the old synthetic single-station SpritzMet smoke path. It is aligned with the
+didactic demo and uses the same clean-room scientific assumptions, NetCDF-CF
+outputs, and visualization conventions.
 
-## Operational Contract
+## Operational contract
 
 Run from the repository root, or from any other working directory:
 
@@ -14,117 +22,194 @@ Run from the repository root, or from any other working directory:
 bash usecases/01_high_resolution_wind_field/pipeline/pipeline.sh
 ```
 
-The script resolves the repository root from its own location and invokes only:
+The script resolves the repository root from its own location and writes under
+the repository-level `data/` tree by default:
 
-- `scripts/sprtz_doctor.py`
-- `scripts/sprtz.py`
-- `scripts/spritzmet.py`
+- WRF downloads go to `data/wrf/d03/`;
+- terrain and wind-field products go to `data/output/high_resolution_wind_field/`.
 
-Products are written under `data/01_high_resolution_wind_field/` by default. Set `SPRTZ_DATA_ROOT` to change the data root, or set `SPRTZ_OUTPUT_DIR` to choose the exact output directory.
+Override paths with:
 
-The script also sets `MPLCONFIGDIR` to `${SPRTZ_OUTPUT_DIR}/.matplotlib` by default so Matplotlib can build font and style caches in a workflow-writable location. Override `MPLCONFIGDIR` explicitly when the workflow engine provides a shared rendering cache.
+- `SPRTZ_DATA_ROOT` to relocate the repository data root;
+- `SPRTZ_OUTPUT_DIR` to choose the exact output directory for terrain, NetCDF,
+  and rendered products;
+- `WRF_DIR`, `DEM_PATH`, `LANDUSE_PATH`, `GEO_PATH`, and `METEO_PATH` for
+  finer-grained path control.
+
+The script also sets `MPLCONFIGDIR` to
+`${SPRTZ_OUTPUT_DIR}/.matplotlib` by default so Matplotlib caches remain
+workflow-writable.
+
+## Fixed scenario
+
+The aligned pipeline is intentionally pinned to the Velalonga 2026 scenario:
+
+- start time: `20260621Z0000`;
+- duration: `24` hours;
+- bounding box:
+
+```json
+[
+  [14.18, 40.78],
+  [14.18, 40.85],
+  [14.33, 40.85],
+  [14.33, 40.78],
+  [14.18, 40.78]
+]
+```
+
+- local spacing: `100 m`;
+- terrain buffer for source rasters: `5000 m`.
+
+By default, the pipeline omits `--nx` and `--ny` for the Copernicus downloaders
+and for `sprtz-terrain fetch`. They are derived automatically from the bbox
+midpoint and spacing, yielding the same snapped `129 x 79` grid used by the
+demo.
 
 ## Parameters
 
-- `NX` defaults to `21`, the number of local-grid cells in the x direction.
-- `NY` defaults to `21`, the number of local-grid cells in the y direction.
-- `DX` defaults to `100`, the grid spacing in metres in the x direction.
-- `DY` defaults to `100`, the grid spacing in metres in the y direction.
-- `WIND_SPEED_M_S` defaults to `5.0`, the synthetic station wind speed.
-- `WIND_FROM_DIRECTION_DEG` defaults to `270.0`, the meteorological wind-from direction.
-- `TEMPERATURE_K` defaults to `294.0`, the station air temperature.
-- `MIXING_HEIGHT_M` defaults to `900.0`, the diagnostic mixing height.
-- `PRECIPITATION_RATE_MM_H` defaults to `0.0`, the precipitation rate.
+The main environment overrides are:
+
+- `DATE_UTC`, default `20260621Z0000`;
+- `HOURS`, default `24`;
+- `SOUTH`, `NORTH`, `WEST`, `EAST`, defaulting to the Velalonga bbox;
+- `DX`, `DY`, default `100`;
+- `BUFFER_M`, default `5000`;
+- `VECTOR_DENSITY`, default `50` for 2-D wind maps;
+- `PROFILE_DURATION_MS`, default `400`;
+- `RENDER3D_DURATION_MS`, default `400`;
+- `VERTICAL_EXAGGERATION`, default `5`;
+- `COASTLINE_SOURCE`, default `gshhs`;
+- `COASTLINE_RESOLUTION`, default `10m`;
+- `ALLOW_CARTOPY_DOWNLOAD`, default `1`.
 
 All parameters may be overridden as shell environment variables.
 
-## Expected Products
+## Step-by-step method
 
-- `high_resolution_wind_config.json`: the generated local-grid Sprtz configuration.
-- `spritzmet_100m_wind.nc`: the NetCDF-CF SpritzMet meteorological product.
-- `figures/wind_speed_map.png`: a publication-ready 2-D wind-speed map with vector overlay.
-- `figures/wind_speed_profile.png`: a publication-ready vertical wind-speed profile.
-- `figures/wind_speed_3d.png`: a publication-ready three-dimensional wind-field surface.
+### Step 1: Download the WRF forcing
 
-## Step-by-Step Method
-
-### Step 1: Runtime Environment Diagnostic
-
-The pipeline first runs `scripts/sprtz_doctor.py`. This records whether the local environment has the optional features needed for preferred outputs, especially NetCDF support. In operational provenance, this step explains why a run produced NetCDF products or would need a fallback format.
-
-Executable command:
+The pipeline downloads the 24 hourly WRF5 d03 files from `20260621Z0000`
+through `20260621Z2300`:
 
 ```bash
-python3 "${SCRIPTS_DIR}/sprtz_doctor.py"
+python tools/meteouniparthenope-wrf-download.py 20260621Z0000 \
+  --hours 24 \
+  --domain d03 \
+  --data-root data/wrf/d03
 ```
 
-### Step 2: Local-Grid Configuration Synthesis
+WRF valid times are read from WRF or CF metadata, not inferred from filenames.
 
-The bash script writes a self-contained JSON configuration into the output directory. The configuration defines a regular local grid, one synthetic meteorological station, and minimal source/receptor records required by the shared Sprtz configuration schema. This keeps the pipeline independent from demo-only Python helpers while still producing a normal public Sprtz input file.
+### Step 2: Download buffered DEM and land cover
 
-The synthetic station is deterministic and intended for workflow validation, teaching, and smoke testing. A production workflow that starts from WRF data should add an explicit upstream WRF ingestion/downscaling task and pass the resulting public SpritzMet-compatible product to later stages.
+The pipeline downloads:
 
-### Step 3: Public Configuration Validation
+- buffered COP30 terrain with `tools/copernicus-cop30-dem-download.py`;
+- buffered Copernicus LC100 land cover with `tools/copernicus-lc100-download.py`.
 
-The generated JSON is validated with `scripts/sprtz.py validate`. This is an important boundary check: it demonstrates that the generated configuration is accepted through the installed command-line interface and is not coupled to internal test code or use-case-only imports.
+Both commands use bbox plus `--dx/--dy/--buffer-m`, letting the tools derive
+the centered snapped grid automatically.
 
-Executable command:
+### Step 3: Build the matching GEO terrain product
+
+The script calls:
 
 ```bash
-python3 "${SCRIPTS_DIR}/sprtz.py" validate "${CONFIG_PATH}"
+sprtz-terrain fetch \
+  --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
+  --dx 100 \
+  --dy 100 \
+  --dem .../cop30_naples.tif \
+  --landuse .../lc100_naples.tif \
+  --landuse-mapping copernicus-lc100 \
+  --cache-dir .../terrain-cache \
+  --output .../geo.nc
 ```
 
-### Step 4: SpritzMet High-Resolution Wind Generation
+This keeps the terrain product aligned with the downscaling grid and the 3-D
+rendering inputs.
 
-The final scientific stage invokes `scripts/spritzmet.py` to interpolate the station meteorology onto the configured 100 m grid and write a NetCDF-CF product. The output file is the workflow artifact consumed by downstream dispersion, visualization, or verification stages.
+### Step 4: Run SpritzWRF -> SpritzMet downscaling
 
-Executable command:
+The meteorological computation is delegated to the same demo driver used by the
+didactic workflow:
 
 ```bash
-python3 "${SCRIPTS_DIR}/spritzmet.py" --config "${CONFIG_PATH}" --output "${METEO_PATH}" --format netcdf
+python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
+  --date 20260621Z0000 \
+  --hours 24 \
+  --download-dir data/wrf/d03/ \
+  --output data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
+  --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
+  --dx 100 --dy 100 \
+  --config usecases/01_high_resolution_wind_field/demo/config.json \
+  --dem data/output/high_resolution_wind_field/dem/cop30_naples.tif \
+  --land-cover data/output/high_resolution_wind_field/landcover/lc100_naples.tif \
+  --parallel auto
 ```
 
-### Step 5: Publication-Ready 2-D Wind Map
+SpritzMet writes the accumulated NetCDF-CF output after each completed time
+frame, so a partial scientific product remains available if a later frame
+fails.
 
-The pipeline renders a high-resolution horizontal map from the SpritzMet NetCDF product using `tools/render.py`. This step is configured for non-interactive batch execution with `MPLBACKEND=Agg`, a 600 DPI raster output, and wind-vector density control so the resulting figure is suitable for reports, manuscripts, and workflow artifacts.
+### Step 5: Render the same products as the demo
 
-Executable command:
+The aligned pipeline renders:
 
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" "${METEO_PATH}" --output "${FIGURE_DIR}/wind_speed_map.png" --variable wind_speed --title "SpritzMet 100 m Wind Speed" --dpi 600 --vector-density 18
-```
+- six 10 m wind maps for `Z0900` through `Z1400`;
+- one animated center-column vertical profile GIF;
+- one animated terrain-aware 3-D wind-speed GIF;
+- one 3-D quiver frame for `20260621Z1200`;
+- one voxel frame for `20260621Z1200`.
 
-### Step 6: Publication-Ready Vertical Profile
+The 2-D maps use:
 
-The profile figure is generated with `tools/profiler.py` at the central local-grid column (`x=0`, `y=0`). The plot summarizes the vertical structure of the selected wind-speed variable and is useful for checking whether downstream dispersion simulations are being driven by physically interpretable meteorological structure.
+- `tools/plotter.py`;
+- GSHHS `10m` coastlines by default;
+- the Sprtz discrete knots palette for wind speed;
+- automatic `U10M` / `V10M` vector overlays;
+- corrected local-metre secondary axes, so displayed `x=0` and `y=0` align
+  with the true domain center on Cartopy geographic plots.
 
-Executable command:
+The profile and 3-D animations use the same GIF-style interface as the demo:
 
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" "${METEO_PATH}" --output "${FIGURE_DIR}/wind_speed_profile.png" --variable wind_speed --x 0 --y 0 --title "SpritzMet 100 m Wind Profile" --dpi 600
-```
+- `--animate`;
+- `--frame-duration-ms`;
+- `--gif-loop`;
+- a `.gif` output path.
 
-### Step 7: Publication-Ready 3-D Wind Surface
+## Expected products
 
-The final rendering stage uses `tools/render3d.py` to produce a three-dimensional view of the wind field. The `surface` mode, northeast camera preset, and moderate vertical exaggeration are chosen to make spatial structure legible while preserving the deterministic nature of the pipeline output.
+The pipeline writes the same major artifacts as the aligned demo:
 
-Executable command:
+- `wrf_100m_wind_bbox.nc` — 24-frame SpritzMet NetCDF-CF product;
+- `geo.nc` and `terrain-cache/`;
+- `dem/cop30_naples.tif`;
+- `landcover/lc100_naples.tif`;
+- six `velalonga_wind_10m_20260621Z*.png` maps for `Z0900` through `Z1400`;
+- `velalonga_vertical_profile.gif`;
+- `velalonga_wind_3d_terrain_x5.gif`;
+- `velalonga_wind_vectors_3d_20260621Z1200.png`;
+- `velalonga_wind_voxels_20260621Z1200.png`.
 
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" "${METEO_PATH}" --output "${FIGURE_DIR}/wind_speed_3d.png" --variable wind_speed --title "SpritzMet 100 m Wind Field" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
-```
+## Reproducibility and limitations
 
-## Workflow-Engine Integration
+- The workflow is driven by WRF model data, not direct observations.
+- The 100 m product is a terrain-aware deterministic downscaling diagnostic, not
+  a native 100 m atmospheric model integration.
+- `U10M` and `V10M` remain wind at 10 m above local ground, not 10 m above sea
+  level over generic terrain.
+- Terrain vertical exaggeration in 3-D views is visualization-only.
+- The pipeline requires explicit network access for WRF, COP30, LC100, and any
+  missing Cartopy coastline downloads.
+- No claim of regulatory equivalence or official operational forecast status is
+  made.
 
-Each executable stage is a process-level command. A workflow engine can model the diagnostic, validation, SpritzMet generation, and rendering stages as separate tasks, with `high_resolution_wind_config.json`, `spritzmet_100m_wind.nc`, and the `figures/` products declared as concrete outputs. The script avoids use-case demo scripts so it can be treated as external operational software rather than a notebook-like demonstration.
+## Relationship to the demo
 
-## Reproducibility Notes
-
-- The default station field is deterministic.
-- The script performs no hidden network access.
-- NetCDF is requested explicitly because it is the preferred Sprtz interchange format for gridded meteorology.
-- WRF acquisition or real-data downscaling must be added as an explicit upstream workflow step when needed.
-
-## References
-
-No external bibliographic references are required for this workflow description. Scientific and numerical assumptions for SpritzMet are documented in the repository numerical-model and SpritzWRF/SpritzMet documentation.
+`pipeline.sh` is now the shell-first operational wrapper of the same scenario
+documented in `usecases/01_high_resolution_wind_field/demo/README.md`. The
+demo remains the canonical narrative explanation, while the pipeline provides a
+repeatable end-to-end command chain suitable for workflow engines and batch
+execution.

@@ -50,6 +50,12 @@ sprtz-terrain fetch \
   --allow-network
 ```
 
+You can also pass `--south --north --west --east --dx --dy` instead of
+`--center-lat --center-lon --nx --ny`. In that mode, `sprtz-terrain fetch`
+derives the midpoint automatically, snaps the projected grid outward to the
+requested spacing, and computes `nx` and `ny` for you. If one of `--nx` or
+`--ny` is supplied, the other must also be supplied.
+
 Live online access is not implicit. Deployments must configure appropriate
 STAC/COG/catalog endpoints or credentialed downloaders. Without `--allow-network`
 the providers fail with clear errors so tests never make hidden web requests.

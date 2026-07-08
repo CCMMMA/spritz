@@ -55,7 +55,9 @@ The module imports Matplotlib lazily, so compute-only deployments do not need pl
 Concentration plots treat zero or negative mass concentration as transparent
 background. When NetCDF products provide both local projected `x/y` and WGS84
 longitude/latitude coordinates, `tools/plotter.py` labels both coordinate
-systems on horizontal and vertical map axes.
+systems on horizontal and vertical map axes. The local-metre overlays are
+computed from the displayed geographic centerlines so centered domains keep
+`x=0` and `y=0` visually aligned with the true model-grid center.
 
 Use-case workflow plotting also writes `meteo_vertical_profiles.png` for
 SpritzMet NetCDF products. The profile figure combines a time-height wind-speed
@@ -83,8 +85,8 @@ coloring is used only where `surface_altitude <= 0`. 3-D horizontal tick labels
 show WGS84 longitude and latitude when those axes are present. Use
 `--vertical-exaggeration N` with `N >= 1` to
 exaggerate vertical relief in the display. Use
-`tools/plotter.py --animate --gif-loop 0` for endlessly looping simulation-long
-map GIFs.
+`tools/plotter.py --animate --frame-duration-ms ... --gif-loop 0` for
+simulation-long map GIFs; this animation interface mirrors `tools/render3d.py`.
 
 ## References
 

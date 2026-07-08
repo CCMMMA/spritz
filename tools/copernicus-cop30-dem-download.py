@@ -27,16 +27,70 @@ Then run:
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 from pathlib import Path
 
 import requests
+from pyproj import CRS, Transformer
 
 from sprtz.terrain.regrid import DomainDefinition, aoi_bounds
 
 
 OPENTOPO_GLOBALDEM_URL = "https://portal.opentopography.org/API/globaldem"
+
+
+def _domain_from_bbox(args: argparse.Namespace) -> DomainDefinition:
+    if (args.center_lat is None) != (args.center_lon is None):
+        raise ValueError("--center-lat and --center-lon must be supplied together")
+    if args.dx is None:
+        raise ValueError("--dx is required when deriving a terrain domain from bounds")
+    if (args.nx is None) != (args.ny is None):
+        raise ValueError("--nx and --ny must be supplied together")
+
+    south = float(args.south)
+    north = float(args.north)
+    west = float(args.west)
+    east = float(args.east)
+    center_lat = (south + north) / 2.0 if args.center_lat is None else float(args.center_lat)
+    center_lon = (west + east) / 2.0 if args.center_lon is None else float(args.center_lon)
+    dx_m = float(args.dx)
+    dy_m = float(args.dy if args.dy is not None else args.dx)
+    nx = int(args.nx) if args.nx is not None else None
+    ny = int(args.ny) if args.ny is not None else None
+
+    if nx is None or ny is None:
+        # Compute the smallest symmetric local AEQD grid whose snapped spacing
+        # fully covers the requested geographic bounds.
+        local_crs = CRS.from_proj4(
+            f"+proj=aeqd +lat_0={center_lat:.12f} +lon_0={center_lon:.12f} "
+            "+datum=WGS84 +units=m +no_defs"
+        )
+        to_local = Transformer.from_crs(CRS.from_epsg(4326), local_crs, always_xy=True)
+        corner_x, corner_y = to_local.transform(
+            [west, west, east, east],
+            [south, north, south, north],
+        )
+        half_width_m = max(abs(float(value)) for value in corner_x)
+        half_height_m = max(abs(float(value)) for value in corner_y)
+        nx = int(math.ceil((2.0 * half_width_m) / dx_m)) + 1
+        ny = int(math.ceil((2.0 * half_height_m) / dy_m)) + 1
+        if nx % 2 == 0:
+            nx += 1
+        if ny % 2 == 0:
+            ny += 1
+
+    return DomainDefinition(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        nx=nx,
+        ny=ny,
+        dx_m=dx_m,
+        dy_m=dy_m,
+        projection=str(args.projection),
+        buffer_m=float(args.buffer_m),
+    )
 
 
 def resolve_bbox(args: argparse.Namespace) -> tuple[float, float, float, float]:
@@ -47,6 +101,12 @@ def resolve_bbox(args: argparse.Namespace) -> tuple[float, float, float, float]:
         west = float(args.west)
         east = float(args.east)
         validate_bbox(south, north, west, east)
+        grid = [args.nx, args.ny, args.dx, args.dy, args.center_lat, args.center_lon]
+        if any(value is not None for value in grid):
+            west, south, east, north = aoi_bounds(
+                _domain_from_bbox(args)
+            )
+            validate_bbox(south, north, west, east)
         return south, north, west, east
     if any(value is not None for value in explicit):
         raise ValueError(

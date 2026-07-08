@@ -1,34 +1,8 @@
-# Use case 01 - High-resolution wind-field downscaling
+# Bay of Naples, Velalonga 2026
 
-Goal: obtain a local 100 m wind, precipitation-rate, 2 m temperature, and 2 m relative-humidity field centered on a user-supplied latitude and longitude, starting from a 1 km WRF5 d03 file.
-
-This didactic workflow is deliberately explicit, and
-`step_01_downscale_wind.py` invokes the production modules in this order:
-
-1. **Input step.** Use a local WRF NetCDF file or call `spritzwrf.download_meteo_uniparthenope_wrf` for the meteo@uniparthenope archive.
-2. **SpritzWRF extraction step.** Call `spritzwrf.load_near_surface_wind` to extract latitude, longitude, near-surface wind components, precipitation, 2 m temperature, and 2 m relative humidity when available.
-3. **SpritzMet downscaling step.** Call `spritzmet.downscale_wrf_to_local_grid` to build the local azimuthal-equidistant grid and downscale SpritzWRF fields onto the 100 m grid.
-4. **Output step.** Call `spritzmet.write_local_meteorology` to write NetCDF-CF by default, or JSON for lightweight runs. Pass `--calmet-dat data/output/CALMET.DAT` when a binary CALMET.DAT-compatible artifact is needed for model evaluation.
-
-SpritzWRF reads WRF valid time strictly from WRF/CF metadata (`Times`, CF
-`time`, or explicit global time attributes). It does not infer datetimes from
-the WRF filename. Four-dimensional WRF wind variables are managed as
-`time, level, y, x`. By default, when `--time-index` and `--level-index` are
-omitted, the workflow downscales all WRF times and all wind levels. Pass
-either option only when you need a single slice. The NetCDF-CF output includes a
-CF `time(time)` coordinate with absolute UTC units when the WRF file provides
-valid-time metadata.
-
-Use `--field-z-levels` to set the physical `z` coordinate written by
-SpritzMet, or use `--config usecases/01_high_resolution_wind_field/demo/config.json`
-for the documented use-case heights above mean sea level:
-`10, 15, 25, 50, 75, 100, 150, 250, 500, 750, 1000, 1250` m. Four-dimensional
-WRF wind is treated as `time, level, y, x` with levels in metres above sea
-level; diagnostic three-dimensional WRF wind such as `U10/V10` is treated as
-`time, y, x` at 10 m above local ground. Precipitation remains
-`time, y, x`.
-
-The default use-case bounding box is:
+This demo produces a 24-hour, 100 m-resolution wind field for the Bay of
+Naples during Velalonga 2026. The simulation starts at `20260621Z0000` and
+covers the following domain:
 
 ```json
 [
@@ -40,130 +14,112 @@ The default use-case bounding box is:
 ]
 ```
 
-The grid can be requested in either of two ways:
+All commands are run from the repository root. Inputs and generated products
+remain under the repository-level `data/` directory.
 
-- `--center-lat --center-lon --nx --ny` creates an exact node-count grid centered on one coordinate.
-- `--south --north --west --east` creates a conservative grid covering the requested bounding box. The script keeps `--dx` and `--dy` as hard constraints and expands the actual covered area outward to the nearest exact spacing multiple.
+## Scientific scope
 
-The WRF5 history-file pattern is:
+The workflow routes hourly WRF5 d03 data through SpritzWRF and SpritzMet:
 
-```text
-https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
-```
+1. SpritzWRF downloads and reads the 24 hourly WRF files from
+   `20260621Z0000` through `20260621Z2300`.
+2. SpritzMet performs deterministic terrain-aware downscaling on a local 100 m
+   grid that conservatively covers the Velalonga bounding box.
+3. SpritzMet writes the accumulated NetCDF-CF output after every completed
+   hourly frame. If a later frame fails, the output still contains the
+   successfully completed frames.
+4. Separate visualization tools render maps, profiles, and 3-D products after
+   the numerical computation.
 
-## Data preparation
+The workflow is a clean-room didactic implementation. It is not presented as a
+regulatory-equivalent forecast or an official Velalonga weather product.
 
-Prepare WRF input with the repository downloader:
+## Environment
+
+Python 3.10 or newer is required. Install the NetCDF, geospatial, and
+visualization extras:
 
 ```bash
-tools/meteouniparthenope-wrf-download.py 20260621Z0000 \
+python -m pip install -e '.[dev,netcdf,geo,viz]'
+```
+
+MPI remains optional. Install `sprtz[mpi]` only when running with an MPI
+launcher.
+
+## 1. Download the 24 hourly WRF files
+
+The downscaling command can download missing files automatically. To prepare
+them explicitly:
+
+```bash
+python tools/meteouniparthenope-wrf-download.py 20260621Z0000 \
   --hours 24 \
   --domain d03 \
   --data-root data/wrf/d03
 ```
 
-Prepare terrain for workflows that also need surface elevation:
+The downloader uses the meteo@uniparthenope history convention:
 
-```bash
-python3 tools/copernicus-cop30-dem-download.py \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --nx 101 \
-  --ny 101 \
-  --dx 100 \
-  --dy 100 \
-  --buffer-m 5000 \
-  --output data/dem/cop30_naples.tif
-
-python3 tools/copernicus-lc100-download.py \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --nx 101 \
-  --ny 101 \
-  --dx 100 \
-  --dy 100 \
-  --buffer-m 5000 \
-  --output data/landcover/lc100_naples.tif
+```text
+https://data.meteo.uniparthenope.it/files/wrf5/d03/history/YYYY/MM/DD/wrf5_d03_YYYYMMDDZhh00.nc
 ```
 
-The WRF file feeds SpritzWRF/SpritzMet directly. Pass the COP30 GeoTIFF as
-`--dem` and the LC100 GeoTIFF as `--land-cover` so SpritzMet uses both rasters
-for wind and precipitation downscaling. DEM elevation is also used for the 2 m
-temperature lapse-rate correction and the corresponding relative-humidity
-update when WRF thermodynamic fields are available. The same files can feed
-`sprtz-terrain fetch` when standalone terrain/GEO output is needed; install
-`sprtz[geo]` for GeoTIFF support. See
-`docs/copernicus-cop30-dem-download.md` and
-`docs/copernicus-lc100-download.md`.
-The download helpers compute the WGS84 source-raster bounds from the same grid
-center, node count, spacing, and projection used for `sprtz-terrain fetch`, then
-add `--buffer-m` so the resampler never has to use source edge pixels to fill
-the model domain.
+WRF valid times are read from WRF/CF metadata. Sprtz does not infer scientific
+times from filenames.
 
-SpritzMet vertical levels in this WRF-downscaled workflow are altitudes above
-mean sea level. Terrain is used to mask or constrain fields below local DEM and
-to anchor diagnostic near-surface quantities such as U10M/V10M at 10 m above
-ground, but it does not turn the model `z` coordinate into height above ground.
-Downstream dispersion use cases should therefore keep gridded `field_z` levels
-as ASL values and convert source release heights from ground-relative values
-with the DEM at the source.
+## 2. Prepare terrain and land cover
 
-Build the standalone GEO product before running 3-D visualization:
+Download buffered COP30 elevation and Copernicus LC100 land cover for the same
+domain:
+
+```bash
+python tools/copernicus-cop30-dem-download.py \
+  --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
+  --dx 100 \
+  --dy 100 \
+  --buffer-m 5000 \
+  --output data/output/high_resolution_wind_field/dem/cop30_naples.tif
+
+python tools/copernicus-lc100-download.py \
+  --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
+  --dx 100 \
+  --dy 100 \
+  --buffer-m 5000 \
+  --output data/output/high_resolution_wind_field/landcover/lc100_naples.tif
+```
+
+The bounding-box downscaler determines its exact node count from the projected
+corners. The buffered rasters need to cover that resulting grid; the node
+counts above are acquisition extents, not a replacement for the bounding-box
+request. Because `--center-lat` and `--center-lon` are omitted, both downloaders
+derive the grid center from the geographic bounding-box midpoint:
+`(40.815, 14.255)`. They then calculate the projected 129 by 79 grid footprint
+and expand its source AOI by `--buffer-m 5000`.
+
+Build the matching terrain/GEO product used by 3-D rendering:
 
 ```bash
 sprtz-terrain fetch \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --nx 101 \
-  --ny 101 \
+  --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
   --dx 100 \
   --dy 100 \
-  --dem data/dem/cop30_naples.tif \
-  --landuse data/landcover/lc100_naples.tif \
+  --dem data/output/high_resolution_wind_field/dem/cop30_naples.tif \
+  --landuse data/output/high_resolution_wind_field/landcover/lc100_naples.tif \
   --landuse-mapping copernicus-lc100 \
   --cache-dir data/output/high_resolution_wind_field/terrain-cache \
   --output data/output/high_resolution_wind_field/geo.nc
 ```
 
-## Run with automatic download
+DEM elevation constrains the wind profile and masks above-sea-level model
+levels below terrain. LC100 classes provide bounded surface-roughness and
+precipitation adjustments. Diagnostic `U10M` and `V10M` remain wind at 10 m
+above local ground. In bounding-box mode, `sprtz-terrain fetch` derives the
+same snapped `129 x 79` grid automatically from the bbox midpoint and the
+`100 m` spacing, so `--nx` and `--ny` can be omitted here.
 
-```bash
-python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
-  --date 20260621Z0000 \
-  --hours 24 \
-  --download-dir data/wrf/d03/ \
-  --output data/output/high_resolution_wind_field/wrf_100m_wind.nc \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --nx 101 --ny 101 \
-  --dx 100 --dy 100 \
-  --config usecases/01_high_resolution_wind_field/demo/config.json \
-  --dem data/dem/cop30_naples.tif \
-  --land-cover data/landcover/lc100_naples.tif \
-  --station-measurements data/stations/weather_observations.csv \
-  --calmet-dat data/output/CALMET.DAT \
-  --parallel auto
-```
+## 3. Compute the Velalonga wind field
 
-This mode uses hourly WRF files from `data/wrf` for the interval
-`20260527Z0000` through `20260527Z2300`. Existing files named
-`wrf5_d03_YYYYMMDDZhh00.nc` may be directly under `data/wrf` or under
-`data/wrf/d03`; missing files are downloaded to `data/wrf`. The result is one
-NetCDF file with 24 time slices on the requested 101 by 101 grid at 100 m by
-100 m spacing.
-
-Station measurements are optional residual observations applied after the
-selected SpritzMet downscaling mode. The CSV header may use local projected
-`x,y` coordinates in meters, or geographic `latitude,longitude` coordinates.
-Provide `wind_speed` and `wind_dir` together for wind correction and/or
-`precipitation_rate` for precipitation correction.
-
-`--parallel auto` enables the generic SpritzMet MPI path when the script is
-launched with `mpiexec` and `mpi4py` is installed; otherwise it falls back to
-serial execution. Use `--parallel mpi` in batch jobs that should fail fast when
-MPI is unavailable.
-
-## Run with a bounding box "The Bay of Naples"
+This command performs computation only; it does not plot:
 
 ```bash
 python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
@@ -174,142 +130,205 @@ python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
   --dx 100 --dy 100 \
   --config usecases/01_high_resolution_wind_field/demo/config.json \
-  --dem data/dem/cop30_naples.tif \
-  --land-cover data/landcover/lc100_naples.tif \
+  --dem data/output/high_resolution_wind_field/dem/cop30_naples.tif \
+  --land-cover data/output/high_resolution_wind_field/landcover/lc100_naples.tif \
   --parallel auto
 ```
 
-In bounding-box mode, `--dx` and `--dy` are never changed. The workflow derives
-the local grid center from the box midpoint, projects the four requested corners
-to the local SpritzMet grid, and increases `nx` and `ny` just enough to cover
-the box with exact grid spacing.
+The principal output is:
 
-## Print the URL without downloading
-
-```bash
-python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
-  --download-time 20260527Z0000 \
-  --output ignored.nc \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --print-download-url
+```text
+data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc
 ```
 
-## Run with an existing WRF file
+It contains the CF time coordinate and, when supplied by WRF, the following
+fields:
+
+- `eastward_wind(time,z,y,x)` and `northward_wind(time,z,y,x)`;
+- `wind_speed(time,z,y,x)` and `wind_from_direction(time,z,y,x)`;
+- diagnostic `U10M(time,y,x)`, `V10M(time,y,x)`,
+  `wind_speed_10m(time,y,x)`, and
+  `wind_from_direction_10m(time,y,x)`;
+- `precipitation_rate(time,y,x)`;
+- optional 2 m temperature and relative humidity.
+
+The configured vertical levels are altitudes above mean sea level. The 10 m
+diagnostic fields are instead referenced to local ground and must not be
+interpreted as wind at 10 m above sea level over land.
+
+## 4. Render the six Velalonga 10 m maps
+
+The requested UTC frames correspond to time indexes 9 through 14:
+
+| UTC valid time | Time index |
+|---|---:|
+| `20260621Z0900` | 9 |
+| `20260621Z1000` | 10 |
+| `20260621Z1100` | 11 |
+| `20260621Z1200` | 12 |
+| `20260621Z1300` | 13 |
+| `20260621Z1400` | 14 |
+
+Render shaded 10 m wind speed with automatic `U10M`/`V10M` vector overlays:
 
 ```bash
-python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
-  --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
-  --output data/output/high_resolution_wind_field/wrf_100m_wind.nc \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --dem data/dem/cop30_naples.tif \
-  --land-cover data/landcover/lc100_naples.tif
+for hour in 09 10 11 12 13 14; do
+  index=$((10#$hour))
+  python tools/plotter.py \
+    data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
+    --variable wind_speed_10m \
+    --time-index "$index" \
+    --vector-density 50 \
+    --coastline-source gshhs \
+    --coastline-resolution 10m \
+    --allow-cartopy-download \
+    --title "Velalonga 2026 — 20260621Z${hour}00 — wind at 10 m AGL" \
+    --output "data/output/high_resolution_wind_field/velalonga_wind_10m_20260621Z${hour}00.png"
+done
 ```
 
-This downscales all WRF times and all wind levels into
-`eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, and
-`precipitation_rate(time,y,x)`, plus `temperature_2m_c(time,y,x)` and
-`relative_humidity_2m(time,y,x)` when the WRF file provides the required
-thermodynamic variables. To extract only one WRF slice, pass explicit indices:
+GSHHS `full` (`10m`) is the finest coastline supported by the plotter.
+`--allow-cartopy-download` permits retrieval when it is not already installed;
+if GSHHS is unavailable, the plotter reports its Natural Earth fallback. Wind
+speed uses the Sprtz discrete knots palette and arrows show direction. When the
+NetCDF contains both longitude/latitude and local `x/y`, the map uses
+geographic primary axes plus local-metre secondary axes; after the plotter fix,
+the displayed `x=0` and `y=0` references align with the true centered model
+grid rather than drifting on Cartopy geographic figures.
+
+## 5. Render the vertical-profile animation
+
+Render the time-varying vertical wind-speed profile at the local grid center
+(`x=0`, `y=0`):
 
 ```bash
-python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
-  --wrf data/wrf/wrf5_d03_20260527Z0000.nc \
-  --output data/output/high_resolution_wind_field/wrf_100m_wind_t000_z000.nc \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --time-index 0 \
-  --level-index 0 \
-  --dem data/dem/cop30_naples.tif \
-  --land-cover data/landcover/lc100_naples.tif
-```
-
-## Plot the intermediate/final NetCDF map
-
-`step_01_downscale_wind.py` writes the downscaled meteorology product without
-drawing maps by default. Add `--plot` to that command only when you want a
-convenience wind-speed PNG beside the NetCDF. To generate or regenerate the
-publication map explicitly after a compute-only run, use `tools/plotter.py`:
-
-```bash
-python tools/plotter.py data/output/high_resolution_wind_field/wrf_100m_wind.nc \
+python tools/profiler.py \
+  data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
-  --time-index 12 \
-  --level-index 0 \
-  --output data/output/high_resolution_wind_field/wrf_100m_wind.png
+  --x 0 \
+  --y 0 \
+  --animate \
+  --frame-duration-ms 400 \
+  --gif-loop 0 \
+  --title "Velalonga 2026 — central Bay of Naples vertical wind profile" \
+  --output data/output/high_resolution_wind_field/velalonga_vertical_profile.gif
 ```
 
-To plot the diagnostic 10 m wind as a vector field, shade `wind_speed_10m`.
-The plotter converts the shaded speed to knots and overlays vectors from
-`U10M`/`V10M` automatically:
+The profile uses all 24 frames and all configured vertical levels. Values below
+the local DEM are masked. Wind speed uses the same discrete knots palette as
+the 2-D maps. The GIF options match `tools/render3d.py`: `--animate`,
+`--frame-duration-ms`, `--gif-loop`, and a `.gif` output path.
+
+## 6. Render the terrain-aware 3-D animation
+
+Render all 24 wind-speed volumes over the GEO terrain with a vertical display
+exaggeration of five:
 
 ```bash
-python tools/plotter.py data/output/high_resolution_wind_field/wrf_100m_wind.nc \
-  --variable wind_speed_10m \
-  --time-index 12 \
-  --vector-density 20 \
-  --output data/output/high_resolution_wind_field/wrf_100m_wind_10m.png
-```
-
-For a bounding-box product, use the matching NetCDF path:
-
-```bash
-python tools/plotter.py data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
+python tools/render3d.py \
+  data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
-  --time-index 12 \
-  --level-index 0 \
-  --output data/output/high_resolution_wind_field/wrf_100m_wind_bbox.png
-```
-
-For finer harbor-scale coastline detail, request GSHHS coastlines explicitly:
-
-```bash
-python tools/plotter.py data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
-  --variable wind_speed \
-  --time-index 12 \
-  --level-index 0 \
-  --vector-density 20 \
-  --output data/output/high_resolution_wind_field/wrf_100m_wind_bbox_10m_12.png \
-  --coastline-source gshhs \
-  --coastline-resolution 10m \
-  --allow-cartopy-download
-```
-
-To inspect the vertical wind field in 3-D over DEM-shaped terrain, render the
-full wind-speed volume. When a standalone `geo.nc` has been generated by
-`sprtz-terrain fetch`, pass it with `--terrain` so the ground surface uses DEM
-elevation and terrain colors. The z-axis ticks are the configured ASL model
-levels, with any ASL sample below the DEM hidden by the renderer:
-
-```bash
-python tools/render3d.py data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
-  --variable wind_speed \
-  --time-index 12 \
   --terrain data/output/high_resolution_wind_field/geo.nc \
   --mode surface \
   --ground-color terrain \
-  --output data/output/high_resolution_wind_field/wrf_100m_wind_3d.png
+  --vertical-exaggeration 5 \
+  --animate \
+  --frame-duration-ms 400 \
+  --gif-loop 0 \
+  --title "Velalonga 2026 — 3-D wind speed, terrain ×5" \
+  --output data/output/high_resolution_wind_field/velalonga_wind_3d_terrain_x5.gif
 ```
 
-## Classroom/demo run without WRF data
+The factor of five affects display geometry only. It does not alter terrain
+elevation or wind-level values in the NetCDF file. Every frame title includes
+its NetCDF time reference, and wind speed uses the same discrete knots palette
+as the 2-D maps.
+
+## 7. Render the 3-D vector field
+
+Render the horizontal wind vectors at every sampled model height for
+`20260621Z1200`. Arrow direction comes from
+`eastward_wind(time,z,y,x)` and `northward_wind(time,z,y,x)`; arrow color
+shows wind speed:
 
 ```bash
-python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
-  --allow-synthetic \
-  --json \
-  --output data/output/high_resolution_wind_field/demo_wind.json \
-  --center-lat 40.85 \
-  --center-lon 14.27 \
-  --nx 21 --ny 21
+python tools/render3d.py \
+  data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
+  --variable wind_speed \
+  --time-index 12 \
+  --terrain data/output/high_resolution_wind_field/geo.nc \
+  --mode quiver \
+  --max-points 18 \
+  --ground-color terrain \
+  --vertical-exaggeration 5 \
+  --title "Velalonga 2026 — 3-D wind vectors — 20260621Z1200" \
+  --output data/output/high_resolution_wind_field/velalonga_wind_vectors_3d_20260621Z1200.png
 ```
+
+The arrows are horizontal because SpritzMet currently provides eastward and
+northward wind components, not vertical velocity. Model levels below the DEM
+are omitted. `--max-points 18` limits horizontal and vertical arrow density so
+the field remains legible. The title includes the selected NetCDF time
+reference and arrow colors use the same wind-speed palette as the 2-D maps.
+
+## 8. Render 10 m wind speed as voxels
+
+`wind_speed_10m` has dimensions `time,y,x`, whereas voxel rendering requires a
+vertical dimension. Therefore the scientifically meaningful voxel product uses
+the full `wind_speed(time,z,y,x)` volume and selects occupied cells with the
+renderer threshold:
+
+```bash
+python tools/render3d.py \
+  data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
+  --variable wind_speed \
+  --time-index 12 \
+  --terrain data/output/high_resolution_wind_field/geo.nc \
+  --mode voxel \
+  --threshold-quantile 0.85 \
+  --ground-color terrain \
+  --vertical-exaggeration 5 \
+  --title "Velalonga 2026 — wind-speed voxels — 20260621Z1200" \
+  --output data/output/high_resolution_wind_field/velalonga_wind_voxels_20260621Z1200.png
+```
+
+A literal `wind_speed_10m` voxel volume would repeat a two-dimensional
+diagnostic field through artificial vertical cells and is intentionally not
+claimed here. Use the 2-D maps for the actual 10 m-above-ground diagnostic.
 
 ## Expected products
 
-- `wrf_100m_wind.nc` or `.json`
-- `wrf_100m_wind.png` when NetCDF output is selected and plotting dependencies are available
-- variables/fields: `latitude`, `longitude`, `z` height above mean sea level when `--field-z-levels` is supplied, `eastward_wind(time,z,y,x)`, `northward_wind(time,z,y,x)`, `wind_speed(time,z,y,x)`, `wind_from_direction(time,z,y,x)`, diagnostic `U10M(time,y,x)`, diagnostic `V10M(time,y,x)`, `wind_speed_10m(time,y,x)`, `wind_from_direction_10m(time,y,x)`, `precipitation_rate(time,y,x)`, optional `temperature_2m_c(time,y,x)`, optional `relative_humidity_2m(time,y,x)`
+- `wrf_100m_wind_bbox.nc` — 24-frame SpritzMet NetCDF-CF product;
+- six `velalonga_wind_10m_*.png` maps for `Z0900` through `Z1400`;
+- `velalonga_vertical_profile.gif`;
+- `velalonga_wind_3d_terrain_x5.gif`;
+- `velalonga_wind_vectors_3d_20260621Z1200.png`;
+- `velalonga_wind_voxels_20260621Z1200.png`;
+- `geo.nc` and its terrain cache.
 
-## Teaching notes
+## Assumptions and limitations
 
-The script uses production modules `sprtz.models.spritzwrf` and `sprtz.models.spritzmet`, but the scenario orchestration lives only in this folder. This keeps the suite compact and keeps educational workflows easy to inspect.
+- The WRF input and derived fields are model results, not observations.
+- The 100 m grid is a downscaled diagnostic product; it does not add resolved
+  atmospheric information equivalent to running a native 100 m dynamical
+  model.
+- Terrain vertical exaggeration is visualization-only.
+- Station residual observations are not used in this fixed demo.
+- Online downloads require explicit network access and the optional
+  geospatial dependencies.
+- Cartographic coastlines may require a locally available Cartopy dataset.
+- No claim of regulatory or operational forecast equivalence is made.
+
+## Production checklist
+
+- Confirm all 24 WRF files contain valid CF/WRF timestamps.
+- Audit DEM and LC100 provenance and coverage.
+- Inspect the NetCDF `time`, `z`, units, and SpritzMet metadata.
+- Check every hourly frame for missing or masked values.
+- Compare modeled wind with geographically distributed observations.
+- Record software version, configuration, input checksums, and retrieval dates.
+- Validate MPI and serial equivalence when MPI is used.
+
+## References
+
+No external bibliographic references are required for this procedural demo.

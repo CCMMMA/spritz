@@ -14,6 +14,7 @@ from .models import backward, ctgproc, makegeo, particles, spritz, spritzmet, sp
 from .models import terrain, visualization
 from .parallel import get_mpi_context, get_parallel_context
 from .terrain import acquisition as terrain_acquisition
+from .terrain.regrid import infer_domain_from_bbox
 from .workflow import run_workflow
 
 LOGGER = logging.getLogger(__name__)
@@ -362,18 +363,93 @@ def _landuse_provider_spec(value: str, mapping: str | None = None) -> dict[str, 
     return spec
 
 
+def _terrain_fetch_domain(args: argparse.Namespace) -> dict[str, object]:
+    if args.output is None:
+        raise SpritzError("--output is required without --config")
+    if (args.center_lat is None) != (args.center_lon is None):
+        raise SpritzError("--center-lat and --center-lon must be supplied together")
+    if (args.nx is None) != (args.ny is None):
+        raise SpritzError("--nx and --ny must be supplied together")
+
+    explicit_bounds = [args.south, args.north, args.west, args.east]
+    if all(value is not None for value in explicit_bounds):
+        south = float(args.south)
+        north = float(args.north)
+        west = float(args.west)
+        east = float(args.east)
+        if south >= north:
+            raise SpritzError("--south must be smaller than --north")
+        if west >= east:
+            raise SpritzError("--west must be smaller than --east")
+        if not (-90.0 <= south <= 90.0 and -90.0 <= north <= 90.0):
+            raise SpritzError("latitude bounds must be between -90 and 90 degrees")
+        if not (-180.0 <= west <= 180.0 and -180.0 <= east <= 180.0):
+            raise SpritzError("longitude bounds must be between -180 and 180 degrees")
+        domain = infer_domain_from_bbox(
+            south=south,
+            north=north,
+            west=west,
+            east=east,
+            dx_m=float(args.dx),
+            dy_m=float(args.dy),
+            projection=str(args.projection),
+            buffer_m=float(args.buffer_m),
+            center_lat=None if args.center_lat is None else float(args.center_lat),
+            center_lon=None if args.center_lon is None else float(args.center_lon),
+            nx=args.nx,
+            ny=args.ny,
+        )
+    elif any(value is not None for value in explicit_bounds):
+        raise SpritzError("--south, --north, --west, and --east must be supplied together")
+    else:
+        if args.center_lat is None or args.center_lon is None:
+            raise SpritzError(
+                "supply either --south/--north/--west/--east or --center-lat/--center-lon"
+            )
+        if args.nx is None or args.ny is None:
+            raise SpritzError("--nx and --ny are required when bounds are omitted")
+        domain = infer_domain_from_bbox(
+            south=float(args.center_lat),
+            north=float(args.center_lat),
+            west=float(args.center_lon),
+            east=float(args.center_lon),
+            dx_m=float(args.dx),
+            dy_m=float(args.dy),
+            projection=str(args.projection),
+            buffer_m=float(args.buffer_m),
+            center_lat=float(args.center_lat),
+            center_lon=float(args.center_lon),
+            nx=int(args.nx),
+            ny=int(args.ny),
+        )
+    return {
+        "center_lat": domain.center_lat,
+        "center_lon": domain.center_lon,
+        "nx": domain.nx,
+        "ny": domain.ny,
+        "dx_m": domain.dx_m,
+        "dy_m": domain.dy_m,
+        "projection": domain.projection,
+        "buffer_m": domain.buffer_m,
+    }
+
+
 def sprtz_terrain_main(argv: Sequence[str] | None = None) -> int:
     def run(argv_: Sequence[str] | None) -> int:
         parser = argparse.ArgumentParser(description="Spritz terrain acquisition and GEO generation")
         sub = parser.add_subparsers(dest="command", required=True)
         fetch = sub.add_parser("fetch", help="build a terrain/GEO product from local or online providers")
         fetch.add_argument("--config", default=None, help="JSON configuration with domain and terrain sections")
-        fetch.add_argument("--center-lat", type=float)
-        fetch.add_argument("--center-lon", type=float)
+        fetch.add_argument("--south", type=float, default=None)
+        fetch.add_argument("--north", type=float, default=None)
+        fetch.add_argument("--west", type=float, default=None)
+        fetch.add_argument("--east", type=float, default=None)
+        fetch.add_argument("--center-lat", type=float, default=None)
+        fetch.add_argument("--center-lon", type=float, default=None)
         fetch.add_argument("--dx", type=float, default=100.0)
         fetch.add_argument("--dy", type=float, default=100.0)
-        fetch.add_argument("--nx", type=int, default=100)
-        fetch.add_argument("--ny", type=int, default=100)
+        fetch.add_argument("--nx", type=int, default=None)
+        fetch.add_argument("--ny", type=int, default=None)
         fetch.add_argument("--projection", default="auto-utm")
         fetch.add_argument("--buffer-m", type=float, default=0.0)
         fetch.add_argument("--dem", default="copernicus-30")
@@ -400,19 +476,8 @@ def sprtz_terrain_main(argv: Sequence[str] | None = None) -> int:
                     cache_dir=args.cache_dir,
                 )
             else:
-                if args.center_lat is None or args.center_lon is None or args.output is None:
-                    raise SpritzError("--center-lat, --center-lon, and --output are required without --config")
                 config = {
-                    "domain": {
-                        "center_lat": args.center_lat,
-                        "center_lon": args.center_lon,
-                        "nx": args.nx,
-                        "ny": args.ny,
-                        "dx_m": args.dx,
-                        "dy_m": args.dy,
-                        "projection": args.projection,
-                        "buffer_m": args.buffer_m,
-                    },
+                    "domain": _terrain_fetch_domain(args),
                     "terrain": {
                         "enabled": True,
                         "dem": _provider_spec(args.dem, kind="dem"),

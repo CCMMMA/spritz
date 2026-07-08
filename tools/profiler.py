@@ -14,6 +14,10 @@ from typing import Any, Sequence
 import numpy as np
 
 from sprtz.logging import LOG_DATE_FORMAT, LOG_FORMAT_VERBOSE
+try:
+    from tools.plotter import MPS_TO_KNOTS, WIND_SPEED_KNOT_COLORS, WIND_SPEED_KNOT_LEVELS
+except ModuleNotFoundError:
+    from plotter import MPS_TO_KNOTS, WIND_SPEED_KNOT_COLORS, WIND_SPEED_KNOT_LEVELS
 
 LOGGER = logging.getLogger("sprtz.profiler")
 
@@ -332,6 +336,11 @@ def _is_concentration_profile(profile: ProfileData) -> bool:
     return "concentration" in text or "mass" in text
 
 
+def _is_wind_speed_profile(profile: ProfileData) -> bool:
+    text = f"{profile.variable_name} {profile.long_name}".lower()
+    return "wind_speed" in text or "wind speed" in text
+
+
 def _format_geographic_coordinate(value: float, positive_suffix: str, negative_suffix: str, coordinate_format: str) -> str:
     suffix = positive_suffix if value >= 0.0 else negative_suffix
     absolute = abs(float(value))
@@ -444,16 +453,23 @@ def plot_profile(
     coordinate_format: str = "ddm",
 ) -> Path:
     plt = _load_matplotlib()
+    from matplotlib.colors import BoundaryNorm, ListedColormap
     profiles = profile.profiles
+    wind_speed = _is_wind_speed_profile(profile)
+    display_profiles = profiles * MPS_TO_KNOTS if wind_speed else profiles
     plot_profiles = (
-        np.ma.masked_where(np.isfinite(profiles) & (profiles <= 0.0), profiles)
+        np.ma.masked_where(np.isfinite(display_profiles) & (display_profiles <= 0.0), display_profiles)
         if _is_concentration_profile(profile)
-        else profiles
+        else display_profiles
     )
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig, (ax_heat, ax_profiles) = plt.subplots(1, 2, figsize=(10.5, 5.2), dpi=dpi, constrained_layout=True)
-    heat_cmap = plt.get_cmap("viridis").copy()
+    heat_cmap: Any = plt.get_cmap("viridis").copy()
+    heat_norm = None
+    if wind_speed:
+        heat_cmap = ListedColormap(np.asarray(WIND_SPEED_KNOT_COLORS, dtype=float) / 255.0)
+        heat_norm = BoundaryNorm(WIND_SPEED_KNOT_LEVELS, heat_cmap.N, clip=True)
     if _is_concentration_profile(profile):
         heat_cmap.set_bad((0.0, 0.0, 0.0, 0.0))
     mesh = ax_heat.pcolormesh(
@@ -462,10 +478,12 @@ def plot_profile(
         plot_profiles.T,
         shading="auto",
         cmap=heat_cmap,
-        **_profile_color_limits(profiles),
+        **({} if heat_norm is not None else _profile_color_limits(display_profiles)),
+        norm=heat_norm,
     )
     cbar = fig.colorbar(mesh, ax=ax_heat)
-    label = f"{profile.long_name}{f' [{profile.units}]' if profile.units else ''}"
+    units = "kt" if wind_speed else profile.units
+    label = f"{profile.long_name}{f' [{units}]' if units else ''}"
     cbar.set_label(label)
     ax_heat.set_title("Time-height section")
     ax_heat.set_xlabel("time index")
@@ -483,7 +501,7 @@ def plot_profile(
     for order, index in enumerate(indexes):
         color = cmap(0.0 if len(indexes) == 1 else order / (len(indexes) - 1))
         label_text = profile.time_labels[index] if index < len(profile.time_labels) else f"t={index}"
-        ax_profiles.plot(profiles[index, :], profile.z_axis, color=color, linewidth=1.7, label=label_text)
+        ax_profiles.plot(display_profiles[index, :], profile.z_axis, color=color, linewidth=1.7, label=label_text)
     profile_title = f"Vertical profile at x={profile.x_axis[profile.ix]:.0f} m, y={profile.y_axis[profile.iy]:.0f} m"
     origin_label = _origin_label(profile, coordinate_format)
     if origin_label:
@@ -495,7 +513,7 @@ def plot_profile(
     ax_profiles.set_ylabel(_vertical_axis_label(profile))
     if local_ground is not None:
         ax_profiles.axhline(local_ground, color="0.65", linewidth=1.0, linestyle="--")
-    finite = profiles[np.isfinite(profiles)]
+    finite = display_profiles[np.isfinite(display_profiles)]
     maximum = float(np.nanmax(finite)) if finite.size else 0.0
     if maximum > 0.0:
         ax_profiles.set_xlim(left=0.0, right=maximum * 1.05)

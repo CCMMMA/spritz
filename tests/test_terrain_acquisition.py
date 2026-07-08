@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from sprtz.cli import _provider_spec, sprtz_terrain_main
 from sprtz.io.jsonio import read_json
@@ -21,6 +22,7 @@ from sprtz.terrain.regrid import (
     DomainDefinition,
     aoi_bounds,
     build_target_grid,
+    infer_domain_from_bbox,
     resample_dem,
     resample_land_cover,
 )
@@ -400,6 +402,72 @@ def test_sprtz_terrain_fetch_cli_accepts_lc100_mapping(tmp_path: Path) -> None:
 
     data = read_json(output)
     assert set(np.unique(np.asarray(data["landuse_class"], dtype=int))) == {1}
+
+
+def test_infer_domain_from_bbox_derives_velalonga_shape() -> None:
+    domain = infer_domain_from_bbox(
+        south=40.78,
+        north=40.85,
+        west=14.18,
+        east=14.33,
+        dx_m=100.0,
+        dy_m=100.0,
+        projection="auto-utm",
+        buffer_m=5000.0,
+    )
+
+    assert domain.center_lat == pytest.approx(40.815)
+    assert domain.center_lon == pytest.approx(14.255)
+    assert domain.nx == 129
+    assert domain.ny == 79
+
+
+def test_sprtz_terrain_fetch_cli_derives_shape_from_bounds(tmp_path: Path) -> None:
+    from sprtz.io.jsonio import write_json
+
+    dem_path = tmp_path / "dem.json"
+    lc_path = tmp_path / "lc100.json"
+    output = tmp_path / "geo.json"
+    write_json(dem_path, {"values": np.ones((81, 131), dtype=float).tolist()})
+    write_json(lc_path, {"values": np.full((81, 131), 111, dtype=int).tolist()})
+
+    assert (
+        sprtz_terrain_main(
+            [
+                "fetch",
+                "--south",
+                "40.78",
+                "--north",
+                "40.85",
+                "--west",
+                "14.18",
+                "--east",
+                "14.33",
+                "--dx",
+                "100",
+                "--dy",
+                "100",
+                "--dem",
+                str(dem_path),
+                "--landuse",
+                str(lc_path),
+                "--landuse-mapping",
+                "copernicus-lc100",
+                "--output",
+                str(output),
+                "--cache-dir",
+                str(tmp_path / "cache"),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    data = read_json(output)
+    assert data["domain"]["center_lat"] == pytest.approx(40.815)
+    assert data["domain"]["center_lon"] == pytest.approx(14.255)
+    assert data["domain"]["nx"] == 129
+    assert data["domain"]["ny"] == 79
 
 
 def test_local_copernicus_paths_preserve_source_resolution(tmp_path: Path) -> None:

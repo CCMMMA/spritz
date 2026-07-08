@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -69,6 +70,18 @@ def iter_release_paths(root: Path) -> Iterator[Path]:
             yield path
 
 
+def _is_tracked(path: Path) -> bool:
+    """Return whether *path* can be included in a Git-based release archive."""
+    relative = path.relative_to(ROOT)
+    completed = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "--error-unmatch", "--", str(relative)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
 def main() -> int:
     errors: list[str] = []
     for item in REQUIRED:
@@ -83,7 +96,7 @@ def main() -> int:
 
         if rel.parts and rel.parts[0] in {"build", "dist", ".pytest_cache", ".mypy_cache", ".ruff_cache"}:
             errors.append(f"release tree contains generated artifact/cache: {rel}")
-        if path.suffix == ".nc":
+        if path.suffix == ".nc" and _is_tracked(path):
             errors.append(f"release tree contains NetCDF data product: {rel}")
         if rel.parts[:2] == ("src", "sprtz") and len(rel.parts) > 2 and rel.parts[2] == "usecases":
             errors.append(f"use cases must not be packaged as suite modules: {rel}")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import numpy as np
 from pyproj import CRS, Transformer
@@ -75,6 +76,68 @@ class TargetGrid:
     latitude: np.ndarray
     longitude: np.ndarray
     target_crs: str
+
+
+def infer_domain_from_bbox(
+    *,
+    south: float,
+    north: float,
+    west: float,
+    east: float,
+    dx_m: float,
+    dy_m: float,
+    projection: str = "auto-utm",
+    buffer_m: float = 0.0,
+    center_lat: float | None = None,
+    center_lon: float | None = None,
+    nx: int | None = None,
+    ny: int | None = None,
+) -> DomainDefinition:
+    """Return a symmetric domain that fully covers a geographic bounding box.
+
+    The bounding box is projected into a local azimuthal-equidistant frame
+    centered on the chosen domain center. The resulting extents are snapped
+    outward to the requested grid spacing so the terrain grid conservatively
+    covers the full requested geographic area.
+    """
+    chosen_center_lat = (south + north) / 2.0 if center_lat is None else float(center_lat)
+    chosen_center_lon = (west + east) / 2.0 if center_lon is None else float(center_lon)
+    resolved_dx_m = float(dx_m)
+    resolved_dy_m = float(dy_m)
+    resolved_nx = None if nx is None else int(nx)
+    resolved_ny = None if ny is None else int(ny)
+
+    if resolved_nx is None or resolved_ny is None:
+        local_crs = CRS.from_proj4(
+            f"+proj=aeqd +lat_0={chosen_center_lat:.12f} +lon_0={chosen_center_lon:.12f} "
+            "+datum=WGS84 +units=m +no_defs"
+        )
+        to_local = Transformer.from_crs(CRS.from_epsg(4326), local_crs, always_xy=True)
+        corner_x, corner_y = to_local.transform(
+            [west, west, east, east],
+            [south, north, south, north],
+        )
+        half_width_m = max(abs(float(value)) for value in corner_x)
+        half_height_m = max(abs(float(value)) for value in corner_y)
+        resolved_nx = int(math.ceil((2.0 * half_width_m) / resolved_dx_m)) + 1
+        resolved_ny = int(math.ceil((2.0 * half_height_m) / resolved_dy_m)) + 1
+        if resolved_nx % 2 == 0:
+            resolved_nx += 1
+        if resolved_ny % 2 == 0:
+            resolved_ny += 1
+
+    domain = DomainDefinition(
+        center_lat=chosen_center_lat,
+        center_lon=chosen_center_lon,
+        nx=resolved_nx,
+        ny=resolved_ny,
+        dx_m=resolved_dx_m,
+        dy_m=resolved_dy_m,
+        projection=projection,
+        buffer_m=float(buffer_m),
+    )
+    domain.validate()
+    return domain
 
 
 def auto_utm_crs(lat: float, lon: float) -> CRS:

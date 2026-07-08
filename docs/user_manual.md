@@ -481,9 +481,12 @@ fields such as `concentration_field` by passing `--variable concentration_field`
 and selecting `--time-index` / `--level-index` as needed.
 Zero or negative mass concentration is drawn transparent, and products carrying
 both WGS84 longitude/latitude and local `x/y` axes show both coordinate systems
-on map axes.
+on map axes. The local-metre overlays are tied to the displayed geographic
+centerlines so centered grids keep `x=0` and `y=0` at the visual domain
+center.
 Use `tools/plotter.py --animate` to create map animations over every available
-time frame, and set GIF repetition with `--gif-loop` (`0` loops forever). Use
+time frame, set frame timing with `--frame-duration-ms`, and control GIF
+repetition with `--gif-loop` (`0` loops forever). Use
 `tools/profiler.py` for centralized time-varying vertical profiles from
 `wind_speed(time,z,y,x)` or
 `concentration_field(time,field_z,field_y,field_x)`; add `--animate` and
