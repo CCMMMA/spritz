@@ -6,7 +6,9 @@ The workflow is intentionally step-by-step:
 
 1. **Choose the event location.** Provide the burning latitude and longitude through `--center-lat` and `--center-lon`.
 2. **Acquire meteorology.** Use a local WRF file or download WRF5 d03 from meteo@uniparthenope.
-3. **Downscale wind.** Reuse use case 01 logic: SpritzWRF extracts WRF wind and SpritzMet downscales it to 100 m.
+3. **Downscale wind.** Reuse use case 01 logic: SpritzWRF extracts WRF wind and
+   SpritzMet downscales it to 100 m. The documented command opts into the
+   advanced horizontal wind-consistency operators.
 4. **Build source terms.** Convert burning material, optional burning temperature, duration, source height, and area into a documented screening heat-release and PM emission estimate.
 5. **Generate receptors.** Create a circular receptor set around the fire location.
 6. **Run dispersion.** Execute both the particle and Gaussian backends against
@@ -108,8 +110,27 @@ python usecases/02_wildfire_arson_effects/demo/step_01_downscale_wind.py \
   --dx 100 \
   --dy 100 \
   --dem data/output/wildfire_case/dem/cop30_wildfire_case.tif \
-  --land-cover data/output/wildfire_case/landcover/lc100_wildfire_case.tif
+  --land-cover data/output/wildfire_case/landcover/lc100_wildfire_case.tif \
+  --advanced-physics \
+  --bulk-richardson-number 0.0 \
+  --mass-consistency-iterations 80 \
+  --mass-consistency-relaxation 0.8
 ```
+
+The neutral Richardson-number value avoids assuming stable or unstable
+conditions without event-specific boundary-layer evidence. Advanced physics
+then applies horizontal divergence minimization and stores divergence RMS
+before and after correction in SpritzMet metadata. This can improve the
+consistency of the wind forcing used by both dispersion backends, but it is not
+a full three-dimensional anelastic wind solver and does not replace validation
+against observations.
+
+Use `--no-advanced-physics` for the backward-compatible terrain-aware baseline.
+Only set a nonzero `--bulk-richardson-number` when it is supported by WRF
+diagnostics or observations for the modeled period. For production studies,
+run both settings and retain the advanced product only when divergence
+diagnostics and independent wind comparisons improve.
+
 ## Step 2: Build the fire configuration
 
 ```bash

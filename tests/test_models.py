@@ -809,6 +809,28 @@ def test_spritzmet_downscales_wind_as_4d_and_precipitation_as_3d() -> None:
     assert met.downscaling_metadata["downscaling_mode"] == "deterministic"
     assert met.downscaling_metadata["wind_dimensions"] == "time,z,y,x"
     assert met.downscaling_metadata["precipitation_dimensions"] == "time,y,x"
+    assert met.downscaling_metadata["physics_operators_enabled"] is False
+
+
+def test_spritzmet_optional_physics_operator_metadata() -> None:
+    met = spritzmet.downscale_wrf_to_local_grid(
+        _small_wrf(),
+        center_lat=40.005,
+        center_lon=14.005,
+        nx=5,
+        ny=5,
+        dx_m=100.0,
+        dy_m=100.0,
+        physics_options={
+            "wind": {
+                "stability": {"bulk_richardson_number": 0.2},
+                "mass_consistency": {"iterations": 4},
+            }
+        },
+    )
+    assert met.downscaling_metadata["physics_operators_enabled"] is True
+    assert met.downscaling_metadata["stability_correction"] == "bounded_bulk_richardson"
+    assert met.downscaling_metadata["mass_consistency_iterations"] == 4
 
 
 def _fortran_records(path: Path, endian: str = ">") -> list[bytes]:

@@ -413,6 +413,19 @@ def weather_start_datetime(config: SuiteConfig) -> datetime | None:
     return run_datetime(config.run, "weather_start_datetime", "simulation_start_datetime")
 
 
+def concentration_field_z_reference(config: SuiteConfig, meteo: dict[str, Any]) -> str:
+    """Resolve the explicitly configured concentration-grid vertical datum."""
+    return str(
+        config.run.get(
+            "field_z_reference",
+            config.run.get(
+                "FIELD_Z_REFERENCE",
+                meteo.get("z_reference", "height_above_sea_level"),
+            ),
+        )
+    )
+
+
 def sample_datetime(config: SuiteConfig, sample_time_s: float) -> datetime | None:
     start = weather_start_datetime(config)
     if start is None:
@@ -822,7 +835,7 @@ def _stream_gaussian_grid_concentrations(
         y=grid.y,
         z=field_levels,
         point_receptors=point_templates,
-        z_reference=str(meteo.get("z_reference", "height_above_sea_level")),
+        z_reference=concentration_field_z_reference(config, meteo),
         latitude=latitude,
         longitude=longitude,
         surface_altitude=terrain_m if "terrain_m" in terrain_fields else None,

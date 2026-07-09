@@ -448,7 +448,7 @@ def plot_profile(
     *,
     title: str | None,
     dpi: int,
-    time_index: int | None = None,
+    time_reference: float | None = None,
     emission_points: Sequence[EmissionPoint] = (),
     coordinate_format: str = "ddm",
 ) -> Path:
@@ -473,7 +473,7 @@ def plot_profile(
     if _is_concentration_profile(profile):
         heat_cmap.set_bad((0.0, 0.0, 0.0, 0.0))
     mesh = ax_heat.pcolormesh(
-        np.arange(profiles.shape[0]),
+        profile.time_axis,
         profile.z_axis,
         plot_profiles.T,
         shading="auto",
@@ -486,14 +486,15 @@ def plot_profile(
     label = f"{profile.long_name}{f' [{units}]' if units else ''}"
     cbar.set_label(label)
     ax_heat.set_title("Time-height section")
-    ax_heat.set_xlabel("time index")
+    ax_heat.set_xlabel("time reference")
     ax_heat.set_ylabel(_vertical_axis_label(profile))
     local_ground = _local_ground(profile)
     if local_ground is not None:
         ax_heat.axhline(local_ground, color="0.85", linewidth=1.0, linestyle="--")
-    if time_index is not None:
-        ax_heat.axvline(time_index, color="white", linewidth=1.6)
-        indexes = [time_index]
+    if time_reference is not None:
+        index = _time_reference_index(profile, time_reference)
+        ax_heat.axvline(profile.time_axis[index], color="white", linewidth=1.6)
+        indexes = [index]
     else:
         sample_count = min(6, profiles.shape[0])
         indexes = list(np.linspace(0, profiles.shape[0] - 1, sample_count, dtype=int))
@@ -548,6 +549,14 @@ def _vertical_axis_label(profile: ProfileData) -> str:
     return "altitude above mean sea level [m]"
 
 
+def _time_reference_index(profile: ProfileData, time_reference: float) -> int:
+    matches = np.flatnonzero(np.isclose(profile.time_axis, time_reference, rtol=1.0e-9, atol=1.0e-9))
+    if matches.size == 0:
+        available = ", ".join(f"{float(value):g}" for value in profile.time_axis)
+        raise ValueError(f"time reference {time_reference:g} is not available; choose one of: {available}")
+    return int(matches[0])
+
+
 def _write_gif(frame_paths: Sequence[Path], output_path: str | Path, *, duration_ms: int, loop: int) -> Path:
     if not frame_paths:
         raise ValueError("animation requires at least one frame")
@@ -584,19 +593,24 @@ def plot_profile_animation(
 ) -> Path:
     with tempfile.TemporaryDirectory(prefix="sprtz_profiler_frames_") as tmp:
         frame_paths: list[Path] = []
-        for time_index in range(profile.values.shape[0]):
+        for time_index, time_reference in enumerate(profile.time_axis):
             frame_path = Path(tmp) / f"profile_{time_index:05d}.png"
             plot_profile(
                 profile,
                 frame_path,
                 title=title,
                 dpi=dpi,
-                time_index=time_index,
+                time_reference=float(time_reference),
                 emission_points=emission_points,
                 coordinate_format=coordinate_format,
             )
             frame_paths.append(frame_path)
-            LOGGER.info("animation frame %d/%d time_index=%d", len(frame_paths), profile.values.shape[0], time_index)
+            LOGGER.info(
+                "animation frame %d/%d time_reference=%g",
+                len(frame_paths),
+                profile.values.shape[0],
+                float(time_reference),
+            )
         return _write_gif(frame_paths, output_path, duration_ms=duration_ms, loop=loop)
 
 
@@ -607,7 +621,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--variable", default=None, help="NetCDF variable to profile; auto-detected by default")
     parser.add_argument("--x", "--x-m", dest="x_m", type=float, default=0.0, help="local x coordinate for the sampled column")
     parser.add_argument("--y", "--y-m", dest="y_m", type=float, default=0.0, help="local y coordinate for the sampled column")
-    parser.add_argument("--time-index", type=int, default=None, help="single time index to highlight in a static profile")
+    parser.add_argument("--time-reference", type=float, default=None, help="NetCDF time-coordinate value to highlight")
+    parser.add_argument("--time-index", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--title", default=None, help="figure title")
     parser.add_argument("--config", default=None, help="optional Sprtz JSON config; shows emission point z ASL and z AGL heights")
     parser.add_argument(
@@ -647,14 +662,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 coordinate_format=args.coordinate_format,
             )
         else:
-            if args.time_index is not None and (args.time_index < 0 or args.time_index >= profile.values.shape[0]):
-                raise IndexError(f"time index {args.time_index} is out of range for size {profile.values.shape[0]}")
+            time_reference = args.time_reference
+            if args.time_index is not None:
+                if time_reference is not None:
+                    raise ValueError("--time-reference and --time-index cannot be used together")
+                if args.time_index < 0 or args.time_index >= profile.values.shape[0]:
+                    raise IndexError(f"time index {args.time_index} is out of range for size {profile.values.shape[0]}")
+                LOGGER.warning("--time-index is deprecated; use --time-reference")
+                time_reference = float(profile.time_axis[args.time_index])
             out = plot_profile(
                 profile,
                 args.output,
                 title=args.title,
                 dpi=args.dpi,
-                time_index=args.time_index,
+                time_reference=time_reference,
                 emission_points=emission_points,
                 coordinate_format=args.coordinate_format,
             )

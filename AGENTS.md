@@ -252,6 +252,13 @@ UTC format `YYYYMMDDZhhmm`, for example `20260601Z0000`. Keep this format in
 CLI help, examples, use-case docs, tests, and downloader instructions whenever
 users pass date-time values to scripts.
 
+Keep each `usecases/<use_case_name>/pipeline/pipeline.sh` and
+`usecases/<use_case_name>/workflow/workflow.cwl` aligned with the procedure in
+`usecases/<use_case_name>/demo/README.md`, using only programs from that use
+case's `scripts/` directory. Update the corresponding `pipeline/README.md` and
+`workflow/README.md` whenever the procedure or either executable workflow
+changes.
+
 Use-case documentation should include:
 
 - Purpose and scientific scope.

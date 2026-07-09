@@ -1,5 +1,9 @@
 {
   "spritzmet": {
+    "advanced_physics": true,
+    "bulk_richardson_number": 0.0,
+    "mass_consistency_iterations": 80,
+    "mass_consistency_relaxation": 0.8,
     "field_z_levels": [
       10.0,
       15.0,

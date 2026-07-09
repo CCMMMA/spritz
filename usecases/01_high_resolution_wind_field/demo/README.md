@@ -24,7 +24,10 @@ The workflow routes hourly WRF5 d03 data through SpritzWRF and SpritzMet:
 1. SpritzWRF downloads and reads the 24 hourly WRF files from
    `20260621Z0000` through `20260621Z2300`.
 2. SpritzMet performs deterministic terrain-aware downscaling on a local 100 m
-   grid that conservatively covers the Velalonga bounding box.
+   grid that conservatively covers the Velalonga bounding box. The supplied
+   demo configuration additionally enables the optional advanced wind
+   operators: neutral stability scaling followed by horizontal
+   divergence minimization.
 3. SpritzMet writes the accumulated NetCDF-CF output after every completed
    hourly frame. If a later frame fails, the output still contains the
    successfully completed frames.
@@ -134,6 +137,22 @@ python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
   --land-cover data/output/high_resolution_wind_field/landcover/lc100_naples.tif \
   --parallel auto
 ```
+
+`demo/config.json` enables `advanced_physics` with 80 bounded projection
+iterations and relaxation `0.8`. The representative bulk Richardson number is
+`0.0`, so the stability stage is neutral rather than inventing atmospheric
+stability that is not supplied by this use case. The projection generally
+improves horizontal wind-field consistency and records divergence RMS before
+and after correction in the NetCDF metadata. It does not create new resolved
+meteorological information or provide full three-dimensional anelastic mass
+conservation.
+
+Use `--no-advanced-physics` to produce the backward-compatible terrain-aware
+baseline. If a defensible domain representative bulk Richardson number is
+available, override the neutral value with
+`--bulk-richardson-number VALUE`. Compare both products against independent
+station observations before treating either as an improvement for a specific
+event.
 
 The principal output is:
 
@@ -326,6 +345,8 @@ claimed here. Use the 2-D maps for the actual 10 m-above-ground diagnostic.
 - Inspect the NetCDF `time`, `z`, units, and SpritzMet metadata.
 - Check every hourly frame for missing or masked values.
 - Compare modeled wind with geographically distributed observations.
+- Verify that `mass_consistency_divergence_rms_after_s-1` is lower than the
+  corresponding `before` metadata value when advanced physics is enabled.
 - Record software version, configuration, input checksums, and retrieval dates.
 - Validate MPI and serial equivalence when MPI is used.
 

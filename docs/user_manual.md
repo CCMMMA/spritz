@@ -1,5 +1,9 @@
 # Spritz User Manual
 
+The WRF local-grid Python API accepts optional `physics_options` for stability
+scaling and horizontal divergence minimization. Equations and limitations are
+documented in [`spritzmet_physics.md`](spritzmet_physics.md).
+
 ## Scientific Scope
 
 This manual documents Sprtz configuration, execution, and interpretation for scientific users. It separates public workflow syntax from model assumptions and points readers to method-specific documentation for validation context.

@@ -29,6 +29,7 @@ from sprtz.io.netcdf_cf import (
     write_cf_time_coordinate,
 )
 from sprtz.models.spritzwrf import WRFWindField
+from sprtz.models.spritzmet_physics import apply_wind_operators
 from sprtz.parallel import get_gpu_context, get_mpi_context
 
 
@@ -1788,6 +1789,7 @@ def downscale_wrf_to_local_grid(
     ai_model: DownscalingModel | None = None,
     diffusion_model: DownscalingModel | None = None,
     parallel: str = "serial",
+    physics_options: dict[str, Any] | None = None,
 ) -> LocalMeteorology:
     """Downscale SpritzWRF near-surface fields to a local SpritzMet grid.
 
@@ -1796,6 +1798,8 @@ def downscale_wrf_to_local_grid(
     DEM and land-cover information. Optional ``ai`` and ``diffusion`` modes run
     built-in clean-room NumPy refinements unless callers supply model callables.
     All modes can be improved with weather-station residual measurements.
+    Additional physics operators are disabled unless ``physics_options`` is
+    supplied. Supported wind keys are ``stability`` and ``mass_consistency``.
     """
     mode = downscaling_mode.lower().replace("_", "-")
     mode = {"deterministic": "deterministic", "ai": "ai", "ai-based": "ai", "diffusion": "diffusion", "diffusion-model": "diffusion"}.get(mode, mode)
@@ -1986,6 +1990,21 @@ def downscale_wrf_to_local_grid(
     v = _as_wind_4d("v", v)
     if v.shape != u.shape:
         raise ValueError(f"v shape {v.shape} must match u shape {u.shape}")
+    physics_metadata: dict[str, Any] = {"physics_operators_enabled": False}
+    if physics_options:
+        unknown = set(physics_options) - {"wind"}
+        if unknown:
+            raise ValueError(f"unsupported physics_options keys: {', '.join(sorted(unknown))}")
+        wind_options = physics_options.get("wind")
+        if wind_options:
+            u, v, physics_metadata = apply_wind_operators(
+                u,
+                v,
+                dx_m=dx_m,
+                dy_m=dy_m,
+                options=dict(wind_options),
+            )
+            physics_metadata["physics_operators_enabled"] = True
     precipitation_rate = _as_precipitation_3d(precipitation_rate, u.shape[0], u.shape[-2:])
     if u10m is not None and v10m is not None:
         u10m = _as_precipitation_3d(u10m, u.shape[0], u.shape[-2:])
@@ -2037,6 +2056,7 @@ def downscale_wrf_to_local_grid(
         **below_ground_metadata,
         **diagnostic_10m_surface_metadata,
         **thermodynamic_metadata,
+        **physics_metadata,
         "wind_dimensions": "time,z,y,x",
         "precipitation_dimensions": "time,y,x",
         "spatial_interpolation": "inverse_distance_weighting",

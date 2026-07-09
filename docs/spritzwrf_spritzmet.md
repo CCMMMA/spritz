@@ -1,5 +1,9 @@
 # SpritzWRF and SpritzMet interoperability
 
+Optional physics-aware operators are documented in
+[`spritzmet_physics.md`](spritzmet_physics.md). They are opt-in; results are
+unchanged when `physics_options` is omitted.
+
 ## Scientific Scope
 
 This document describes SpritzWRF and SpritzMet interoperability. It focuses on dimension-aware WRF ingestion, local-grid downscaling, vertical wind-profile constraints, and reproducible meteorological metadata.

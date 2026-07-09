@@ -1,5 +1,10 @@
 # HPC And SLURM
 
+The optional SpritzMet projection scales linearly with grid cells and
+iterations. Use serial execution for validation-quality projected winds until
+a halo-coupled MPI solver is available. See
+[`spritzmet_physics.md`](spritzmet_physics.md).
+
 ## Scientific Scope
 
 This document describes batch and SLURM execution of Sprtz workflows. It emphasizes reproducibility, optional parallelism, deterministic serial fallback, and audit-friendly logs for scientific computing environments.

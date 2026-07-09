@@ -141,6 +141,12 @@ def test_high_resolution_wind_run_entrypoint_synthetic(tmp_path: Path) -> None:
         [10.0, 15.0, 25.0, 50.0, 75.0, 100.0, 150.0, 250.0, 500.0, 750.0, 1000.0, 1250.0]
     )
     assert payload["metadata"]["level_meters_kind"] == "height_above_sea_level"
+    assert payload["metadata"]["physics_operators_enabled"] is True
+    assert payload["metadata"]["mass_consistency_iterations"] == 80
+    assert (
+        payload["metadata"]["mass_consistency_divergence_rms_after_s-1"]
+        <= payload["metadata"]["mass_consistency_divergence_rms_before_s-1"]
+    )
 
 
 def test_high_resolution_wind_run_entrypoint_writes_calmet_dat(tmp_path: Path) -> None:
@@ -1089,10 +1095,15 @@ def test_wildfire_wind_step_accepts_field_z_levels() -> None:
             "wind.nc",
             "--field-z-levels",
             "2.5,5,10,20",
+            "--advanced-physics",
+            "--bulk-richardson-number",
+            "0.1",
         ]
     )
 
     assert impl._parse_vertical_levels_m(args.field_z_levels) == [2.5, 5.0, 10.0, 20.0]
+    assert args.advanced_physics is True
+    assert args.bulk_richardson_number == pytest.approx(0.1)
 
 
 def test_wind_downscaling_result_supports_wildfire_component(tmp_path: Path) -> None:

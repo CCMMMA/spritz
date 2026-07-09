@@ -1,5 +1,9 @@
 # Validation plan
 
+SpritzMet validation helpers cover scalar RMSE, MAE, and bias, wind vector RMSE
+and direction error, and divergence diagnostics. See
+[`spritzmet_physics.md`](spritzmet_physics.md).
+
 ## Scientific Scope
 
 This document defines the Sprtz validation strategy. It combines unit tests, numerical invariants, inter-model comparisons, and literature-aligned performance diagnostics without claiming regulatory equivalence.

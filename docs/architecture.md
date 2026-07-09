@@ -1,5 +1,10 @@
 # Architecture
 
+SpritzMet composes optional clean-room operators from
+`sprtz.models.spritzmet_physics` while preserving the stable
+`sprtz.models.spritzmet` module. See
+[`spritzmet_physics.md`](spritzmet_physics.md).
+
 ## Scientific Scope
 
 This document summarizes Sprtz as a clean-room scientific software architecture for atmospheric dispersion, meteorological preprocessing, terrain coupling, fire-front dynamics, and reproducible model evaluation. It is written as a technical design record rather than a regulatory validation claim.

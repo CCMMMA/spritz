@@ -887,6 +887,15 @@ def test_profiler_reads_concentration_profile_data(tmp_path: Path) -> None:
     assert profile.origin_lon == pytest.approx(14.0)
 
 
+def test_profiler_selects_profile_by_time_reference() -> None:
+    profiler = load_profiler_tool()
+    profile = types.SimpleNamespace(time_axis=np.asarray([3600.0, 7200.0], dtype=float))
+
+    assert profiler._time_reference_index(profile, 7200.0) == 1
+    with pytest.raises(ValueError, match="time reference 1 is not available"):
+        profiler._time_reference_index(profile, 1.0)
+
+
 def test_profiler_emission_label_adds_dem_to_source_z(tmp_path: Path) -> None:
     profiler = load_profiler_tool()
     profile = profiler.ProfileData(

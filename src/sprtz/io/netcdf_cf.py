@@ -479,7 +479,11 @@ class DenseConcentrationWriter:
         ds.createDimension("field_y", len(field_y))
         ds.createDimension("field_x", len(field_x))
         ds.Conventions = "CF-1.8"
-        ds.title = "Spritz receptor concentration"
+        ds.title = (
+            "Spritz receptor and gridded concentration"
+            if self.point_receptors
+            else "Spritz gridded concentration"
+        )
 
         if datetimes:
             time = write_cf_time_coordinate(ds, [datetimes.get(value, "") for value in self.times])
@@ -664,7 +668,19 @@ def write_cf_concentration(path: str | Path, rows: list[dict[str, Any]]) -> None
         ds.createDimension("time", len(times))
         ds.createDimension("receptor", len(receptors))
         ds.Conventions = "CF-1.8"
-        ds.title = "Spritz receptor concentration"
+        has_field = any(
+            str(row.get("output_kind", "")).lower() == "field" for row in rows
+        )
+        has_receptors = any(
+            str(row.get("output_kind", "receptor")).lower() != "field" for row in rows
+        )
+        ds.title = (
+            "Spritz receptor and gridded concentration"
+            if has_field and has_receptors
+            else "Spritz gridded concentration"
+            if has_field
+            else "Spritz receptor concentration"
+        )
         if datetime_by_time:
             time = write_cf_time_coordinate(ds, [datetime_by_time.get(value, "") for value in times])
             time.long_name = "model output time"

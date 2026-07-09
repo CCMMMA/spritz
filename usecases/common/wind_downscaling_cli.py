@@ -597,6 +597,13 @@ def run_workflow(
 ) -> WindDownscalingResult:
     """Run the use-case orchestration, keeping production module calls explicit."""
     configure_logging(False)
+    if args.advanced_physics:
+        if not math.isfinite(args.bulk_richardson_number):
+            raise ValueError("--bulk-richardson-number must be finite")
+        if args.mass_consistency_iterations < 0:
+            raise ValueError("--mass-consistency-iterations must be non-negative")
+        if not 0.0 < args.mass_consistency_relaxation <= 1.0:
+            raise ValueError("--mass-consistency-relaxation must be in (0, 1]")
     _teach("this script is scenario orchestration; numerical work stays in sprtz.models.spritzwrf and sprtz.models.spritzmet")
     center_lat, center_lon, nx, ny, requested_bounds = _resolve_grid(args)
     vertical_levels_m = _parse_vertical_levels_m(args.field_z_levels)
@@ -672,6 +679,26 @@ def run_workflow(
         args.dx,
         args.dy,
     )
+    physics_options = None
+    if args.advanced_physics:
+        physics_options = {
+            "wind": {
+                "stability": {
+                    "bulk_richardson_number": args.bulk_richardson_number,
+                },
+                "mass_consistency": {
+                    "iterations": args.mass_consistency_iterations,
+                    "relaxation": args.mass_consistency_relaxation,
+                },
+            }
+        }
+        _teach(
+            "optional advanced wind physics is enabled: bounded bulk-Richardson scaling Ri=%.3f "
+            "followed by %s divergence-minimization iterations at relaxation %.3f",
+            args.bulk_richardson_number,
+            args.mass_consistency_iterations,
+            args.mass_consistency_relaxation,
+        )
     met_items: list[spritzmet.LocalMeteorology] = []
     mpi_ctx = get_mpi_context(args.parallel)
     fmt = "NetCDF-CF" if not args.json else "json"
@@ -690,6 +717,7 @@ def run_workflow(
             downscaling_mode=args.downscaling_mode,
             station_measurements=station_measurements,
             parallel=args.parallel,
+            physics_options=physics_options,
         )
         met_items.append(frame)
         # Persist every completed time frame. Rewriting the accumulated product
@@ -795,6 +823,30 @@ def build_parser(description: str | None = None) -> argparse.ArgumentParser:
     parser.add_argument("--dem", default=None, help="Optional DEM raster for terrain-aware SpritzMet downscaling, e.g. data/dem/cop30_naples.tif")
     parser.add_argument("--land-cover", "--landuse", dest="land_cover", default=None, help="Optional categorical land-cover raster, e.g. data/landcover/lc100_naples.tif")
     parser.add_argument("--downscaling-mode", choices=["deterministic", "ai", "diffusion"], default="deterministic")
+    parser.add_argument(
+        "--advanced-physics",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable optional bounded stability scaling and horizontal divergence minimization",
+    )
+    parser.add_argument(
+        "--bulk-richardson-number",
+        type=float,
+        default=0.0,
+        help="Representative bulk Richardson number used by --advanced-physics",
+    )
+    parser.add_argument(
+        "--mass-consistency-iterations",
+        type=int,
+        default=80,
+        help="Jacobi projection iterations used by --advanced-physics",
+    )
+    parser.add_argument(
+        "--mass-consistency-relaxation",
+        type=float,
+        default=0.8,
+        help="Projection relaxation in (0,1] used by --advanced-physics",
+    )
     parser.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial", help="parallel execution mode for SpritzMet WRF downscaling")
     parser.add_argument("--thread-backend", choices=["serial", "threads", "processes", "auto"], default="serial", help="rank-local shared-memory backend")
     parser.add_argument("--threads-per-rank", type=int, default=None, help="rank-local worker count")

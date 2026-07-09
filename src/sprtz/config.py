@@ -418,6 +418,18 @@ class SuiteConfig:
             self.run.get("FIELD_Z_LEVELS", self.run.get("z_levels", self.run.get("Z_LEVELS"))),
         )
         parse_field_z_levels(field_levels)
+        field_z_reference = self.run.get(
+            "field_z_reference",
+            self.run.get("FIELD_Z_REFERENCE"),
+        )
+        if field_z_reference is not None and str(field_z_reference) not in {
+            "height_above_ground",
+            "height_above_sea_level",
+        }:
+            raise ConfigurationError(
+                "run.field_z_reference must be height_above_ground or "
+                "height_above_sea_level"
+            )
         _validate_datetime_pair(
             run_datetime(self.run, "weather_start_datetime", "simulation_start_datetime"),
             run_datetime(self.run, "weather_end_datetime", "simulation_end_datetime"),

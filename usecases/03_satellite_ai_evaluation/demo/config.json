@@ -1,0 +1,94 @@
+{
+  "grid": {
+    "nx": 601,
+    "ny": 351,
+    "dx": 100.0,
+    "dy": 100.0,
+    "x0": -20000.0,
+    "y0": -15000.0,
+    "projection": "LOCAL"
+  },
+  "stations": [
+    {
+      "id": "SAT_EVAL_WEST",
+      "x": 0.0,
+      "y": 2500.0,
+      "wind_speed": 3.0,
+      "wind_dir": 270.0,
+      "temperature": 294.0,
+      "mixing_height": 900.0,
+      "precipitation_rate": 0.0
+    },
+    {
+      "id": "SAT_EVAL_EAST",
+      "x": 5000.0,
+      "y": 2500.0,
+      "wind_speed": 4.0,
+      "wind_dir": 260.0,
+      "temperature": 296.0,
+      "mixing_height": 1100.0,
+      "precipitation_rate": 0.0
+    }
+  ],
+  "sources": [
+    {
+      "id": "SAT_EVAL_SOURCE",
+      "x": 0.0,
+      "y": 0.0,
+      "latitude": 40.9769,
+      "longitude": 14.2168,
+      "z": 0.0,
+      "emission_rate": 25.0,
+      "stack_height": 40.0,
+      "height_agl_m": 40.0,
+      "source_type": "point",
+      "material": "generic",
+      "stack_diameter": 1.5,
+      "exit_velocity": 12.0,
+      "exit_temperature": 370.0,
+      "deposition_velocity": 0.001,
+      "wet_scavenging": 0.0,
+      "decay_rate": 0.0
+    }
+  ],
+  "receptors": [
+    {"id": "R00", "x": -5000.0, "y": 0.0, "z": 1.5, "longitude": 14.1574, "latitude": 40.9769},
+    {"id": "R01", "x": -4000.0, "y": 0.0, "z": 1.5, "longitude": 14.1693, "latitude": 40.9769},
+    {"id": "R02", "x": -3000.0, "y": 0.0, "z": 1.5, "longitude": 14.1812, "latitude": 40.9769},
+    {"id": "R03", "x": -2000.0, "y": 0.0, "z": 1.5, "longitude": 14.1930, "latitude": 40.9769},
+    {"id": "R04", "x": -1000.0, "y": 0.0, "z": 1.5, "longitude": 14.2049, "latitude": 40.9769},
+    {"id": "R05", "x": 0.0, "y": 0.0, "z": 1.5, "longitude": 14.2168, "latitude": 40.9769},
+    {"id": "R06", "x": 1000.0, "y": 0.0, "z": 1.5, "longitude": 14.2287, "latitude": 40.9769},
+    {"id": "R07", "x": 2000.0, "y": 0.0, "z": 1.5, "longitude": 14.2406, "latitude": 40.9769},
+    {"id": "R08", "x": 3000.0, "y": 0.0, "z": 1.5, "longitude": 14.2524, "latitude": 40.9769},
+    {"id": "R09", "x": 4000.0, "y": 0.0, "z": 1.5, "longitude": 14.2643, "latitude": 40.9769},
+    {"id": "R10", "x": 5000.0, "y": 0.0, "z": 1.5, "longitude": 14.2762, "latitude": 40.9769}
+  ],
+  "run": {
+    "backend": "gaussian",
+    "weather_start_datetime": "2024-06-19T10:00:00Z",
+    "weather_end_datetime": "2024-06-19T13:00:00Z",
+    "event_start_datetime": "2024-06-19T10:00:00Z",
+    "event_end_datetime": "2024-06-19T13:00:00Z",
+    "output_interval_s": 3600.0,
+    "output_duration_s": 10800.0,
+    "particle_duration_s": 3600.0,
+    "particle_advection_steps": 16,
+    "particle_k_m2_s": 35.0,
+    "particle_kz_m2_s": 2.0,
+    "gaussian_initial_sigma_h": 250.0,
+    "gaussian_initial_sigma_z": 80.0,
+    "particles": 100000,
+    "seed": 20240619,
+    "concentration_output": "both",
+    "field_z_levels": [400.0],
+    "field_z_reference": "height_above_sea_level",
+    "stability": "D",
+    "threshold": 0.00001,
+    "preferred_interchange": "NetCDF-CF",
+    "numerical_mode": "puff",
+    "averaging_time_s": 3600.0,
+    "stack_tip_downwash": true,
+    "precipitation_washout": false
+  }
+}

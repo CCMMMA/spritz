@@ -1,87 +1,82 @@
-# Satellite AI Evaluation Pipeline
+# Aversa satellite-evaluation pipeline
 
-## Scientific Purpose
-
-This pipeline produces a reproducible reference concentration field and publication-quality visual diagnostics for evaluation workflows. It replaces earlier scenario-specific mask generation with script-only Sprtz execution and renderable model artifacts.
-
-This pipeline uses public command-line programs from `scripts/` for Sprtz model execution and avoids use-case-specific demonstration scripts. It is suitable for workflow engines because each scientific stage is an explicit process with concrete file inputs and outputs.
-
-## Operational Contract
-
-Run from the repository root, or from any other working directory:
+The canonical shell pipeline implements the procedure in
+[`../demo/README.md`](../demo/README.md):
 
 ```bash
 bash usecases/03_satellite_ai_evaluation/pipeline/pipeline.sh
 ```
 
-Products are written under `data/03_satellite_ai_evaluation/` by default. Set `SPRTZ_DATA_ROOT` to change the data root or `SPRTZ_OUTPUT_DIR` to choose the exact output directory. The script sets `MPLCONFIGDIR` and `XDG_CACHE_HOME` under the output directory by default for clean headless rendering.
+By default it runs offline with deterministic fallback meteorology and
+satellite-like evidence. The real Sentinel-5P download uses Copernicus Data
+Space Sentinel Hub OAuth2 client credentials, not a single API key. Create the
+credentials in the Dashboard before enabling network mode:
 
-## Parameters
+1. Sign in at <https://shapps.dataspace.copernicus.eu/dashboard/>.
+2. Open `User Settings`.
+3. In `OAuth clients`, click `Create`.
+4. Name the client, choose an expiry, and leave the frontend/SPA option off for
+   this command-line workflow.
+5. Copy the displayed `client ID` and `client secret` immediately; the secret
+   is not shown again.
 
-- This pipeline has no use-case-specific environment overrides beyond `SPRTZ_DATA_ROOT`, `SPRTZ_OUTPUT_DIR`, `MPLCONFIGDIR`, and `XDG_CACHE_HOME`.
-
-All parameters may be overridden as shell environment variables.
-
-## Expected Products
-
-- `model/meteo.nc`
-- `model/concentration.nc`
-- `model/post.json`
-- `figures/reference_wind_map.png`
-- `figures/reference_wind_profile.png`
-- `figures/reference_wind_3d.png`
-
-## Step-by-Step Method
-
-### Step 1: Runtime environment diagnostic
-
-Records optional runtime capabilities before model or rendering work begins.
+Export the credentials only in your local shell or secret manager, not in files
+committed to the repository:
 
 ```bash
-python3 "${SCRIPTS_DIR}/sprtz_doctor.py"
+export CDSE_CLIENT_ID='...'
+export CDSE_CLIENT_SECRET='...'
+export SPRTZ_RUN_NETWORK=1
+bash usecases/03_satellite_ai_evaluation/pipeline/pipeline.sh
 ```
 
-### Step 2: Reference Sprtz workflow execution
+To check the Sentinel-5P request without credentials, run the downloader with
+`--dry-run`; it writes the `.request.json` provenance file and does not contact
+the network. The canonical downloader command is
+`tools/copernicus-s5p-download.py`; its help and error messages are
+band-neutral even though `AER_AI_340_380` is the canonical use-case band and
+`NO2` remains available as a secondary diagnostic option.
 
-Runs the stable minimal Sprtz example through the public workflow wrapper to create a NetCDF concentration product for evaluation or visual QA.
+The network pipeline downloads a broad same-orbit Aerosol Index raster and lets
+the alignment step crop it to the Spritz concentration-field domain. Smaller
+domain-sized Sentinel Hub requests can return valid but all-masked GeoTIFFs for
+this product. If even the broad same-orbit request returns zero finite Aerosol
+Index pixels, the downloader and pipeline fail intentionally. Archive the
+`.request.json` as negative provenance, or continue the didactic workflow with
+the deterministic non-satellite mask by explicitly setting:
 
 ```bash
-python3 "${SCRIPTS_DIR}/sprtz.py" run "${REPO_ROOT}/examples/minimal.json" --output-dir "${OUT_DIR}/model" --interchange netcdf
+export SPRTZ_ALLOW_SYNTHETIC_SATELLITE_FALLBACK=1
 ```
 
-### Step 3: 2-D reference wind rendering
+`SPRTZ_DATA_ROOT`, `SPRTZ_OUTPUT_DIR`, `PYTHON`, `MPLCONFIGDIR`, and
+`XDG_CACHE_HOME` may be overridden. Products default to
+`data/03_satellite_ai_evaluation/`.
 
-Creates a 600 DPI map from the gridded meteorology product, which is the renderable NetCDF field produced by this reference workflow.
+The eleven stages are runtime/configuration validation, WRF download, COP30
+download, LC100 download, Terrain/GEO generation, 601×351 100 m SpritzWRF/SpritzMet
+downscaling, Gaussian and particle runs, Sentinel-5P download, conservative
+satellite downscaling, backend-specific evaluation, and plotting. The
+evaluation stage also reads `usecase_03_stations.csv` and writes a colocated
+NO₂ station spatial-pattern diagnostic into each backend `evaluation.json`.
+NO₂ is normalized only for pattern comparison; it is not converted to Aerosol
+Index or Spritz concentration. Network access is explicit; credentials are read
+only from the environment and are never logged.
 
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" "${OUT_DIR}/model/meteo.nc" --variable wind_speed ...
-```
+Expected products include WRF and satellite source data when network mode is
+enabled, `dem/cop30_aversa.tif`, `landcover/lc100_aversa.tif`, `geo.nc`,
+`domain/meteo.nc`, Gaussian and particle concentration NetCDF files,
+backend-specific evaluation/difference/ratio/statistics artifacts, and two
+concentration plots.
 
-### Step 4: Vertical reference wind profile rendering
-
-Samples the reference wind field at the central local coordinate and produces a profile figure.
-
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" "${OUT_DIR}/model/meteo.nc" --variable wind_speed ...
-```
-
-### Step 5: 3-D reference wind rendering
-
-Creates a three-dimensional surface rendering from the gridded wind field.
-
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" "${OUT_DIR}/model/meteo.nc" --variable wind_speed ...
-```
-
-## Workflow-Engine Integration
-
-Each step can be mapped to an independent workflow task. Configuration files, NetCDF products, JSON summaries, and PNG figures are declared artifacts that can be cached, inspected, and archived.
-
-## Reproducibility Notes
-
-- The default input is `examples/minimal.json`, which is deterministic.
-- No hidden network access is performed.
+The pipeline is deterministic in offline mode. Network mode records the
+Sentinel Hub request and satellite-alignment provenance. The same-day
+Sentinel-5P orbit overlaps the event, but its UV Aerosol Index is not a direct
+measurement of three-dimensional near-surface concentration.
 
 ## References
 
-No external bibliographic references are required for this workflow description. Scientific and numerical assumptions are documented in the Sprtz numerical, particle, firefront, backward, and visualization documentation as applicable.
+Veefkind, J. P., et al. (2012). TROPOMI on the ESA Sentinel-5 Precursor: A GMES
+mission for global observations of the atmospheric composition for climate,
+air quality and ozone layer applications. *Remote Sensing of Environment,
+120*, 70–83.

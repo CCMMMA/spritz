@@ -1,5 +1,9 @@
 # Operational use cases
 
+Physics-aware experiments should remain under `usecases/`, call the production
+API with explicit `physics_options`, and record divergence metadata as
+provenance. See [`spritzmet_physics.md`](spritzmet_physics.md).
+
 ## Scientific Scope
 
 This document catalogs Sprtz use cases as didactic scientific workflows. Each use case is treated as an executable example with explicit data requirements, assumptions, and production-readiness limits.
