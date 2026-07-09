@@ -615,6 +615,10 @@ class DenseConcentrationWriter:
                 self.ds.variables["concentration"][ti, ri] = float(row.get("concentration", 0.0))
                 self.ds.variables["dry_flux"][ti, ri] = float(row.get("dry_flux", 0.0))
                 self.ds.variables["wet_flux"][ti, ri] = float(row.get("wet_flux", 0.0))
+        # Make every completed time frame visible to readers and durable before
+        # the model reports progress.  netCDF4 may otherwise retain variable
+        # assignments in library buffers until the dataset is closed.
+        self.ds.sync()
 
     def close(self) -> None:
         self.ds.close()

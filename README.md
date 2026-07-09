@@ -36,13 +36,20 @@ sprtzfire --config examples/wildfire_minimal.json --output-dir output_fire --int
 sprtz run examples/wildfire_minimal.json --backend firefront --output-dir output_fire --interchange json
 ```
 
-MPI plus optional CUDA examples:
+MPI plus optional accelerator examples:
 
 ```bash
 mpiexec -n 4 spritzmet --config examples/minimal.json --output output_mpi/meteo.nc --parallel mpi --gpu-backend auto
 mpiexec -n 4 spritz --config examples/minimal.json --meteo output_mpi/meteo.nc --output output_mpi/concentration.nc --parallel mpi --gpu-backend auto
 mpiexec -n 4 sprtz run examples/wildfire_minimal.json --backend firefront --output-dir output_fire_mpi --parallel mpi --gpu-backend auto
 ```
+
+The dispersion and SpritzMet commands accept
+`--gpu-backend numpy|auto|cupy|cuda|mlx|metal`. `cupy`/`cuda` requires NVIDIA
+CUDA; `mlx`/`metal` uses Apple Metal on Apple Silicon. `auto` tries CUDA, then
+MLX, and falls back to NumPy. Logs report both the requested and resolved
+backend. With MPI, each rank selects its accelerator locally while rank 0 alone
+writes shared NetCDF products.
 
 See `docs/firefront.md`, `docs/firefront_numerical.md`, `docs/firefront_spotting.md`, `docs/firms_ignition.md`, `docs/firefront_gpu.md`, and `docs/spritzmet_mpi.md`.
 
@@ -137,6 +144,10 @@ python -m pip install -r requirements.txt
 python -m pip install -e .[netcdf,viz]
 # optional MPI/HPC support
 python -m pip install -e .[netcdf,viz,mpi]
+# optional NVIDIA CUDA/CuPy support
+python -m pip install -e .[netcdf,viz,gpu]
+# optional Apple Silicon MLX/Metal support
+python -m pip install -e .[netcdf,viz,mlx]
 # optional geospatial Terrain acquisition support
 python -m pip install -e .[geo,netcdf]
 ```
@@ -161,6 +172,7 @@ sprtz run examples/minimal.json --output-dir output --interchange netcdf
 sprtz run examples/minimal.json --output-dir output-10min --interchange netcdf --output-interval 600
 sprtz run examples/minimal.json --output-dir output-particles --backend particles --interchange netcdf
 mpiexec -n 4 sprtz run examples/minimal.json --output-dir output-mpi --interchange netcdf --parallel auto
+sprtz run examples/minimal.json --output-dir output-accelerated --interchange netcdf --gpu-backend auto
 sprtz-plot --input output/concentration.nc --output output/concentration.png
 sprtz doctor
 ```
@@ -197,10 +209,28 @@ Gaussian or particle transport. Gridded concentration `field_z` remains tied to
 the SpritzMet vertical reference, normally altitude above mean sea level for
 WRF-downscaled meteorology; cells where `field_z` is below the local DEM are
 masked to zero in terrain-aware gridded output.
+
+Choose plotted vertical levels accordingly. If local terrain is 72.7 m ASL, a
+`field_z=2.5 m` slice is underground and will correctly appear blank. Select a
+level above terrain, for example:
+
+```bash
+python tools/plotter.py output/concentration.nc \
+  --variable concentration_field \
+  --time-index 0 \
+  --level-index 15 \
+  --output output/concentration_100m.png
+```
+
+The exact altitude for an index is stored in the NetCDF `field_z` coordinate.
+Dense Gaussian and particle NetCDF writers synchronize each completed time
+frame before reporting progress. In MPI workflows, only rank 0 creates or
+modifies shared output files.
+
 For external comparison workflows, Gaussian and particle gridded concentration
 outputs can also be exported with `--format calpuff` on `spritz`, or as
 `concentration_calpuff.dat` sidecars from use case 02 with `--calpuff-binary`.
-These are clean-room CALPUFF-style binary exports generated from Sprtz
+These are clean-room CALPUFF-style binary exports generated from Spritz
 NetCDF/row data; NetCDF-CF remains the canonical interchange.
 
 Time-aware and washout options live in the same `run` block:

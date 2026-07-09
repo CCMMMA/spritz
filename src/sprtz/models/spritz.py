@@ -380,15 +380,16 @@ def _gaussian_puff_array(
     sigma_x: float,
     sigma_y: float,
     sigma_z: float,
-) -> np.ndarray:
+    xp: Any = np,
+) -> Any:
     sx = max(float(sigma_x), 1.0e-12)
     sy = max(float(sigma_y), 1.0e-12)
     sz = max(float(sigma_z), 1.0e-12)
-    norm = float(mass) / (((2.0 * np.pi) ** 1.5) * sx * sy * sz)
-    gx = np.exp(-0.5 * ((x_receptor - float(x_center)) / sx) ** 2)
-    gy = np.exp(-0.5 * ((y_receptor - float(y_center)) / sy) ** 2)
-    gz = np.exp(-0.5 * ((float(z_receptor) - float(z_center)) / sz) ** 2)
-    gz += np.exp(-0.5 * ((float(z_receptor) + float(z_center)) / sz) ** 2)
+    norm = float(mass) / (((2.0 * float(xp.pi)) ** 1.5) * sx * sy * sz)
+    gx = xp.exp(-0.5 * ((x_receptor - float(x_center)) / sx) ** 2)
+    gy = xp.exp(-0.5 * ((y_receptor - float(y_center)) / sy) ** 2)
+    gz = xp.exp(-0.5 * ((float(z_receptor) - float(z_center)) / sz) ** 2)
+    gz += xp.exp(-0.5 * ((float(z_receptor) + float(z_center)) / sz) ** 2)
     return norm * gx * gy * gz
 
 
@@ -780,11 +781,14 @@ def _stream_gaussian_grid_concentrations(
     wind_sampler: WindSampler,
     terrain_fields: dict[str, np.ndarray],
     progress_callback: Callable[[int, float], None] | None,
+    gpu_backend: str | None = None,
 ) -> list[dict[str, float | str]]:
     """Write gridded Gaussian puff arrays directly to NetCDF-CF."""
     grid = Grid(**asdict(config.grid))
     field_levels = field_z_levels(config)
-    x2d, y2d = np.meshgrid(grid.x.astype(float), grid.y.astype(float))
+    gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")))
+    xp = gpu.xp
+    x2d, y2d = xp.meshgrid(xp.asarray(grid.x), xp.asarray(grid.y))
     terrain_m = np.asarray(terrain_fields.get("terrain_m", np.zeros((grid.ny, grid.nx), dtype=float)), dtype=float)
     land_cover = terrain_fields.get("land_cover")
     latitude, longitude = _field_lat_lon(config)
@@ -828,9 +832,10 @@ def _stream_gaussian_grid_concentrations(
         for time_index, sample_time in enumerate(times, start=1):
             sample_dt = sample_datetime(config, sample_time)
             firefighter_factor = _firefighters_emission_factor(config, sample_dt)
-            concentration = np.zeros((len(field_levels), grid.ny, grid.nx), dtype=float)
-            dry_flux = np.zeros_like(concentration)
-            wet_flux = np.zeros_like(concentration)
+            storage_xp = np if gpu.backend == "mlx" else xp
+            concentration = storage_xp.zeros((len(field_levels), grid.ny, grid.nx), dtype=float)
+            dry_flux = storage_xp.zeros_like(concentration)
+            wet_flux = storage_xp.zeros_like(concentration)
             point_values = {
                 rec.id: {"concentration": 0.0, "dry_flux": 0.0, "wet_flux": 0.0}
                 for rec in point_receptors
@@ -901,10 +906,12 @@ def _stream_gaussian_grid_concentrations(
                             sigma_x=sigmas.sigma_x,
                             sigma_y=sigmas.sigma_y,
                             sigma_z=sigmas.sigma_z,
+                            xp=xp,
                         )
-                        concentration[level_index] += value
-                        dry_flux[level_index] += value * max(src.deposition_velocity, 0.0)
-                        wet_flux[level_index] += value * source_wet_rate * mixing_height
+                        value_out = gpu.asnumpy(value) if gpu.backend == "mlx" else value
+                        concentration[level_index] += value_out
+                        dry_flux[level_index] += value_out * max(src.deposition_velocity, 0.0)
+                        wet_flux[level_index] += value_out * source_wet_rate * mixing_height
                     for rec in point_receptors:
                         value = gaussian_puff(
                             mass=mass,
@@ -921,7 +928,7 @@ def _stream_gaussian_grid_concentrations(
                         point_values[rec.id]["wet_flux"] += value * source_wet_rate * mixing_height
 
             for level_index, level in enumerate(field_levels):
-                below_ground = float(level) < terrain_m
+                below_ground = float(level) < storage_xp.asarray(terrain_m)
                 concentration[level_index][below_ground] = 0.0
                 dry_flux[level_index][below_ground] = 0.0
                 wet_flux[level_index][below_ground] = 0.0
@@ -942,7 +949,13 @@ def _stream_gaussian_grid_concentrations(
                 }
                 point_rows.append(row)
                 rows.append(row)
-            writer.write_time(sample_time, concentration=concentration, dry_flux=dry_flux, wet_flux=wet_flux, receptor_rows=point_rows)
+            writer.write_time(
+                sample_time,
+                concentration=gpu.asnumpy(concentration),
+                dry_flux=gpu.asnumpy(dry_flux),
+                wet_flux=gpu.asnumpy(wet_flux),
+                receptor_rows=point_rows,
+            )
             if progress_callback is not None:
                 progress_callback(time_index, sample_time)
             else:
@@ -1287,6 +1300,7 @@ def run(
                 wind_sampler=WindSampler(meteo, grid_dx=config.grid.dx, grid_dy=config.grid.dy),
                 terrain_fields=terrain_fields,
                 progress_callback=progress_callback,
+                gpu_backend=gpu_backend,
             )
             ctx.barrier()
             return rows

@@ -1,6 +1,6 @@
 cwlVersion: v1.2
 class: Workflow
-label: Sprtz high-resolution wind field pipeline
+label: Spritz high-resolution wind field pipeline
 doc: |
   CWL wrapper for usecases/01_high_resolution_wind_field/pipeline/pipeline.sh.
 
@@ -16,7 +16,7 @@ requirements:
 inputs:
   repo_root:
     type: Directory
-    doc: Repository root containing the Sprtz checkout.
+    doc: Repository root containing the Spritz checkout.
   sprtz_data_root:
     type: string?
     default: null

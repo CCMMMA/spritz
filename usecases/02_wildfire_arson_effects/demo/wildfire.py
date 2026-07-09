@@ -20,8 +20,7 @@ from sprtz.logging import configure_logging
 
 USECASES_ROOT = Path(__file__).resolve().parents[2]
 COMMON_DIR = USECASES_ROOT / "common"
-HIGH_RES_WIND_DIR = USECASES_ROOT / "01_high_resolution_wind_field" / "demo"
-for path in (COMMON_DIR, HIGH_RES_WIND_DIR):
+for path in (COMMON_DIR,):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 

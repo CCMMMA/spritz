@@ -1,8 +1,50 @@
 import numpy as np
 
 from sprtz.config import from_mapping, load_config
-from sprtz.io.netcdf_cf import read_cf_concentration, read_cf_meteorology, write_cf_concentration
+from sprtz.io.netcdf_cf import DenseConcentrationWriter, read_cf_concentration, read_cf_meteorology, write_cf_concentration
 from sprtz.models import spritzmet, particles
+
+
+def test_dense_concentration_writer_syncs_each_time_frame():
+    class Variable:
+        def __init__(self):
+            self.values = {}
+
+        def __setitem__(self, key, value):
+            self.values[key] = value
+
+    class Dataset:
+        def __init__(self):
+            self.variables = {
+                name: Variable()
+                for name in (
+                    "concentration_field",
+                    "dry_flux_field",
+                    "wet_flux_field",
+                    "concentration",
+                    "dry_flux",
+                    "wet_flux",
+                )
+            }
+            self.sync_calls = 0
+
+        def sync(self):
+            self.sync_calls += 1
+
+    writer = DenseConcentrationWriter.__new__(DenseConcentrationWriter)
+    writer._time_index = {3600.0: 0}
+    writer.ds = Dataset()
+
+    writer.write_time(
+        3600.0,
+        concentration=np.ones((1, 1, 1)),
+        dry_flux=np.zeros((1, 1, 1)),
+        wet_flux=np.zeros((1, 1, 1)),
+        receptor_rows=[{"concentration": 1.0, "dry_flux": 2.0, "wet_flux": 3.0}],
+    )
+
+    assert writer.ds.sync_calls == 1
+    assert writer.ds.variables["concentration"].values[(0, 0)] == 1.0
 
 
 def test_netcdf_cf_fallback_and_particle_backend(tmp_path):
@@ -96,6 +138,39 @@ def test_particle_backend_is_deterministic(tmp_path):
     a = particles.run(cfg, meteo_path, tmp_path / "a.csv", "csv", seed=3)
     b = particles.run(cfg, meteo_path, tmp_path / "b.csv", "csv", seed=3)
     assert a == b
+
+
+def test_particle_worker_rank_never_opens_dense_netcdf(tmp_path, monkeypatch):
+    class WorkerContext:
+        rank = 1
+        size = 2
+        is_root = False
+
+        @staticmethod
+        def partition(size):
+            return range(0, size, 2)
+
+        @staticmethod
+        def allgather(value):
+            return [value]
+
+    cfg = load_config("examples/minimal.json")
+    meteo_path = tmp_path / "meteo.json"
+    spritzmet.run(cfg, meteo_path, "json")
+    monkeypatch.setattr(particles, "get_mpi_context", lambda parallel: WorkerContext())
+
+    def reject_writer(*args, **kwargs):
+        raise AssertionError("a worker rank attempted to open the NetCDF writer")
+
+    monkeypatch.setattr(particles, "DenseConcentrationWriter", reject_writer)
+    particles.simulate_particles(
+        cfg,
+        particles.read_meteorology(meteo_path),
+        parallel="mpi",
+        dense_output=tmp_path / "worker-must-not-write.nc",
+    )
+
+    assert not (tmp_path / "worker-must-not-write.nc").exists()
 
 
 def test_concentration_vertical_profile_plot(tmp_path):

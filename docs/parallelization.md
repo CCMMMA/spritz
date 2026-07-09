@@ -2,11 +2,11 @@
 
 ## Scientific Scope
 
-This document presents the parallelization schema for Sprtz. It separates scientific state from execution layout so parallel acceleration does not change model interpretation.
+This document presents the parallelization schema for Spritz. It separates scientific state from execution layout so parallel acceleration does not change model interpretation.
 
 Spritz uses an optional hierarchical parallelization layer designed for deterministic atmospheric-dispersion workflows on both laptops and HPC clusters. The same code path can run in serial mode, in automatic MPI mode, or in explicit MPI mode without changing the scenario configuration files. Backend selection can live in JSON `run.backend` or be overridden with `--backend`.
 
-The execution hierarchy is MPI ranks across nodes, rank-local shared-memory workers, and an optional NumPy/CuPy array backend inside each rank. GPU execution is requested with `--gpu-backend auto` or `--gpu-backend cupy`; CPU NumPy remains the default and always works without CUDA libraries.
+The execution hierarchy is MPI ranks across nodes, rank-local shared-memory workers, and an optional NumPy, CuPy/CUDA, or MLX/Metal array backend inside each rank. Accelerator execution is requested with `--gpu-backend auto`, `cupy`, or `mlx`; CPU NumPy remains the default.
 
 This document describes the production execution schema, how work is partitioned, which files are read and written by each rank, and how to run and validate parallel jobs.
 

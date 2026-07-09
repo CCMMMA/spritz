@@ -262,7 +262,7 @@ def build_meteorology(
     xxa = xp.asarray(local_xx)
     yya = xp.asarray(local_yy)
     local_shape = (row_stop - row_start, grid.nx)
-    u = xp.zeros(local_shape, dtype=float)
+    u = xp.zeros(local_shape)
     v = xp.zeros_like(u)
     temp = xp.zeros_like(u)
     mixh = xp.zeros_like(u)
@@ -273,11 +273,11 @@ def build_meteorology(
     if not config.stations:
         if ctx.is_root:
             LOGGER.info("SpritzMet: no stations supplied; using configured default fields")
-        u.fill(float(config.run.get("default_u", 2.0)))
-        v.fill(float(config.run.get("default_v", 0.0)))
-        temp.fill(float(config.run.get("default_temperature", 293.15)))
-        mixh.fill(float(config.run.get("default_mixing_height", 1000.0)))
-        precip.fill(default_precip)
+        u = xp.full(local_shape, float(config.run.get("default_u", 2.0)))
+        v = xp.full(local_shape, float(config.run.get("default_v", 0.0)))
+        temp = xp.full(local_shape, float(config.run.get("default_temperature", 293.15)))
+        mixh = xp.full(local_shape, float(config.run.get("default_mixing_height", 1000.0)))
+        precip = xp.full(local_shape, default_precip)
     else:
         if ctx.is_root:
             LOGGER.info("SpritzMet: applying inverse-distance station downscaling")
@@ -291,11 +291,12 @@ def build_meteorology(
             mixh += w * station.mixing_height
             precip += w * station.precipitation_rate
             weights += w
-        u = xp.divide(u, weights, out=xp.zeros_like(u), where=weights > 0)
-        v = xp.divide(v, weights, out=xp.zeros_like(v), where=weights > 0)
-        temp = xp.divide(temp, weights, out=xp.full_like(temp, 293.15), where=weights > 0)
-        mixh = xp.divide(mixh, weights, out=xp.full_like(mixh, 1000.0), where=weights > 0)
-        precip = xp.divide(precip, weights, out=xp.full_like(precip, default_precip), where=weights > 0)
+        safe_weights = xp.maximum(weights, 1.0e-30)
+        u = xp.where(weights > 0, u / safe_weights, 0.0)
+        v = xp.where(weights > 0, v / safe_weights, 0.0)
+        temp = xp.where(weights > 0, temp / safe_weights, 293.15)
+        mixh = xp.where(weights > 0, mixh / safe_weights, 1000.0)
+        precip = xp.where(weights > 0, precip / safe_weights, default_precip)
 
     u_local = np.asarray(gpu.asnumpy(u), dtype=float)
     v_local = np.asarray(gpu.asnumpy(v), dtype=float)

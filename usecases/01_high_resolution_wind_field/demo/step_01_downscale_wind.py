@@ -4,11 +4,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-CURRENT_DIR = Path(__file__).resolve().parent
-if str(CURRENT_DIR) not in sys.path:
-    sys.path.insert(0, str(CURRENT_DIR))
+COMMON_DIR = Path(__file__).resolve().parents[2] / "common"
+if str(COMMON_DIR) not in sys.path:
+    sys.path.insert(0, str(COMMON_DIR))
 
-from step_01_downscale_wind_impl import main
+from wind_downscaling_cli import main
 
 
 if __name__ == "__main__":

@@ -6,15 +6,8 @@ USECASE_DIR="$(cd "${PIPELINE_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${USECASE_DIR}/../.." && pwd)"
 SCRIPTS_DIR="${REPO_ROOT}/scripts"
 DATA_ROOT="${SPRTZ_DATA_ROOT:-${REPO_ROOT}/data}"
-USECASE_NAME="$(basename "${USECASE_DIR}")"
-OUT_DIR="${SPRTZ_OUTPUT_DIR:-${DATA_ROOT}/${USECASE_NAME}}"
-
-mkdir -p "${OUT_DIR}" "${OUT_DIR}/gaussian" "${OUT_DIR}/particles"
-cd "${REPO_ROOT}"
-
-log_step() {
-  printf '\n[%s] %s\n' "${USECASE_NAME}" "$1"
-}
+OUT_DIR="${SPRTZ_OUTPUT_DIR:-${DATA_ROOT}/output/wildfire_case}"
+PYTHON="${PYTHON:-python3}"
 
 NX="${NX:-31}"
 NY="${NY:-31}"
@@ -30,22 +23,27 @@ SOURCE_X_M="${SOURCE_X_M:-1500.0}"
 SOURCE_Y_M="${SOURCE_Y_M:-1500.0}"
 SOURCE_HEIGHT_M="${SOURCE_HEIGHT_M:-10.0}"
 PARTICLE_SEED="${PARTICLE_SEED:-1234}"
+OUTPUT_INTERVAL_S="${OUTPUT_INTERVAL_S:-3600}"
 
-CONFIG_PATH="${OUT_DIR}/wildfire_arson_effects_config.json"
+CONFIG_PATH="${OUT_DIR}/wildfire_event.json"
 METEO_PATH="${OUT_DIR}/meteo.nc"
-GAUSSIAN_CONC="${OUT_DIR}/gaussian/concentration.nc"
-PARTICLE_CONC="${OUT_DIR}/particles/concentration.nc"
+GAUSSIAN_DIR="${OUT_DIR}/model_compare/gaussian"
+PARTICLE_DIR="${OUT_DIR}/model_compare/particles"
+GAUSSIAN_CONC="${GAUSSIAN_DIR}/concentration.nc"
+PARTICLE_CONC="${PARTICLE_DIR}/concentration.nc"
 FIGURE_DIR="${OUT_DIR}/figures"
-MPLCONFIGDIR="${MPLCONFIGDIR:-${OUT_DIR}/.matplotlib}"
-XDG_CACHE_HOME="${XDG_CACHE_HOME:-${OUT_DIR}/.cache}"
 
-mkdir -p "${FIGURE_DIR}" "${MPLCONFIGDIR}" "${XDG_CACHE_HOME}"
-export MPLCONFIGDIR XDG_CACHE_HOME
+mkdir -p "${GAUSSIAN_DIR}" "${PARTICLE_DIR}" "${FIGURE_DIR}"
+cd "${REPO_ROOT}"
 
-log_step "1. Runtime environment diagnostic"
-python3 "${SCRIPTS_DIR}/sprtz_doctor.py"
+log_step() {
+  printf '\n[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$1"
+}
 
-log_step "2. Wildfire/arson configuration synthesis"
+log_step "1/9 Runtime environment diagnostic"
+"${PYTHON}" "${SCRIPTS_DIR}/sprtz_doctor.py"
+
+log_step "2/9 Build the deterministic wildfire screening configuration"
 cat > "${CONFIG_PATH}" <<JSON
 {
   "grid": {
@@ -104,36 +102,46 @@ cat > "${CONFIG_PATH}" <<JSON
     "particle_advection_steps": 20,
     "preferred_interchange": "NetCDF-CF",
     "precipitation_washout": true,
-    "output_interval_s": 3600.0
+    "output_interval_s": ${OUTPUT_INTERVAL_S}
   }
 }
 JSON
 
-log_step "3. Public configuration validation"
-python3 "${SCRIPTS_DIR}/sprtz.py" validate "${CONFIG_PATH}"
+log_step "3/9 Validate the public Sprtz configuration"
+"${PYTHON}" "${SCRIPTS_DIR}/sprtz.py" validate "${CONFIG_PATH}"
 
-log_step "4. SpritzMet meteorological interpolation"
-python3 "${SCRIPTS_DIR}/spritzmet.py" --config "${CONFIG_PATH}" --output "${METEO_PATH}" --format netcdf
+log_step "4/9 Generate SpritzMet meteorology"
+"${PYTHON}" "${SCRIPTS_DIR}/spritzmet.py" \
+  --config "${CONFIG_PATH}" --output "${METEO_PATH}" --format netcdf
 
-log_step "5. Gaussian dispersion simulation"
-python3 "${SCRIPTS_DIR}/spritz.py" --config "${CONFIG_PATH}" --meteo "${METEO_PATH}" --output "${GAUSSIAN_CONC}" --format netcdf --backend gaussian --output-interval 3600
+log_step "5/9 Run Gaussian dispersion"
+"${PYTHON}" "${SCRIPTS_DIR}/spritz.py" \
+  --config "${CONFIG_PATH}" --meteo "${METEO_PATH}" \
+  --output "${GAUSSIAN_CONC}" --format netcdf --backend gaussian \
+  --output-interval "${OUTPUT_INTERVAL_S}"
 
-log_step "6. Particle dispersion simulation"
-python3 "${SCRIPTS_DIR}/spritz.py" --config "${CONFIG_PATH}" --meteo "${METEO_PATH}" --output "${PARTICLE_CONC}" --format netcdf --backend particles --seed "${PARTICLE_SEED}" --output-interval 3600
+log_step "6/9 Run particle dispersion"
+"${PYTHON}" "${SCRIPTS_DIR}/spritz.py" \
+  --config "${CONFIG_PATH}" --meteo "${METEO_PATH}" \
+  --output "${PARTICLE_CONC}" --format netcdf --backend particles \
+  --seed "${PARTICLE_SEED}" --output-interval "${OUTPUT_INTERVAL_S}"
 
-log_step "7. Gaussian SpritzPost summary generation"
-python3 "${SCRIPTS_DIR}/spritzpost.py" --input "${GAUSSIAN_CONC}" --output "${OUT_DIR}/gaussian/post.json"
+log_step "7/9 Postprocess Gaussian output"
+"${PYTHON}" "${SCRIPTS_DIR}/spritzpost.py" \
+  --input "${GAUSSIAN_CONC}" --output "${GAUSSIAN_DIR}/post.json"
 
-log_step "8. Particle SpritzPost summary generation"
-python3 "${SCRIPTS_DIR}/spritzpost.py" --input "${PARTICLE_CONC}" --output "${OUT_DIR}/particles/post.json"
+log_step "8/9 Postprocess particle output"
+"${PYTHON}" "${SCRIPTS_DIR}/spritzpost.py" \
+  --input "${PARTICLE_CONC}" --output "${PARTICLE_DIR}/post.json"
 
-log_step "9. Publication-ready 2-D concentration map"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" "${GAUSSIAN_CONC}" --output "${FIGURE_DIR}/gaussian_concentration_map.png" --variable concentration_field --title "Wildfire/Arson Gaussian Concentration" --dpi 600 --level-index 1 --vector-density 18
-
-log_step "10. Publication-ready vertical concentration profile"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" "${GAUSSIAN_CONC}" --output "${FIGURE_DIR}/gaussian_concentration_profile.png" --variable concentration_field --x "${SOURCE_X_M}" --y "${SOURCE_Y_M}" --title "Wildfire/Arson Concentration Profile" --config "${CONFIG_PATH}" --dpi 600
-
-log_step "11. Publication-ready 3-D concentration surface"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" "${GAUSSIAN_CONC}" --output "${FIGURE_DIR}/gaussian_concentration_3d.png" --variable concentration_field --title "Wildfire/Arson Concentration Field" --config "${CONFIG_PATH}" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
+log_step "9/9 Render backend concentration figures"
+"${PYTHON}" "${SCRIPTS_DIR}/sprtz_plot.py" \
+  --input "${GAUSSIAN_CONC}" \
+  --output "${FIGURE_DIR}/gaussian_concentration.png" \
+  --title "Wildfire/Arson Gaussian Concentration" --dpi 300
+"${PYTHON}" "${SCRIPTS_DIR}/sprtz_plot.py" \
+  --input "${PARTICLE_CONC}" \
+  --output "${FIGURE_DIR}/particle_concentration.png" \
+  --title "Wildfire/Arson Particle Concentration" --dpi 300
 
 log_step "Pipeline complete: ${OUT_DIR}"

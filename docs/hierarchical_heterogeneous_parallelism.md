@@ -2,7 +2,7 @@
 
 ## Scientific Scope
 
-Sprtz supports a conservative hierarchical execution model for atmospheric dispersion, meteorology, and fire-spread workflows. Serial execution remains the reference path. MPI, shared-memory workers, and CUDA/CuPy are optional acceleration layers that must preserve deterministic scientific semantics.
+Spritz supports a conservative hierarchical execution model for atmospheric dispersion, meteorology, and fire-spread workflows. Serial execution remains the reference path. MPI, shared-memory workers, CUDA/CuPy, and Apple Silicon MLX/Metal are optional acceleration layers that must preserve deterministic scientific semantics.
 
 The hierarchy is:
 
@@ -20,7 +20,7 @@ Workflow and model commands accept these execution controls where applicable:
 --parallel serial|auto|mpi
 --thread-backend serial|threads|processes|auto
 --threads-per-rank N
---gpu-backend numpy|auto|cupy|cuda
+--gpu-backend numpy|auto|cupy|cuda|mlx|metal
 --decomposition auto|rows|tiles|receptors|sources|particles|realizations|source-particle-auto|source-receptor-2d
 ```
 

@@ -40,9 +40,9 @@ def _config_parser(description: str) -> argparse.ArgumentParser:
 def _add_gpu_backend(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--gpu-backend",
-        choices=["numpy", "auto", "cupy", "cuda"],
+        choices=["numpy", "auto", "cupy", "cuda", "mlx", "metal"],
         default=None,
-        help="optional array accelerator backend; cupy requires CUDA",
+        help="optional array accelerator backend; CuPy uses CUDA and MLX uses Apple Metal",
     )
 
 

@@ -9,6 +9,6 @@ from __future__ import annotations
 def build_workflow(task):
     """Return Dagonstar-compatible tasks for this use case."""
     t1 = task("step_01", "python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py")
-    t2 = task("step_02", "python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind_impl.py")
+    t2 = task("step_02", "python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py")
     t1 >> t2
     return [value for key, value in sorted(locals().items()) if key.startswith("t")]

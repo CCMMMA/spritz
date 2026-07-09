@@ -10,6 +10,7 @@ from pathlib import Path
 from sprtz.workflow import run_workflow
 from sprtz.io.jsonio import read_json, write_json
 from sprtz.logging import configure_logging
+from sprtz.parallel import get_parallel_context
 
 USECASES_ROOT = Path(__file__).resolve().parents[2]
 COMMON_DIR = USECASES_ROOT / "common"
@@ -188,7 +189,7 @@ def _run_workflow_with_performance_log(
     gpu_backend: str,
     decomposition: str,
 ) -> dict:
-    LOGGER.info("step 3/3 workflow: running Sprtz workflow backend=%s", backend)
+    LOGGER.info("step 3/3 workflow: running Spritz workflow backend=%s", backend)
     started = time.perf_counter()
 
     def _log_concentration_progress(index: int, output_time_s: float) -> None:
@@ -244,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--parallel", choices=["serial", "auto", "mpi"], default="serial", help="parallel execution mode")
     parser.add_argument("--thread-backend", choices=["serial", "threads", "processes", "auto"], default="serial", help="rank-local shared-memory backend")
     parser.add_argument("--threads-per-rank", type=int, default=None, help="rank-local worker count")
-    parser.add_argument("--gpu-backend", choices=["numpy", "auto", "cupy", "cuda"], default="numpy", help="optional array accelerator backend")
+    parser.add_argument("--gpu-backend", choices=["numpy", "auto", "cupy", "cuda", "mlx", "metal"], default="numpy", help="optional array accelerator backend")
     parser.add_argument(
         "--decomposition",
         choices=["auto", "rows", "tiles", "receptors", "sources", "particles", "realizations"],
@@ -267,6 +268,20 @@ def main(argv: list[str] | None = None) -> int:
         args.gpu_backend,
         args.decomposition,
     )
+    parallel_context = get_parallel_context(
+        args.parallel,
+        args.thread_backend,
+        args.threads_per_rank,
+        args.gpu_backend,
+    )
+    if parallel_context.is_root:
+        LOGGER.info(
+            "step 3/3 accelerator: requested_gpu_backend=%s resolved_gpu_backend=%s gpu_device_id=%s mpi_size=%d",
+            args.gpu_backend,
+            parallel_context.gpu.backend,
+            parallel_context.gpu.device_id if parallel_context.gpu.enabled else "none",
+            parallel_context.mpi.size,
+        )
     upgraded = ensure_wildfire_receptor_coordinates(args.config)
     if upgraded:
         LOGGER.info("step 3/3 config: added receptor latitude/longitude coordinates to %s", args.config)

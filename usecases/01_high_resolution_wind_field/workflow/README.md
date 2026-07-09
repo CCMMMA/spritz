@@ -14,7 +14,7 @@ aligned with the maintained operational wrapper.
 
 The workflow requires one input:
 
-- `repo_root`: a CWL `Directory` pointing at the Sprtz repository checkout.
+- `repo_root`: a CWL `Directory` pointing at the Spritz repository checkout.
 
 Optional inputs mirror the environment variables accepted by `pipeline.sh`:
 
@@ -49,7 +49,7 @@ Run from this directory with a CWL runner such as `cwltool`:
 cwltool workflow.cwl job.yml
 ```
 
-The command must run in an environment where the Sprtz package, optional
+The command must run in an environment where the Spritz package, optional
 NetCDF/visualization dependencies, downloader requirements, and command-line
 tools used by `pipeline.sh` are available.
 

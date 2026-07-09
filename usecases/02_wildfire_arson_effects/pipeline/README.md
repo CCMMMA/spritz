@@ -1,151 +1,133 @@
-# Wildfire Arson Effects Pipeline
+# Use case 02 — Wildfire/arson scripts-only pipeline
 
-## Scientific Purpose
+This pipeline provides a deterministic, self-contained wildfire smoke
+screening run using only public command wrappers in the repository-level
+`scripts/` directory. Bash writes the scenario JSON; Spritz scripts validate
+it, interpolate synthetic meteorology, run Gaussian and particle dispersion,
+postprocess both results, and render figures.
 
-This pipeline implements a deterministic wildfire/arson smoke-dispersion scenario using only externally invocable Sprtz wrappers from the repository-level `scripts/` directory plus publication rendering tools from `tools/`. The workflow synthesizes a normal Sprtz JSON configuration, validates it, generates meteorology, runs Gaussian and particle dispersion backends, postprocesses both concentration products, and renders publication-ready figures from the Gaussian concentration field.
+This is intentionally different from the WRF-driven workflow in
+[`../demo/README.md`](../demo/README.md). The demo is the appropriate workflow
+for incident-specific WRF forcing, terrain-aware downscaling, geographic fire
+locations, and backend comparison metrics.
 
-The use case is intentionally clean-room and didactic. It demonstrates how a workflow engine can decompose a scenario into explicit command-line tasks without importing package internals.
+## Run
 
-## Operational Contract
-
-Run from the repository root, or from any other working directory:
+From the repository root or any other working directory:
 
 ```bash
 bash usecases/02_wildfire_arson_effects/pipeline/pipeline.sh
 ```
 
-The script resolves the repository root from its own location. Products are written under `data/02_wildfire_arson_effects/` by default. Set `SPRTZ_DATA_ROOT` to change the data root, or set `SPRTZ_OUTPUT_DIR` to choose the exact output directory.
+The script resolves the repository root from its own location. Products are
+written to `data/output/wildfire_case/` by default.
 
-The script sets `MPLCONFIGDIR` to `${SPRTZ_OUTPUT_DIR}/.matplotlib` and `XDG_CACHE_HOME` to `${SPRTZ_OUTPUT_DIR}/.cache` by default so rendering tasks can build font and style caches in workflow-writable locations. Override these variables when the workflow engine provides shared rendering caches.
-
-## Parameters
-
-- `NX` defaults to `31`, the number of local-grid cells in the x direction.
-- `NY` defaults to `31`, the number of local-grid cells in the y direction.
-- `DX` defaults to `100`, the grid spacing in metres in the x direction.
-- `DY` defaults to `100`, the grid spacing in metres in the y direction.
-- `WIND_SPEED_M_S` defaults to `4.0`, the synthetic station wind speed.
-- `WIND_FROM_DIRECTION_DEG` defaults to `270.0`, the meteorological wind-from direction.
-- `TEMPERATURE_K` defaults to `298.0`, the station air temperature.
-- `MIXING_HEIGHT_M` defaults to `1000.0`, the diagnostic mixing height.
-- `PRECIPITATION_RATE_MM_H` defaults to `0.2`, the precipitation rate used by the meteorological field.
-- `EMISSION_RATE_G_S` defaults to `35.0`, the smoke emission rate.
-- `SOURCE_X_M` defaults to `1500.0`, the local x coordinate of the source.
-- `SOURCE_Y_M` defaults to `1500.0`, the local y coordinate of the source.
-- `SOURCE_HEIGHT_M` defaults to `10.0`, the release height above local ground.
-- `PARTICLE_SEED` defaults to `1234`, the deterministic particle-backend seed.
-
-All parameters may be overridden as shell environment variables.
-
-## Expected Products
-
-- `wildfire_arson_effects_config.json`: the generated scenario configuration.
-- `meteo.nc`: the SpritzMet meteorological field.
-- `gaussian/concentration.nc`: the Gaussian concentration product.
-- `particles/concentration.nc`: the particle concentration product.
-- `gaussian/post.json`: the Gaussian SpritzPost summary.
-- `particles/post.json`: the particle SpritzPost summary.
-- `figures/gaussian_concentration_map.png`: a publication-ready 2-D concentration map.
-- `figures/gaussian_concentration_profile.png`: a publication-ready vertical concentration profile.
-- `figures/gaussian_concentration_3d.png`: a publication-ready 3-D concentration surface.
-
-## Step-by-Step Method
-
-### Step 1: Runtime Environment Diagnostic
-
-The pipeline starts with `scripts/sprtz_doctor.py` to record the Python runtime, required numerical dependencies, and optional feature availability. This is a provenance step: later workflow analysis can distinguish scientific failures from missing optional rendering or NetCDF dependencies.
+The NetCDF and plotting stages require the corresponding optional dependencies
+from the `netcdf` and `viz` extras:
 
 ```bash
-python3 "${SCRIPTS_DIR}/sprtz_doctor.py"
+python3 -m pip install -e '.[netcdf,viz]'
 ```
 
-### Step 2: Wildfire/Arson Configuration Synthesis
+## Scenario
 
-The bash script writes a self-contained Sprtz JSON file into the output directory. The file defines a local grid, a deterministic upwind meteorological station, one smoke source, three receptors, field concentration output levels, Gaussian defaults, and particle-backend controls. This is scenario orchestration, not a private model API.
+The default scenario uses:
 
-### Step 3: Public Configuration Validation
+- a `31 × 31` local Cartesian grid with 100 m spacing;
+- one synthetic upwind station with 4 m/s wind from 270 degrees;
+- one generic area source at `(1500 m, 1500 m)`;
+- a 35 g/s emission rate and 10 m release height above local ground;
+- three explicit receptors;
+- concentration fields at 0, 10, 50, and 100 m;
+- Gaussian and particle backends using the same SpritzMet field;
+- a fixed particle seed of `1234`;
+- an hourly output interval.
 
-The generated scenario is validated through `scripts/sprtz.py validate`. This check ensures that the configuration is a valid public Sprtz input before the workflow spends time on meteorology, dispersion, and rendering.
+The pipeline performs no network access and does not ingest WRF, DEM, or
+land-cover data.
+
+## Configuration
+
+Set `SPRTZ_DATA_ROOT` to replace the repository-level `data/` root, or set
+`SPRTZ_OUTPUT_DIR` to select the exact output directory.
+
+All scenario settings may be overridden with environment variables:
+
+| Variable | Default | Meaning |
+| --- | ---: | --- |
+| `PYTHON` | `python3` | Python interpreter |
+| `NX`, `NY` | `31` | Local-grid dimensions |
+| `DX`, `DY` | `100` | Grid spacing in metres |
+| `WIND_SPEED_M_S` | `4.0` | Synthetic station wind speed |
+| `WIND_FROM_DIRECTION_DEG` | `270.0` | Meteorological wind-from direction |
+| `TEMPERATURE_K` | `298.0` | Station air temperature |
+| `MIXING_HEIGHT_M` | `1000.0` | Mixing height |
+| `PRECIPITATION_RATE_MM_H` | `0.2` | Precipitation rate |
+| `EMISSION_RATE_G_S` | `35.0` | Source emission rate |
+| `SOURCE_X_M`, `SOURCE_Y_M` | `1500.0` | Source coordinates |
+| `SOURCE_HEIGHT_M` | `10.0` | Release height above local ground |
+| `PARTICLE_SEED` | `1234` | Particle-backend random seed |
+| `OUTPUT_INTERVAL_S` | `3600` | Concentration output interval |
+
+For example:
 
 ```bash
-python3 "${SCRIPTS_DIR}/sprtz.py" validate "${CONFIG_PATH}"
+WIND_SPEED_M_S=6.5 \
+EMISSION_RATE_G_S=50 \
+SPRTZ_OUTPUT_DIR=data/output/wildfire_sensitivity \
+  bash usecases/02_wildfire_arson_effects/pipeline/pipeline.sh
 ```
 
-### Step 4: SpritzMet Meteorological Interpolation
+## Pipeline stages
 
-`scripts/spritzmet.py` converts the station meteorology into a gridded NetCDF-CF meteorological product. The meteorology file is made explicit so workflow engines can cache it, inspect it, or rerun only downstream tasks if dispersion settings change.
+1. `scripts/sprtz_doctor.py` reports runtime and optional-feature availability.
+2. Bash writes `wildfire_event.json`.
+3. `scripts/sprtz.py validate` validates the configuration.
+4. `scripts/spritzmet.py` writes the common NetCDF-CF meteorological field.
+5. `scripts/spritz.py` runs Gaussian dispersion.
+6. `scripts/spritz.py` runs particle dispersion with an explicit seed.
+7. `scripts/spritzpost.py` summarizes the Gaussian output.
+8. `scripts/spritzpost.py` summarizes the particle output.
+9. `scripts/sprtz_plot.py` renders one figure for each backend.
 
-```bash
-python3 "${SCRIPTS_DIR}/spritzmet.py" --config "${CONFIG_PATH}" --output "${METEO_PATH}" --format netcdf
+No Python module under `usecases/` and no program under `tools/` is invoked by
+the pipeline.
+
+## Products
+
+The output directory contains:
+
+```text
+wildfire_event.json
+meteo.nc
+model_compare/
+  gaussian/
+    concentration.nc
+    post.json
+  particles/
+    concentration.nc
+    post.json
+figures/
+  gaussian_concentration.png
+  particle_concentration.png
 ```
 
-### Step 5: Gaussian Dispersion Simulation
+The two concentration products share the same configuration and meteorological
+forcing. This scripts-only pipeline does not currently write the demo
+workflow's `particle_gaussian_comparison.json`; comparisons can be performed
+from the two NetCDF products.
 
-`scripts/spritz.py` runs the Gaussian backend with the prepared configuration and meteorology. The output is a gridded and receptor concentration product suitable for deterministic reporting and figure generation.
+## Scientific limitations
 
-```bash
-python3 "${SCRIPTS_DIR}/spritz.py" --config "${CONFIG_PATH}" --meteo "${METEO_PATH}" --output "${GAUSSIAN_CONC}" --format netcdf --backend gaussian --output-interval 3600
-```
-
-### Step 6: Particle Dispersion Simulation
-
-The particle backend is run as a separate command with an explicit seed. This keeps stochastic-style transport diagnostics reproducible while allowing the workflow to compare particle and Gaussian results under identical scenario and meteorological assumptions.
-
-```bash
-python3 "${SCRIPTS_DIR}/spritz.py" --config "${CONFIG_PATH}" --meteo "${METEO_PATH}" --output "${PARTICLE_CONC}" --format netcdf --backend particles --seed "${PARTICLE_SEED}" --output-interval 3600
-```
-
-### Step 7: Gaussian SpritzPost Summary
-
-The Gaussian concentration product is reduced to a structured postprocessing report. The postprocessor is intentionally separate from the dispersion kernel so thresholds, maxima, and ranked summaries remain auditable workflow artifacts.
-
-```bash
-python3 "${SCRIPTS_DIR}/spritzpost.py" --input "${GAUSSIAN_CONC}" --output "${OUT_DIR}/gaussian/post.json"
-```
-
-### Step 8: Particle SpritzPost Summary
-
-The particle concentration product receives the same explicit postprocessing treatment, allowing downstream analyses to compare summary statistics between backends.
-
-```bash
-python3 "${SCRIPTS_DIR}/spritzpost.py" --input "${PARTICLE_CONC}" --output "${OUT_DIR}/particles/post.json"
-```
-
-### Step 9: Publication-Ready 2-D Concentration Map
-
-`tools/render.py` renders a 600 DPI horizontal concentration map from the Gaussian concentration field. The non-interactive `Agg` backend and workflow-local Matplotlib cache make the step suitable for headless execution on batch or CI systems.
-
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" "${GAUSSIAN_CONC}" --output "${FIGURE_DIR}/gaussian_concentration_map.png" --variable concentration_field --title "Wildfire/Arson Gaussian Concentration" --dpi 600 --level-index 1 --vector-density 18
-```
-
-### Step 10: Publication-Ready Vertical Concentration Profile
-
-`tools/profiler.py` samples the concentration field at the source column and plots the vertical profile. The configuration is supplied so release-height annotations can be overlaid when supported by the renderer.
-
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" "${GAUSSIAN_CONC}" --output "${FIGURE_DIR}/gaussian_concentration_profile.png" --variable concentration_field --x "${SOURCE_X_M}" --y "${SOURCE_Y_M}" --title "Wildfire/Arson Concentration Profile" --config "${CONFIG_PATH}" --dpi 600
-```
-
-### Step 11: Publication-Ready 3-D Concentration Surface
-
-`tools/render3d.py` renders the Gaussian concentration field as a three-dimensional surface. The northeast camera preset and moderate vertical exaggeration are chosen for legibility while preserving deterministic workflow behavior.
-
-```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" "${GAUSSIAN_CONC}" --output "${FIGURE_DIR}/gaussian_concentration_3d.png" --variable concentration_field --title "Wildfire/Arson Concentration Field" --config "${CONFIG_PATH}" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
-```
-
-## Workflow-Engine Integration
-
-Every executable stage is a process-level command. A workflow engine can represent diagnostic, validation, meteorology, Gaussian dispersion, particle dispersion, postprocessing, and rendering as separate tasks with explicit inputs and outputs. The pipeline uses public command-line boundaries throughout, which makes retry, caching, resource assignment, and provenance capture straightforward.
-
-## Reproducibility Notes
-
-- The default meteorology, source, receptors, and particle seed are deterministic.
-- The script performs no hidden network access.
-- NetCDF is requested explicitly because it is the preferred Sprtz interchange format for gridded meteorology and concentration fields.
-- Operational data acquisition, incident-specific emissions estimation, or WRF ingestion must be added as explicit upstream workflow steps when needed.
+This is a clean-room teaching and screening scenario, not a certified
+fire-emission inventory or regulatory-equivalent model. Its single synthetic
+station is useful for deterministic software and workflow checks but does not
+represent real atmospheric structure. Operational assessment requires
+incident-specific fuel loading, combustion phase, plume-injection height,
+terrain, time-varying meteorology, observations, and independent validation.
 
 ## References
 
-No external bibliographic references are required for this workflow description. Scientific and numerical assumptions are documented in the Sprtz numerical-model, particle-model, and visualization documentation.
+No additional bibliographic references are required for this workflow
+description. Scientific assumptions and peer-reviewed references are maintained
+in the Spritz numerical-model and particle-model documentation.

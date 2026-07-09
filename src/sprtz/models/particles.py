@@ -69,38 +69,37 @@ def _particle_diffusivities(config: SuiteConfig, duration_s: float, legacy_sigma
 
 
 def _apply_vertical_boundary(
-    z: np.ndarray,
-    weights: np.ndarray,
+    z: Any,
+    weights: Any,
     *,
     ground_m: float | np.ndarray,
     top_m: float,
     ground_policy: str,
     top_policy: str,
-) -> tuple[np.ndarray, np.ndarray]:
+    xp: Any = np,
+) -> tuple[Any, Any]:
     """Apply deterministic vertical boundary handling to particle positions."""
-    bounded = np.asarray(z, dtype=float).copy()
-    mass = np.asarray(weights, dtype=float).copy()
-    ground = np.asarray(ground_m, dtype=float)
+    bounded = xp.asarray(z)
+    mass = xp.asarray(weights)
+    ground = xp.asarray(ground_m)
     if ground.ndim == 0:
-        ground = np.full_like(bounded, float(ground))
+        ground = xp.full_like(bounded, float(ground))
     else:
-        ground = np.broadcast_to(ground, bounded.shape)
-    top = np.maximum(float(top_m), ground + 1.0)
+        ground = xp.broadcast_to(ground, bounded.shape)
+    top = xp.maximum(float(top_m), ground + 1.0)
     below = bounded < ground
-    if np.any(below):
-        if ground_policy == "absorb_deposit":
-            mass[below] = 0.0
-            bounded[below] = ground[below]
-        else:
-            bounded[below] = ground[below] + (ground[below] - bounded[below])
+    if ground_policy == "absorb_deposit":
+        mass = xp.where(below, 0.0, mass)
+        bounded = xp.where(below, ground, bounded)
+    else:
+        bounded = xp.where(below, 2.0 * ground - bounded, bounded)
     above = bounded > top
-    if np.any(above):
-        if top_policy == "open":
-            mass[above] = 0.0
-            bounded[above] = top[above]
-        else:
-            bounded[above] = top[above] - (bounded[above] - top[above])
-            bounded = np.clip(bounded, ground, top)
+    if top_policy == "open":
+        mass = xp.where(above, 0.0, mass)
+        bounded = xp.where(above, top, bounded)
+    else:
+        bounded = xp.where(above, 2.0 * top - bounded, bounded)
+        bounded = xp.clip(bounded, ground, top)
     return bounded, mass
 
 
@@ -235,6 +234,12 @@ def simulate_particles(
     field_ids = {rec.id for rec in field_receptors}
     sampled_terrain = terrain_fields or {}
     point_receptors = tuple(rec for rec in receptors if rec.id not in field_ids)
+    ctx = get_mpi_context(parallel)
+    # Shared output belongs exclusively to rank 0.  Keep this guard here as
+    # well as in run() so direct simulate_particles() callers cannot make a
+    # worker rank create or modify the NetCDF dataset.
+    if dense_output is not None and not ctx.is_root:
+        dense_output = None
     if dense_output is not None:
         receptors = point_receptors
     grid = Grid(**asdict(config.grid))
@@ -256,7 +261,6 @@ def simulate_particles(
     )
     total_emission = sum(src.emission_rate for src in config.sources) or 1.0
 
-    ctx = get_mpi_context(parallel)
     gpu = get_gpu_context(gpu_backend or str(config.run.get("gpu_backend", "numpy")), rank=ctx.rank)
     xp = gpu.xp
     local_sources = [(i, config.sources[i]) for i in ctx.partition(len(config.sources))]
@@ -319,32 +323,39 @@ def simulate_particles(
             seed_i = base_seed + source_index * 1000003 + int(round(float(time_value) * 10.0))
             rng = np.random.default_rng(seed_i)
             count = max(1, int(round(n_particles * src.emission_rate / total_emission)))
-            if gpu.enabled:
+            if gpu.backend == "cupy":
                 grng = xp.random.default_rng(seed_i)
                 travel = grng.uniform(0.0, sample_window, count)
-                px = xp.full(count, src.x, dtype=float)
-                py = xp.full(count, src.y, dtype=float)
+                px = xp.full(count, src.x)
+                py = xp.full(count, src.y)
                 pz = source_ground_asl + release_height_agl + grng.normal(0.0, sigma_z, count)
+            elif gpu.backend == "mlx":
+                grng = None
+                travel = xp.asarray(rng.uniform(0.0, sample_window, count))
+                px = xp.full((count,), src.x)
+                py = xp.full((count,), src.y)
+                pz = source_ground_asl + release_height_agl + xp.asarray(rng.normal(0.0, sigma_z, count))
             else:
+                grng = None
                 travel = rng.uniform(0.0, sample_window, count)
                 px = np.full(count, src.x, dtype=float)
                 py = np.full(count, src.y, dtype=float)
                 pz = source_ground_asl + release_height_agl + rng.normal(0.0, sigma_z, count)
             if src.width > 0 or src.length > 0:
-                if gpu.enabled:
+                if gpu.backend == "cupy":
                     px += grng.uniform(-0.5 * src.length, 0.5 * src.length, count)
                     py += grng.uniform(-0.5 * src.width, 0.5 * src.width, count)
+                elif gpu.backend == "mlx":
+                    px += xp.asarray(rng.uniform(-0.5 * src.length, 0.5 * src.length, count))
+                    py += xp.asarray(rng.uniform(-0.5 * src.width, 0.5 * src.width, count))
                 else:
                     px += rng.uniform(-0.5 * src.length, 0.5 * src.length, count)
                     py += rng.uniform(-0.5 * src.width, 0.5 * src.width, count)
             if src.source_type.lower() == "flare":
                 pz += max(src.heat_release, 0.0) ** (1.0 / 3.0) * 0.01
-            travel_np = gpu.asnumpy(travel) if gpu.enabled else travel
-            px_np = gpu.asnumpy(px) if gpu.enabled else px
-            py_np = gpu.asnumpy(py) if gpu.enabled else py
-            pz_np = gpu.asnumpy(pz) if gpu.enabled else pz
-            release_time = np.maximum(float(time_value) - travel_np, 0.0)
-            step_dt = travel_np / float(advection_steps)
+            release_time = xp.maximum(float(time_value) - travel, 0.0)
+            step_dt = travel / float(advection_steps)
+            travel_host = gpu.asnumpy(travel)
             plume_u, plume_v, plume_speed = wind_sampler.vector(
                 src.x,
                 src.y,
@@ -352,7 +363,7 @@ def simulate_particles(
                 max(float(time_value), 0.0),
             )
             del plume_u, plume_v
-            plume_distances = np.maximum(plume_speed * np.maximum(travel_np, 1.0), 1.0)
+            plume_distances = np.maximum(plume_speed * np.maximum(travel_host, 1.0), 1.0)
             plume_heights = _particle_effective_release_heights(
                 src,
                 source_ground_asl=source_ground_asl,
@@ -362,43 +373,58 @@ def simulate_particles(
                 ambient_temperature=ambient_temperature,
                 downwash=bool(config.run.get("stack_tip_downwash", True)),
             )
-            pz_np += plume_heights - (source_ground_asl + release_height_agl)
-            boundary_weights = np.ones(count, dtype=float)
+            pz += xp.asarray(plume_heights) - (source_ground_asl + release_height_agl)
+            boundary_weights = xp.ones(count)
             for step in range(advection_steps):
                 current_time = release_time + (step + 0.5) * step_dt
                 u_step, v_step = wind_sampler.sample(
-                    px_np,
-                    py_np,
-                    pz_np,
-                    current_time,
+                    gpu.asnumpy(px),
+                    gpu.asnumpy(py),
+                    gpu.asnumpy(pz),
+                    gpu.asnumpy(current_time),
                 )
-                px_np = px_np + u_step * step_dt + rng.normal(0.0, random_walk_std_from_k(kx, step_dt), count)
-                py_np = py_np + v_step * step_dt + rng.normal(0.0, random_walk_std_from_k(ky, step_dt), count)
-                pz_np = pz_np + rng.normal(0.0, random_walk_std_from_k(kz, step_dt), count)
+                if gpu.backend == "cupy":
+                    dx_random = grng.normal(0.0, xp.sqrt(2.0 * kx * step_dt), count)
+                    dy_random = grng.normal(0.0, xp.sqrt(2.0 * ky * step_dt), count)
+                    dz_random = grng.normal(0.0, xp.sqrt(2.0 * kz * step_dt), count)
+                else:
+                    step_dt_host = gpu.asnumpy(step_dt)
+                    dx_random = xp.asarray(rng.normal(0.0, np.sqrt(2.0 * kx * step_dt_host), count))
+                    dy_random = xp.asarray(rng.normal(0.0, np.sqrt(2.0 * ky * step_dt_host), count))
+                    dz_random = xp.asarray(rng.normal(0.0, np.sqrt(2.0 * kz * step_dt_host), count))
+                px = px + xp.asarray(u_step) * step_dt + dx_random
+                py = py + xp.asarray(v_step) * step_dt + dy_random
+                pz = pz + dz_random
                 if src.settling_velocity > 0.0:
-                    pz_np = pz_np - float(src.settling_velocity) * step_dt
-                pz_np, _boundary_mass = _apply_vertical_boundary(
-                    pz_np,
-                    np.ones(count, dtype=float),
+                    pz = pz - float(src.settling_velocity) * step_dt
+                pz, _boundary_mass = _apply_vertical_boundary(
+                    pz,
+                    xp.ones(count),
                     ground_m=0.0,
                     top_m=top_m,
                     ground_policy=vertical_boundary,
                     top_policy=top_boundary,
+                    xp=xp,
                 )
                 boundary_weights *= _boundary_mass
             loss_rate = max(src.decay_rate, 0.0) + max(src.wet_scavenging, 0.0) + washout_rate
             loss_rate += max(src.deposition_velocity + src.settling_velocity, 0.0) / max(
                 sigma_z * 10.0, 1.0
             )
-            weights_np = np.asarray(exponential_loss_factor(loss_rate, travel_np), dtype=float) * boundary_weights
-            pz_np, weights_np = _apply_vertical_boundary(
-                pz_np,
-                weights_np,
+            weights = xp.exp(-loss_rate * travel) * boundary_weights
+            pz, weights = _apply_vertical_boundary(
+                pz,
+                weights,
                 ground_m=0.0,
                 top_m=top_m,
                 ground_policy=vertical_boundary,
                 top_policy=top_boundary,
+                xp=xp,
             )
+            px_np = gpu.asnumpy(px)
+            py_np = gpu.asnumpy(py)
+            pz_np = gpu.asnumpy(pz)
+            weights_np = gpu.asnumpy(weights)
             particle_mass = src.emission_rate * sample_window / count
             point_volume = max(np.pi * receptor_radius**2 * max(sigma_z, 1.0), 1.0)
             for rec in point_receptors:

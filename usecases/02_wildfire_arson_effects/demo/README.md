@@ -37,7 +37,7 @@ Prepare WRF forcing before the run:
 
 ```bash
 tools/meteouniparthenope-wrf-download.py 20240731Z1000 \
-  --hours 120 \
+  --hours 24 \
   --domain d03 \
   --data-root data/wrf/d03
 ```
@@ -54,7 +54,7 @@ python3 tools/copernicus-cop30-dem-download.py \
   --dx 100 \
   --dy 100 \
   --buffer-m 5000 \
-  --output data/dem/cop30_wildfire_case.tif
+  --output data/output/wildfire_case/dem/cop30_wildfire_case.tif
 
 python3 tools/copernicus-lc100-download.py \
   --center-lat 40.827 \
@@ -64,7 +64,7 @@ python3 tools/copernicus-lc100-download.py \
   --dx 100 \
   --dy 100 \
   --buffer-m 5000 \
-  --output data/landcover/lc100_wildfire_case.tif
+  --output data/output/wildfire_case/landcover/lc100_wildfire_case.tif
 ```
 
 These commands compute the WGS84 download bounds from the exact `201 x 201`,
@@ -86,10 +86,10 @@ sprtz-terrain fetch \
   --ny 201 \
   --dx 100 \
   --dy 100 \
-  --dem data/dem/cop30_wildfire_case.tif \
-  --landuse data/landcover/lc100_wildfire_case.tif \
+  --dem data/output/wildfire_case/dem/cop30_wildfire_case.tif \
+  --landuse data/output/wildfire_case/landcover/lc100_wildfire_case.tif \
   --landuse-mapping copernicus-lc100 \
-  --cache-dir output/terrain-cache \
+  --cache-dir data/output/wildfire_case/terrain-cache \
   --output data/output/wildfire_case/geo.nc
 ```
 
@@ -98,7 +98,7 @@ sprtz-terrain fetch \
 ```bash
 python usecases/02_wildfire_arson_effects/demo/step_01_downscale_wind.py \
   --date 20240731Z1000 \
-  --hours 120 \
+  --hours 24 \
   --download-dir data/wrf/d03 \
   --output data/output/wildfire_case/wrf_100m_wind.nc \
   --center-lat 40.827 \
@@ -107,8 +107,8 @@ python usecases/02_wildfire_arson_effects/demo/step_01_downscale_wind.py \
   --ny 201 \
   --dx 100 \
   --dy 100 \
-  --dem data/dem/cop30_wildfire_case.tif \
-  --land-cover data/landcover/lc100_wildfire_case.tif
+  --dem data/output/wildfire_case/dem/cop30_wildfire_case.tif \
+  --land-cover data/output/wildfire_case/landcover/lc100_wildfire_case.tif
 ```
 ## Step 2: Build the fire configuration
 
@@ -123,7 +123,7 @@ python usecases/02_wildfire_arson_effects/demo/step_02_build_config.py \
   --dy 100 \
   --material plastic \
   --start 20240731Z1000 \
-  --end 20240803Z0000 \
+  --end 20240801Z1000 \
   --duration-s 86400 \
   --area-m2 2500 \
   --field-z-levels 2.5,5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,125,150,175,200,250,300,350,400,450,500,600,700,800,900,1000,1250,1500,1750,2000
@@ -153,8 +153,14 @@ run.
 ```bash
 python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py \
   --config data/output/wildfire_case/wildfire_event.json \
-  --output-dir data/output/wildfire_case/model_compare \
-  --backend both \
+  --output-dir data/output/wildfire_case/model_compare/particles \
+  --backend particles \
+  --interchange netcdf
+
+python usecases/02_wildfire_arson_effects/demo/step_03_run_model.py \
+  --config data/output/wildfire_case/wildfire_event.json \
+  --output-dir data/output/wildfire_case/model_compare/gaussian \
+  --backend gaussian \
   --interchange netcdf
 ```
 
@@ -200,14 +206,16 @@ python tools/plotter.py data/output/wildfire_case/model_compare/particles/concen
   --variable concentration_field \
   --center-lat 40.825 \
   --center-lon 14.52 \
-  --time-index 0 \
+  --time-index 12 \
+  --level-index 15 \
   --output data/output/wildfire_case/model_compare/particles/particles_concentration_map.png
   
 python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
   --variable concentration_field \
   --center-lat 40.825 \
   --center-lon 14.52 \
-  --time-index 0 \
+  --time-index 12 \
+  --level-index 15 \
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_map.png
 ```
 
@@ -219,7 +227,7 @@ python tools/plotter.py data/output/wildfire_case/model_compare/particles/concen
   --variable concentration_field \
   --center-lat 40.825 \
   --center-lon 14.52 \
-  --level-index 0 \
+  --level-index 15 \
   --animate \
   --frame-duration-ms 300 \
   --gif-loop 0 \
@@ -229,7 +237,7 @@ python tools/plotter.py data/output/wildfire_case/model_compare/gaussian/concent
   --variable concentration_field \
   --center-lat 40.825 \
   --center-lon 14.52 \
-  --level-index 0 \
+  --level-index 15 \
   --animate \
   --frame-duration-ms 300 \
   --gif-loop 0 \

@@ -1,8 +1,8 @@
-# Sprtz Documentation Corpus
+# Spritz Documentation Corpus
 
 ## Scientific Scope
 
-This directory is the top-level documentation corpus for Sprtz. It organizes clean-room atmospheric dispersion, meteorological downscaling, terrain preprocessing, wildfire front modeling, NetCDF-CF interchange, visualization, validation, and high-performance execution guidance as a reproducible scientific software record. The documents are descriptive and methodological; they do not assert regulatory equivalence without external validation.
+This directory is the top-level documentation corpus for Spritz. It organizes clean-room atmospheric dispersion, meteorological downscaling, terrain preprocessing, wildfire front modeling, NetCDF-CF interchange, visualization, validation, and high-performance execution guidance as a reproducible scientific software record. The documents are descriptive and methodological; they do not assert regulatory equivalence without external validation.
 
 ## Reading Guide
 

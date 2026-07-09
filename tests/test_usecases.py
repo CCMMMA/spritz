@@ -1081,7 +1081,7 @@ def test_high_resolution_wind_vertical_level_preset_points_to_config() -> None:
 
 def test_wildfire_wind_step_accepts_field_z_levels() -> None:
     _load_usecase_step("02_wildfire_arson_effects", "step_01_downscale_wind.py")
-    impl = importlib.import_module("step_01_downscale_wind_impl")
+    impl = importlib.import_module("wind_downscaling_cli")
     parser = impl.build_parser()
     args = parser.parse_args(
         [
@@ -1093,6 +1093,24 @@ def test_wildfire_wind_step_accepts_field_z_levels() -> None:
     )
 
     assert impl._parse_vertical_levels_m(args.field_z_levels) == [2.5, 5.0, 10.0, 20.0]
+
+
+def test_wind_downscaling_result_supports_wildfire_component(tmp_path: Path) -> None:
+    module = _load_usecase_step("01_high_resolution_wind_field", "step_01_downscale_wind_impl.py")
+    result = module.WindDownscalingResult(
+        tmp_path / "wind.nc",
+        3,
+        3,
+        100.0,
+        100.0,
+        40.827,
+        14.518,
+        "wrf.nc",
+        "NetCDF-CF",
+        component="usecase.02_wildfire_arson_effects",
+    )
+
+    assert result.as_dict()["component"] == "usecase.02_wildfire_arson_effects"
 
 
 def test_high_resolution_wind_step_rejects_removed_vertical_levels_flag() -> None:

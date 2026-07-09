@@ -1,4 +1,4 @@
-# Core runtime dependencies for Sprtz.
+# Core runtime dependencies for Spritz.
 # Script-facing date-time arguments use the standard-library UTC format
 # YYYYMMDDZhhmm; no extra date parser dependency is required.
 # Install with:
