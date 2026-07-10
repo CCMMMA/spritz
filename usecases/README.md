@@ -184,7 +184,7 @@ projection to the download helpers and to `sprtz-terrain fetch`; keep
 `--buffer-m` positive so the downloaded DEM and land-cover rasters extend beyond
 the model-domain edge.
 
-Before a use case calls `tools/render3d.py --terrain .../geo.nc`, build that
+Before a use case calls `tools/plotter.py render3d --terrain .../geo.nc`, build that
 GEO file from the same DEM and land-cover rasters and with the same grid center,
 spacing, and node count used by the model product:
 
@@ -205,7 +205,7 @@ sprtz-terrain fetch \
 
 Use-case scripts plot NetCDF intermediate and final products with
 `tools/plotter.py` whenever a plottable NetCDF is produced. Workflows with
-three-dimensional plume outputs also call `tools/render3d.py` to render the
+three-dimensional plume outputs also call `tools/plotter.py render3d` to render the
 plume above a DEM-shaped ground surface. The 3-D renderer colors the ground with
 a terrain elevation scale by default, can use land-cover classes with
 `--ground-color land-cover`, and accepts `--vertical-exaggeration N` with

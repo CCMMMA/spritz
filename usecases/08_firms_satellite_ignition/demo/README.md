@@ -71,7 +71,7 @@ With a matching terrain/GEO NetCDF, render the ignition-driven fire surface in
 3-D over DEM and land-cover context:
 
 ```bash
-python tools/render3d.py output_firms/firefront.nc \
+python tools/plotter.py render3d output_firms/firefront.nc \
   --variable fire_probability \
   --terrain output_firms/geo.nc \
   --mode surface \

@@ -73,7 +73,7 @@ With a matching terrain/GEO NetCDF, render the ignition-likelihood surface over
 DEM-shaped, terrain-colored ground:
 
 ```bash
-python tools/render3d.py output_backward_fire/ignition_likelihood.nc \
+python tools/plotter.py render3d output_backward_fire/ignition_likelihood.nc \
   --variable ignition_likelihood \
   --terrain output_backward_fire/geo.nc \
   --mode surface \

@@ -152,7 +152,7 @@ For a 3-D wind-volume view above DEM-shaped terrain, render the same NetCDF
 with the forecast GEO product:
 
 ```bash
-python tools/render3d.py output/sailing/bay_of_naples_forecast.nc \
+python tools/plotter.py render3d output/sailing/bay_of_naples_forecast.nc \
   --variable wind_speed \
   --time-index 0 \
   --terrain output/sailing/geo.nc \

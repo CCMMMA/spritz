@@ -75,7 +75,7 @@ For three-dimensional smoke inspection, render the plume above the DEM/LC
 terrain surface:
 
 ```bash
-python tools/render3d.py output_fire_smoke/concentration.nc \
+python tools/plotter.py render3d output_fire_smoke/concentration.nc \
   --variable concentration_field \
   --terrain output_fire_smoke/geo.nc \
   --mode surface \

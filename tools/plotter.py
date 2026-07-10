@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot publication-ready maps from Sprtz NetCDF products.
+"""Plot publication-ready maps, profiles, and 3-D views from Sprtz NetCDF products.
 
 The tool is intentionally optional-dependency friendly: it requires netCDF4 and
 matplotlib for plotting, uses Cartopy for coastlines when installed, and never
@@ -13,6 +13,7 @@ import logging
 import math
 import ast
 import json
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,7 @@ import numpy as np
 from sprtz.logging import LOG_DATE_FORMAT, LOG_FORMAT_VERBOSE
 
 LOGGER = logging.getLogger("sprtz.plotter")
+PLOTTER_MODES = ("map", "profile", "profiler", "render3d", "3d")
 
 LATITUDE_NAMES = ("field_latitude", "latitude", "lat", "XLAT", "XLAT_M")
 LONGITUDE_NAMES = ("field_longitude", "longitude", "lon", "long", "lng", "XLONG", "XLONG_M")
@@ -1419,7 +1421,10 @@ def plot_animation(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Plot publication-ready maps from Sprtz NetCDF-CF products."
+        description=(
+            "Plot publication-ready Sprtz NetCDF-CF products. The default mode is "
+            "map; use 'profile' for vertical profiles or 'render3d' for 3-D views."
+        )
     )
     parser.add_argument("input", help="input NetCDF file produced by a Sprtz module")
     parser.add_argument("-o", "--output", required=True, help="output figure path, e.g. map.png, map.pdf, or map.gif")
@@ -1469,7 +1474,57 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _delegate_main(module_name: str, argv: Sequence[str]) -> int:
+    try:
+        module = __import__(f"tools.{module_name}", fromlist=["main"])
+    except ModuleNotFoundError:
+        module = __import__(module_name, fromlist=["main"])
+    return int(module.main(argv))
+
+
+def _tool_module(module_name: str) -> Any:
+    try:
+        return __import__(f"tools.{module_name}", fromlist=["*"])
+    except ModuleNotFoundError:
+        return __import__(module_name, fromlist=["*"])
+
+
+def read_profile_data(*args: Any, **kwargs: Any) -> Any:
+    return _tool_module("profiler").read_profile_data(*args, **kwargs)
+
+
+def plot_profile(*args: Any, **kwargs: Any) -> Any:
+    return _tool_module("profiler").plot_profile(*args, **kwargs)
+
+
+def plot_profile_animation(*args: Any, **kwargs: Any) -> Any:
+    return _tool_module("profiler").plot_profile_animation(*args, **kwargs)
+
+
+def read_volume_field(*args: Any, **kwargs: Any) -> Any:
+    return _tool_module("render3d").read_volume_field(*args, **kwargs)
+
+
+def read_terrain_field(*args: Any, **kwargs: Any) -> Any:
+    return _tool_module("render3d").read_terrain_field(*args, **kwargs)
+
+
+def read_wind_vector_components(*args: Any, **kwargs: Any) -> Any:
+    return _tool_module("render3d").read_wind_vector_components(*args, **kwargs)
+
+
+def plot_volume(*args: Any, **kwargs: Any) -> Any:
+    return _tool_module("render3d").plot_volume(*args, **kwargs)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"profile", "profiler"}:
+        return _delegate_main("profiler", argv[1:])
+    if argv and argv[0] in {"render3d", "3d"}:
+        return _delegate_main("render3d", argv[1:])
+    if argv and argv[0] == "map":
+        argv = argv[1:]
     parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(

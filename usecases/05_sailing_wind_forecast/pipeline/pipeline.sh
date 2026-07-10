@@ -44,12 +44,12 @@ log_step "4. SpritzMet sailing wind generation"
 python3 "${SCRIPTS_DIR}/spritzmet.py" --config "${CONFIG_PATH}" --output "${METEO_PATH}" --format netcdf
 
 log_step "5. Publication-ready 2-D wind map"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" "${METEO_PATH}" --output "${FIGURE_DIR}/sailing_wind_map.png" --variable wind_speed --title "Sailing Wind Speed" --dpi 600 --vector-density 18
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" "${METEO_PATH}" --output "${FIGURE_DIR}/sailing_wind_map.png" --variable wind_speed --title "Sailing Wind Speed" --dpi 600 --vector-density 18
 
 log_step "6. Publication-ready vertical wind profile"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" "${METEO_PATH}" --output "${FIGURE_DIR}/sailing_wind_profile.png" --variable wind_speed --x 0 --y 0 --title "Sailing Wind Profile" --dpi 600
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" profile "${METEO_PATH}" --output "${FIGURE_DIR}/sailing_wind_profile.png" --variable wind_speed --x 0 --y 0 --title "Sailing Wind Profile" --dpi 600
 
 log_step "7. Publication-ready 3-D wind surface"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" "${METEO_PATH}" --output "${FIGURE_DIR}/sailing_wind_3d.png" --variable wind_speed --title "Sailing Wind Field" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" render3d "${METEO_PATH}" --output "${FIGURE_DIR}/sailing_wind_3d.png" --variable wind_speed --title "Sailing Wind Field" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
 
 log_step "Pipeline complete: ${OUT_DIR}"

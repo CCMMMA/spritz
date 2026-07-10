@@ -67,12 +67,12 @@ diagnostic `U10M/V10M` is available and the first physical model level is
 aloft, the plot prepends the diagnostic 10 m above-ground layer so the
 near-surface profile matches dispersion sampling.
 
-Use `tools/profiler.py` to create the same style of vertical profile figure from
+Use `tools/plotter.py profile` to create the same style of vertical profile figure from
 any compatible Sprtz NetCDF product. It supports meteo wind profiles and plume
 concentration profiles, uses `--x`/`--y` to select the sampled local grid
 column, and supports `--animate` plus `--gif-loop` for simulation-long profile
 GIFs. When latitude/longitude variables are available, the profile figure shows
-the WGS84 coordinate of the local `x=0, y=0` point. Use `tools/render3d.py` for
+the WGS84 coordinate of the local `x=0, y=0` point. Use `tools/plotter.py render3d` for
 reproducible three-dimensional surface or voxel views of `z,y,x` and
 `time,z,y,x` fields, including animated GIFs. It renders all vertical levels by
 default. When passed `--terrain geo.nc`, it renders DEM-shaped ground from
@@ -86,7 +86,7 @@ show WGS84 longitude and latitude when those axes are present. Use
 `--vertical-exaggeration N` with `N >= 1` to
 exaggerate vertical relief in the display. Use
 `tools/plotter.py --animate --frame-duration-ms ... --gif-loop 0` for
-simulation-long map GIFs; this animation interface mirrors `tools/render3d.py`.
+simulation-long map GIFs; this animation interface mirrors `tools/plotter.py render3d`.
 
 ## References
 

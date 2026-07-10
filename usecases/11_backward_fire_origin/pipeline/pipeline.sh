@@ -41,12 +41,12 @@ log_step "5. Firefront context simulation"
 python3 "${SCRIPTS_DIR}/sprtzfire.py" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --output-dir "${FIRE_OUT}" --interchange netcdf
 
 log_step "6. Publication-ready 2-D meteorological context map"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" "${CONC_PATH}" --output "${FIGURE_DIR}/fire_context_map.png" --variable wind_speed --title "Backward Fire Meteorological Context" --dpi 600 --vector-density 18
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" "${CONC_PATH}" --output "${FIGURE_DIR}/fire_context_map.png" --variable wind_speed --title "Backward Fire Meteorological Context" --dpi 600 --vector-density 18
 
 log_step "7. Publication-ready meteorological context profile"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" "${CONC_PATH}" --output "${FIGURE_DIR}/fire_context_profile.png" --variable wind_speed --x 0 --y 0 --title "Backward Fire Meteorological Context Profile" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --dpi 600
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" profile "${CONC_PATH}" --output "${FIGURE_DIR}/fire_context_profile.png" --variable wind_speed --x 0 --y 0 --title "Backward Fire Meteorological Context Profile" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --dpi 600
 
 log_step "8. Publication-ready 3-D meteorological context surface"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" "${CONC_PATH}" --output "${FIGURE_DIR}/fire_context_3d.png" --variable wind_speed --title "Backward Fire Meteorological Context 3-D" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" render3d "${CONC_PATH}" --output "${FIGURE_DIR}/fire_context_3d.png" --variable wind_speed --title "Backward Fire Meteorological Context 3-D" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
 
 log_step "Pipeline complete: ${OUT_DIR}"

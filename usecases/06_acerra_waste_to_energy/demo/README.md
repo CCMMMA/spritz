@@ -98,7 +98,7 @@ If gridded vertical concentration output is enabled, render the plume in 3-D
 over the DEM/land-cover GEO surface:
 
 ```bash
-python tools/render3d.py output/acerra_wte/model/concentration.nc \
+python tools/plotter.py render3d output/acerra_wte/model/concentration.nc \
   --variable concentration_field \
   --terrain output/acerra_wte/geo.nc \
   --mode surface \

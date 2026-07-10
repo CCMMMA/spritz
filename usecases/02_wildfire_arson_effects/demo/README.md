@@ -270,19 +270,19 @@ plume figures for each backend. To regenerate vertical profile figures
 explicitly after any compute-only run, use the standalone profiler:
 
 ```bash
-python tools/profiler.py data/output/wildfire_case/model_compare/particles/meteo.nc \
+python tools/plotter.py profile data/output/wildfire_case/model_compare/particles/meteo.nc \
   --variable wind_speed \
   --output data/output/wildfire_case/model_compare/particles/particles_meteo_vertical_profiles.png
 
-python tools/profiler.py data/output/wildfire_case/model_compare/gaussian/meteo.nc \
+python tools/plotter.py profile data/output/wildfire_case/model_compare/gaussian/meteo.nc \
   --variable wind_speed \
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_meteo_vertical_profiles.png
 
-python tools/profiler.py data/output/wildfire_case/model_compare/particles/concentration.nc \
+python tools/plotter.py profile data/output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
   --output data/output/wildfire_case/model_compare/particles/particles_concentration_vertical_profiles.png
 
-python tools/profiler.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
+python tools/plotter.py profile data/output/wildfire_case/model_compare/gaussian/concentration.nc \
   --variable concentration_field \
   --output data/output/wildfire_case/model_compare/gaussian/gaussian_concentration_vertical_profiles.png
 ```
@@ -291,14 +291,14 @@ To animate the simulation-long plume vertical profile evolution, add
 `--animate`:
 
 ```bash
-python tools/profiler.py data/output/wildfire_case/model_compare/particles/concentration.nc \
+python tools/plotter.py profile data/output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
   --animate \
   --frame-duration-ms 300 \
   --gif-loop 0 \
   --output data/output/wildfire_case/model_compare/particles/particles_concentration_profiles_animation.gif
 
-python tools/profiler.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
+python tools/plotter.py profile data/output/wildfire_case/model_compare/gaussian/concentration.nc \
   --variable concentration_field \
   --animate \
   --frame-duration-ms 300 \
@@ -314,12 +314,12 @@ The plume profile figure shows the time-varying vertical
 `concentration_field` at the selected center grid column for both the particle
 and Gaussian backends. Its vertical axis is altitude above mean sea level for
 the WRF/SpritzMet workflow. When `surface_altitude` is available in the
-concentration NetCDF, `tools/profiler.py` masks ASL bins below the local DEM and
+concentration NetCDF, `tools/plotter.py profile` masks ASL bins below the local DEM and
 draws the local ground altitude, so the profile view does not reinterpret ASL
 levels as height above ground.
 
 To regenerate the 3-D plume-over-ground renders explicitly, pass a terrain/GEO
-NetCDF built from the same DEM and land-cover rasters. `tools/render3d.py`
+NetCDF built from the same DEM and land-cover rasters. `tools/plotter.py render3d`
 draws the DEM as the ground surface, colors it by terrain elevation or
 land-cover class, and renders the concentration plume above that ground
 surface. Concentration `field_z` levels remain altitudes above mean sea level,
@@ -330,7 +330,7 @@ The renderer then uses the configured `field_z` values as z-axis ticks and
 draws DEM blue only where `surface_altitude <= 0`.
 
 ```bash
-python tools/render3d.py data/output/wildfire_case/model_compare/particles/concentration.nc \
+python tools/plotter.py render3d data/output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
   --animate \
   --frame-duration-ms 300 \
@@ -341,7 +341,7 @@ python tools/render3d.py data/output/wildfire_case/model_compare/particles/conce
   --vertical-exaggeration 3 \
   --output data/output/wildfire_case/model_compare/particles/particles_concentration_3d_animation.gif
 
-python tools/render3d.py data/output/wildfire_case/model_compare/gaussian/concentration.nc \
+python tools/plotter.py render3d data/output/wildfire_case/model_compare/gaussian/concentration.nc \
   --variable concentration_field \
   --animate \
   --frame-duration-ms 300 \

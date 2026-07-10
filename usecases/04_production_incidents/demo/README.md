@@ -105,7 +105,7 @@ When the incident run writes a gridded vertical concentration field, render a
 3-D plume view over the archived terrain/GEO product:
 
 ```bash
-python tools/render3d.py output/production_2021_44/model/concentration.nc \
+python tools/plotter.py render3d output/production_2021_44/model/concentration.nc \
   --variable concentration_field \
   --terrain output/production_2021_44/geo.nc \
   --mode surface \

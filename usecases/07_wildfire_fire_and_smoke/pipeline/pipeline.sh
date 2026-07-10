@@ -36,12 +36,12 @@ log_step "4. Wildfire Fire And Smoke model execution"
 python3 "${SCRIPTS_DIR}/sprtz.py" run "${REPO_ROOT}/examples/wildfire_minimal.json" --backend fire+puff --interchange netcdf --output-dir "${OUT_DIR}/model"
 
 log_step "5. Publication-ready 2-D meteorological context map"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" "${CONC_PATH}" --output "${FIGURE_DIR}/meteo_context_map.png" --title "Wildfire Fire And Smoke" --dpi 600
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" "${CONC_PATH}" --output "${FIGURE_DIR}/meteo_context_map.png" --title "Wildfire Fire And Smoke" --dpi 600
 
 log_step "6. Publication-ready meteorological context profile"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" "${CONC_PATH}" --output "${FIGURE_DIR}/meteo_context_profile.png" --x 0 --y 0 --title "Wildfire Fire And Smoke Profile" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --dpi 600
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" profile "${CONC_PATH}" --output "${FIGURE_DIR}/meteo_context_profile.png" --x 0 --y 0 --title "Wildfire Fire And Smoke Profile" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --dpi 600
 
 log_step "7. Publication-ready 3-D meteorological context surface"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" "${CONC_PATH}" --output "${FIGURE_DIR}/meteo_context_3d.png" --title "Wildfire Fire And Smoke 3-D" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" render3d "${CONC_PATH}" --output "${FIGURE_DIR}/meteo_context_3d.png" --title "Wildfire Fire And Smoke 3-D" --config "${REPO_ROOT}/examples/wildfire_minimal.json" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
 
 log_step "Pipeline complete: ${OUT_DIR}"

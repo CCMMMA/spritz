@@ -110,7 +110,7 @@ for hour in 09 10 11 12 13 14; do
 done
 
 log_step "7. Render the animated central vertical profile"
-MPLBACKEND=Agg python tools/profiler.py \
+MPLBACKEND=Agg python tools/plotter.py profile \
   "${METEO_PATH}" \
   --variable wind_speed \
   --x 0 \
@@ -122,7 +122,7 @@ MPLBACKEND=Agg python tools/profiler.py \
   --output "${OUTPUT_ROOT}/velalonga_vertical_profile.gif"
 
 log_step "8. Render the animated terrain-aware 3-D wind field"
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   "${METEO_PATH}" \
   --variable wind_speed \
   --terrain "${GEO_PATH}" \
@@ -136,7 +136,7 @@ MPLBACKEND=Agg python tools/render3d.py \
   --output "${OUTPUT_ROOT}/velalonga_wind_3d_terrain_x${VERTICAL_EXAGGERATION}.gif"
 
 log_step "9. Render the 3-D vector field at 20260621Z1200"
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   "${METEO_PATH}" \
   --variable wind_speed \
   --time-index 12 \
@@ -149,7 +149,7 @@ MPLBACKEND=Agg python tools/render3d.py \
   --output "${OUTPUT_ROOT}/velalonga_wind_vectors_3d_20260621Z1200.png"
 
 log_step "10. Render the wind-speed voxel view at 20260621Z1200"
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   "${METEO_PATH}" \
   --variable wind_speed \
   --time-index 12 \

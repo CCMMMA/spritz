@@ -4,12 +4,13 @@
 
 This document describes publication-oriented plotting utilities for Sprtz outputs. It emphasizes scientifically meaningful coordinates, units, time labels, and reproducible rendering from NetCDF products.
 
-`tools/plotter.py` creates publication-oriented maps from Sprtz NetCDF outputs.
-`tools/profiler.py` creates centralized time-varying vertical profile figures
-from the same NetCDF products. `tools/render3d.py` creates high-quality
-three-dimensional volume views from compatible `z,y,x` or `time,z,y,x` fields.
-They are intended for use-case figures, reports, and quick quality-control
-plots of intermediate and final products.
+`tools/plotter.py` is the single visualization entry point for Sprtz NetCDF
+outputs. With no subcommand it creates publication-oriented maps,
+`tools/plotter.py profile` creates centralized time-varying vertical profile
+figures, and `tools/plotter.py render3d` creates high-quality three-dimensional
+volume views from compatible `z,y,x` or `time,z,y,x` fields. These modes are
+intended for use-case figures, reports, and quick quality-control plots of
+intermediate and final products.
 
 For concentration and gridded mass fields, zero or negative mass concentration
 is rendered transparent in maps, vertical profile heatmaps, and 3-D plume
@@ -113,21 +114,21 @@ for centered odd-node grids instead of drifting with Cartopy axis internals.
 
 Use-case plotting helpers also generate `meteo_vertical_profiles.png` beside
 workflow meteo maps and plume concentration profile figures beside concentration
-maps. The centralized CLI for those figures is `tools/profiler.py`:
+maps. The centralized CLI for those figures is `tools/plotter.py profile`:
 
 ```bash
-MPLBACKEND=Agg python tools/profiler.py \
+MPLBACKEND=Agg python tools/plotter.py profile \
   output/wildfire_case/model_compare/particles/meteo.nc \
   --variable wind_speed \
   --output output/wildfire_case/model_compare/particles/meteo_vertical_profiles.png
 
-MPLBACKEND=Agg python tools/profiler.py \
+MPLBACKEND=Agg python tools/plotter.py profile \
   output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
   --output output/wildfire_case/model_compare/particles/concentration_vertical_profiles.png
 ```
 
-`tools/profiler.py` accepts the same broad CLI style as `tools/plotter.py`:
+`tools/plotter.py profile` accepts the same broad CLI style as `tools/plotter.py`:
 input path first, `--variable`, `--output`, `--time-index`, `--dpi`, and
 `--animate`. Use `--x` and `--y` to select the local grid column. Without
 `--time-index`, static figures show a time-height section plus sampled vertical
@@ -135,7 +136,7 @@ profiles through the simulation.
 When the NetCDF also contains latitude/longitude fields, profiler titles include
 the WGS84 coordinate of the local `x=0, y=0` origin point for geographic context.
 
-`tools/render3d.py` follows the same CLI family for three-dimensional fields:
+`tools/plotter.py render3d` follows the same CLI family for three-dimensional fields:
 input path first, `--variable`, `--output`, `--time-index`, `--dpi`, `--cmap`,
 `--log-scale`, and `--animate`. Pass `--terrain path/to/geo.nc` to render a
 DEM-shaped ground surface from `surface_altitude`/`elevation_m`. The ground is
@@ -153,7 +154,7 @@ longitude/latitude axes are available, the 3-D horizontal tick labels show only
 WGS84 longitude and latitude.
 
 ```bash
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
   --time-index 3 \
@@ -163,7 +164,7 @@ MPLBACKEND=Agg python tools/render3d.py \
   --threshold-quantile 0.85 \
   --output output/wildfire_case/model_compare/particles/concentration_3d.png
 
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
   --time-index 3 \
@@ -186,7 +187,7 @@ the display while keeping tick labels in true metres.
 ## Animations
 
 `tools/plotter.py` follows the same animation CLI family as
-`tools/render3d.py`: use `--animate`, `--frame-duration-ms`, `--gif-loop`, and
+`tools/plotter.py render3d`: use `--animate`, `--frame-duration-ms`, `--gif-loop`, and
 an `.gif` `--output` path to render every available frame of a selected map
 variable into one animation.
 
@@ -211,11 +212,11 @@ bound is the simulation-wide maximum. With `--log-scale`, the bounds come from
 the simulation-wide positive minimum and maximum. Use `--gif-loop 0` to loop
 forever, or a positive integer for a finite loop count.
 
-`tools/profiler.py` can render a simulation-long animated GIF from every
+`tools/plotter.py profile` can render a simulation-long animated GIF from every
 vertical-profile time frame:
 
 ```bash
-MPLBACKEND=Agg python tools/profiler.py \
+MPLBACKEND=Agg python tools/plotter.py profile \
   output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
   --animate \
@@ -224,12 +225,12 @@ MPLBACKEND=Agg python tools/profiler.py \
   --output output/wildfire_case/model_compare/particles/concentration_profiles_animation.gif
 ```
 
-`tools/render3d.py` can render a simulation-long animated GIF from every time
+`tools/plotter.py render3d` can render a simulation-long animated GIF from every time
 frame of a selected volume variable. It evaluates all frames first and fixes one
 color scale across the animation:
 
 ```bash
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   output/wildfire_case/model_compare/particles/concentration.nc \
   --variable concentration_field \
   --terrain output/wildfire_case/geo.nc \

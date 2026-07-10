@@ -78,7 +78,7 @@ If the likelihood sidecar is gridded and a matching GEO file is available,
 render the likelihood surface over DEM-shaped terrain:
 
 ```bash
-python tools/render3d.py output_backward_plume/source_likelihood.nc \
+python tools/plotter.py render3d output_backward_plume/source_likelihood.nc \
   --variable source_likelihood \
   --terrain output_backward_plume/geo.nc \
   --mode surface \

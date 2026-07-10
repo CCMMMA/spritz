@@ -54,12 +54,12 @@ log_step "4. Integrated Sprtz workflow execution"
 python3 "${SCRIPTS_DIR}/sprtz.py" run "${CONFIG_PATH}" --output-dir "${OUT_DIR}/model" --backend gaussian --interchange netcdf --output-interval 3600
 
 log_step "5. Publication-ready 2-D concentration map"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" "${CONC_PATH}" --output "${FIGURE_DIR}/concentration_map.png" --variable concentration_field --title "Production incident concentration" --dpi 600 --level-index 1 --vector-density 18
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" "${CONC_PATH}" --output "${FIGURE_DIR}/concentration_map.png" --variable concentration_field --title "Production incident concentration" --dpi 600 --level-index 1 --vector-density 18
 
 log_step "6. Publication-ready vertical concentration profile"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" "${CONC_PATH}" --output "${FIGURE_DIR}/concentration_profile.png" --variable concentration_field --x "${SOURCE_X_M}" --y "${SOURCE_Y_M}" --title "Production incident concentration Profile" --config "${CONFIG_PATH}" --dpi 600
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" profile "${CONC_PATH}" --output "${FIGURE_DIR}/concentration_profile.png" --variable concentration_field --x "${SOURCE_X_M}" --y "${SOURCE_Y_M}" --title "Production incident concentration Profile" --config "${CONFIG_PATH}" --dpi 600
 
 log_step "7. Publication-ready 3-D concentration surface"
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" "${CONC_PATH}" --output "${FIGURE_DIR}/concentration_3d.png" --variable concentration_field --title "Production incident concentration 3-D" --config "${CONFIG_PATH}" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" render3d "${CONC_PATH}" --output "${FIGURE_DIR}/concentration_3d.png" --variable concentration_field --title "Production incident concentration 3-D" --config "${CONFIG_PATH}" --dpi 600 --mode surface --view northeast --vertical-exaggeration 3
 
 log_step "Pipeline complete: ${OUT_DIR}"

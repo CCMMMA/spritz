@@ -221,7 +221,7 @@ Render the time-varying vertical wind-speed profile at the local grid center
 (`x=0`, `y=0`):
 
 ```bash
-python tools/profiler.py \
+python tools/plotter.py profile \
   data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
   --x 0 \
@@ -235,7 +235,7 @@ python tools/profiler.py \
 
 The profile uses all 24 frames and all configured vertical levels. Values below
 the local DEM are masked. Wind speed uses the same discrete knots palette as
-the 2-D maps. The GIF options match `tools/render3d.py`: `--animate`,
+the 2-D maps. The GIF options match `tools/plotter.py render3d`: `--animate`,
 `--frame-duration-ms`, `--gif-loop`, and a `.gif` output path.
 
 ## 6. Render the terrain-aware 3-D animation
@@ -244,7 +244,7 @@ Render all 24 wind-speed volumes over the GEO terrain with a vertical display
 exaggeration of five:
 
 ```bash
-python tools/render3d.py \
+python tools/plotter.py render3d \
   data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
   --terrain data/output/high_resolution_wind_field/geo.nc \
@@ -271,7 +271,7 @@ Render the horizontal wind vectors at every sampled model height for
 shows wind speed:
 
 ```bash
-python tools/render3d.py \
+python tools/plotter.py render3d \
   data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
   --time-index 12 \
@@ -298,7 +298,7 @@ the full `wind_speed(time,z,y,x)` volume and selects occupied cells with the
 renderer threshold:
 
 ```bash
-python tools/render3d.py \
+python tools/plotter.py render3d \
   data/output/high_resolution_wind_field/wrf_100m_wind_bbox.nc \
   --variable wind_speed \
   --time-index 12 \

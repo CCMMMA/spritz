@@ -70,7 +70,7 @@ script command in pipeline.sh
 Renders a publication map from `wind_speed` in the companion meteorological context file.
 
 ```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" ...
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" ...
 ```
 
 ### Step 6: Meteorological context profile rendering
@@ -78,7 +78,7 @@ MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render.py" ...
 Renders a `wind_speed` profile figure from the companion meteorological context file.
 
 ```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" ...
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" profile ...
 ```
 
 ### Step 7: 3-D meteorological context rendering
@@ -86,7 +86,7 @@ MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/profiler.py" ...
 Renders a three-dimensional `wind_speed` figure from the companion meteorological context file.
 
 ```bash
-MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/render3d.py" ...
+MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" render3d ...
 ```
 
 ## Workflow-Engine Integration

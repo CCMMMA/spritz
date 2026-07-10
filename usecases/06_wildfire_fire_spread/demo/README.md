@@ -71,7 +71,7 @@ When a matching terrain/GEO NetCDF is available, render the probability surface
 over DEM-shaped, terrain-colored ground:
 
 ```bash
-python tools/render3d.py output_fire/firefront.nc \
+python tools/plotter.py render3d output_fire/firefront.nc \
   --variable fire_probability \
   --terrain output_fire/geo.nc \
   --mode surface \

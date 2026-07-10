@@ -23,7 +23,7 @@ def add_plot_argument(parser: Any) -> None:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def _load_plotter() -> Any:
@@ -38,14 +38,7 @@ def _load_plotter() -> Any:
 
 
 def _load_render3d() -> Any:
-    path = _repo_root() / "tools" / "render3d.py"
-    spec = importlib.util.spec_from_file_location("sprtz_tools_render3d", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"could not load render3d tool from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return _load_plotter()
 
 
 def plot_netcdf_if_available(
@@ -399,7 +392,7 @@ def plot_3d_volume_if_available(
             ground_color="terrain",
         )
     except Exception as exc:
-        LOGGER.warning("could not render 3-D volume for %s with tools/render3d.py: %s", source, exc)
+        LOGGER.warning("could not render 3-D volume for %s with tools/plotter.py render3d: %s", source, exc)
         return None
 
 
