@@ -1,4 +1,10 @@
-# Use case 03 — Aversa fire and Sentinel-5P aerosol evaluation
+# Use case 03 — Aversa fire and Sentinel-5P NO₂ evaluation
+
+> **Evidence classification:** this Aversa workflow is an incident consistency
+> evaluation, not the formal validation of Spritz dispersion physics. Formal
+> backend validation uses `step_00_validate_controlled_tracer.py` with paired
+> controlled-release observations as documented in the parent README. Satellite
+> products cannot replace a known source term and paired receptor measurements.
 
 ## Event
 
@@ -7,17 +13,18 @@
 - Position: 40.9769° N, 14.2168° E.
 - Duration: three hours, ending `20240619Z1300`.
 - Fuel description: construction-material storage.
-- Primary satellite observation: Sentinel-5P/TROPOMI L2 UV Aerosol Index at
+- Primary satellite observation: Sentinel-5P/TROPOMI L2 tropospheric NO₂ at
   `20240619Z1205` (reported timestamp 12:05:18 UTC).
+- Secondary observation: same-orbit UV Aerosol Index for plume-footprint plots.
 
 The Copernicus catalogue confirms same-day product
 `S5P_OFFL_L2__AER_AI_20240619T113407_20240619T131537_34633_03_020600_20240621T012148.nc`,
 whose Aversa coverage interval is 11:55:42–12:47:58 UTC and therefore overlaps
-the modeled fire. Positive Aerosol Index identifies UV-absorbing aerosol such
-as smoke. It remains an optical column-sensitive index, while Spritz output is
-modeled near-surface concentration; no physical unit conversion is inferred.
-Same-orbit NO₂ can be downloaded as a secondary diagnostic with `--band NO2`,
-but it is not the canonical evaluation observable.
+the modeled fire. The workflow requests the same orbit as `NO2` with
+`minQa=75`. Multi-level Spritz concentration is integrated vertically,
+converted from g m⁻² to mol m⁻² using the NO₂ molar mass, and aggregated to
+native TROPOMI pixels. Aerosol Index remains a secondary smoke-footprint
+diagnostic and is not treated as a concentration measurement.
 
 ## Data and credentials
 
@@ -61,8 +68,8 @@ python tools/copernicus-s5p-download.py \
   --bbox 12.00 39.00 16.50 43.00 \
   --time-start 2024-06-19T11:34:07Z \
   --time-end 2024-06-19T13:15:37Z \
-  --band AER_AI_340_380 --min-qa 0 --width 256 --height 256 \
-  --output data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_full_orbit.tif \
+  --band NO2 --min-qa 75 --width 256 --height 256 \
+  --output data/output/satellite_ai_evaluation/satellite/sentinel5p_no2_20240619T120518Z_full_orbit.tif \
   --dry-run
 ```
 
@@ -79,8 +86,8 @@ CDSE_CLIENT_ID and CDSE_CLIENT_SECRET are required unless --dry-run is used
 
 Use `tools/copernicus-s5p-download.py` for all Sentinel-5P bands in this use
 case. Its command-line help and error messages are intentionally band-neutral;
-`--band AER_AI_340_380` is the canonical smoke-plume observable and `--band
-NO2` is only a secondary diagnostic option.
+`--band NO2` is the canonical evaluation observable. `--band AER_AI_340_380`
+is retained for the secondary smoke-footprint figure.
 
 The satellite stage requires the `geo` optional dependencies:
 
@@ -109,9 +116,9 @@ The canonical workflow performs these stages:
 6. run SpritzWRF/SpritzMet downscaling onto the 601×351, 100 m Aversa
    domain using DEM and land cover;
 7. run Gaussian and particle dispersion with identical forcing;
-8. download the Sentinel-5P L2 Aerosol Index subset around Aversa;
-9. quality-screen and conservatively downscale it to the Spritz domain;
-10. evaluate Gaussian and particle products independently;
+8. download primary Sentinel-5P L2 NO₂ and secondary Aerosol Index;
+9. vertically integrate each Spritz backend and compare native-pixel NO₂ columns;
+10. downscale Aerosol Index only for secondary footprint visualization;
 11. write comparison plots and auditable JSON/CSV artifacts.
 
 ## Manual commands
@@ -264,10 +271,11 @@ timestep_peak)`, and meaningful boundary contact is reported only when the
 active edge mass fraction is at least `1e-6`. This keeps physically meaningful
 weak plume tails visible while ignoring floating-point ghosts and isolated
 stochastic particle crumbs. The Sentinel request bounding box covers the
-complete expanded domain because conservative downscaling requires matching
-source and target extents.
+complete expanded domain. Native-pixel NO₂ evaluation aggregates the model to
+the satellite subset; secondary Aerosol Index visualization uses the broader
+raster before cropping and terrain-guided downscaling.
 
-### 7. Download Sentinel-5P UV Aerosol Index
+### 7. Download primary Sentinel-5P NO₂ and secondary UV Aerosol Index
 
 Use the band-neutral Sentinel-5P downloader. The canonical request keeps the
 orbital overlap window fixed to the verified Sentinel-5P product and downloads
@@ -286,25 +294,42 @@ python tools/copernicus-s5p-download.py \
   --bbox 12.00 39.00 16.50 43.00 \
   --time-start 2024-06-19T11:34:07Z \
   --time-end 2024-06-19T13:15:37Z \
+  --band NO2 --min-qa 75 --width 256 --height 256 \
+  --output data/output/satellite_ai_evaluation/satellite/sentinel5p_no2_20240619T120518Z_full_orbit.tif \
+  --dry-run
+
+# Secondary Aerosol Index footprint product
+python tools/copernicus-s5p-download.py \
+  --bbox 12.00 39.00 16.50 43.00 \
+  --time-start 2024-06-19T11:34:07Z \
+  --time-end 2024-06-19T13:15:37Z \
   --band AER_AI_340_380 --min-qa 0 --width 256 --height 256 \
   --output data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_full_orbit.tif \
   --dry-run
 ```
 
-The dry run writes
-`data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_full_orbit.tif.request.json`.
-Check that the request contains:
+The dry runs write a `.request.json` beside each requested output. Check that
+the NO₂ request contains `band: NO2` and `minQa: 75`, while the secondary
+Aerosol Index request contains `band: AER_AI_340_380` and `minQa: 0`. Both
+requests must contain:
 
 - bbox `12.00 39.00 16.50 43.00`;
 - time range `2024-06-19T11:34:07Z`–`2024-06-19T13:15:37Z`;
-- band `AER_AI_340_380`;
-- `minQa` equal to `0`;
 - output size `256×256`.
 
 With `CDSE_CLIENT_ID` and `CDSE_CLIENT_SECRET` exported, remove `--dry-run` to
 download the GeoTIFF:
 
 ```bash
+# Primary NO2 column product
+python tools/copernicus-s5p-download.py \
+  --bbox 12.00 39.00 16.50 43.00 \
+  --time-start 2024-06-19T11:34:07Z \
+  --time-end 2024-06-19T13:15:37Z \
+  --band NO2 --min-qa 75 --width 256 --height 256 \
+  --output data/output/satellite_ai_evaluation/satellite/sentinel5p_no2_20240619T120518Z_full_orbit.tif
+
+# Secondary Aerosol Index footprint product
 python tools/copernicus-s5p-download.py \
   --bbox 12.00 39.00 16.50 43.00 \
   --time-start 2024-06-19T11:34:07Z \
@@ -340,8 +365,10 @@ If `finite pixels` is `0`, Sentinel Hub returned only `NaN`/`dataMask=0`
 samples for the chosen bbox, time range, band, and QA filter. Do not continue
 alignment with that file. Current downloader versions report this as a failed
 download unless `--allow-empty` is supplied explicitly for negative provenance.
-For audit purposes, the smaller domain-sized request that can fail for this
-event is:
+For audit purposes, the smaller domain-sized Aerosol Index request below is a
+known negative diagnostic for this event. It may return HTTP 200 with zero
+finite pixels. `--allow-empty` preserves that empty response and its request
+metadata; the resulting TIFF must not be passed to alignment or evaluation:
 
 ```bash
 python tools/copernicus-s5p-download.py \
@@ -349,10 +376,12 @@ python tools/copernicus-s5p-download.py \
   --time-start 2024-06-19T11:55:42Z \
   --time-end 2024-06-19T12:47:58Z \
   --band AER_AI_340_380 --min-qa 0 --width 32 --height 32 \
-  --output data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_domain_diagnostic.tif
+  --output data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_domain_diagnostic.tif \
+  --allow-empty
 ```
 
-The regional diagnostic is:
+The regional request is also diagnostic and may be empty. Preserve it only as
+negative provenance when needed:
 
 ```bash
 python tools/copernicus-s5p-download.py \
@@ -360,7 +389,8 @@ python tools/copernicus-s5p-download.py \
   --time-start 2024-06-19T11:55:42Z \
   --time-end 2024-06-19T12:47:58Z \
   --band AER_AI_340_380 --min-qa 0 --width 64 --height 64 \
-  --output data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_wide.tif
+  --output data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_wide.tif \
+  --allow-empty
 ```
 
 If both diagnostics fail but the full-orbit request succeeds, continue with the
@@ -379,6 +409,9 @@ export SPRTZ_ALLOW_SYNTHETIC_SATELLITE_FALLBACK=1
 python usecases/03_satellite_ai_evaluation/demo/step_03_align_satellite.py \
   --satellite data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_full_orbit.tif \
   --config usecases/03_satellite_ai_evaluation/demo/config.json \
+  --station-observations usecases/03_satellite_ai_evaluation/usecase_03_stations.csv \
+  --dem data/output/satellite_ai_evaluation/dem/cop30_aversa.tif \
+  --land-cover data/output/satellite_ai_evaluation/landcover/lc100_aversa.tif \
   --satellite-time 2024-06-19T12:05:18Z \
   --event-end 2024-06-19T13:00:00Z \
   --output data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_downscaled.json
@@ -386,14 +419,63 @@ python usecases/03_satellite_ai_evaluation/demo/step_03_align_satellite.py \
 
 The clean-room downscaler first crops the Sentinel raster to the approximate
 Spritz concentration-field bbox derived from `config.json`, then treats every
-remaining coarse satellite pixel as an areal constraint. It allocates each
-coarse pixel with a bounded wind-oriented positive weight, regularizes block
-boundaries, and hard-normalizes each coarse footprint back to its observed
-mean. It writes the full 351×601 field, a receptor transect, the cropped source
-window, and coarse-mean conservation errors. This model-assisted allocation
+remaining coarse satellite pixel as an areal constraint. GeoTIFF rows are
+explicitly flipped from north-to-south storage into the south-to-north Spritz
+grid orientation. It allocates each coarse pixel with bounded wind, bilinearly
+resampled COP30 elevation and slope, and nearest-neighbor LC100 surface-roughness
+weights, then uses the in-domain `ID,LAT,LON,NO2` stations to form a bounded
+inverse-distance correction of the fine-grid allocation weights. Because NO₂
+and Aerosol Index are different quantities, their 5th-to-95th-percentile
+spatial anomalies are scaled independently; no physical unit conversion is
+claimed. A final finite-aware low-pass blend removes inherited satellite-pixel
+seams while preserving the domain mean; this deliberately relaxes exact
+per-pixel conservation because projecting every coarse mean exactly recreates
+visible footprint boundaries. It writes the full 351×601 field, a receptor
+transect, the cropped source window, ancillary provenance, and coarse-mean
+errors. This model-assisted allocation
 does not imply that TROPOMI observed at Spritz resolution.
 
-### 9. Evaluate and plot
+### 9. Plot the original and downscaled satellite images
+
+```bash
+MPLBACKEND=Agg python usecases/03_satellite_ai_evaluation/demo/step_04_plot_satellite.py \
+  --satellite data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_20240619T120518Z_full_orbit.tif \
+  --downscaled data/output/satellite_ai_evaluation/satellite/sentinel5p_aer_ai_downscaled.json \
+  --gaussian data/output/satellite_ai_evaluation/model/gaussian/concentration.nc \
+  --particles data/output/satellite_ai_evaluation/model/particles/concentration.nc \
+  --model-time-index 1 \
+  --config usecases/03_satellite_ai_evaluation/demo/config.json \
+  --output data/output/satellite_ai_evaluation/figures/satellite_downscaling.png
+```
+
+The two panels use one shared robust Aerosol Index color scale, so colors are
+directly comparable. Both panels mark the configured emission source with a
+green star. A solid cyan outline comes from the Spritz Gaussian concentration
+field and a dashed green outline comes from the Spritz particles field at the
+selected time and vertical level. The default contour is `0.05` of each
+backend's own maximum, making the outline a spatial-footprint comparison rather
+than a claim that the two model concentrations have identical magnitudes. Use
+`--plume-threshold`, `--model-time-index`, and `--model-level-index` to select
+other documented slices and relative contours.
+
+### 10. Evaluate primary NO₂ columns and secondary Aerosol Index patterns
+
+Run the native-pixel column comparison for each backend before the normalized
+Aerosol Index footprint evaluation:
+
+```bash
+python usecases/03_satellite_ai_evaluation/demo/step_05_evaluate_no2.py \
+  --concentration data/output/satellite_ai_evaluation/model/gaussian/concentration.nc \
+  --satellite-no2 data/output/satellite_ai_evaluation/satellite/sentinel5p_no2_20240619T120518Z_full_orbit.tif \
+  --config usecases/03_satellite_ai_evaluation/demo/config.json \
+  --time-index 1 \
+  --output data/output/satellite_ai_evaluation/model/gaussian/no2_column_evaluation.json
+```
+
+This primary report contains raw mol m⁻² statistics and normalized spatial
+pattern statistics. It explicitly records that the Sentinel Hub GeoTIFF does
+not supply an averaging kernel and that Spritz currently models passive NO₂
+without chemistry or a background column.
 
 Run `scripts/sprtz_satellite_evaluate.py` separately for the Gaussian and
 particle concentration files, using the freshly aligned
@@ -451,7 +533,7 @@ difference, ratio, and statistics sidecar artifacts beside `evaluation.json`.
 Then plot each NetCDF file with `scripts/sprtz_plot.py`. The shell pipeline
 contains the compact plotting commands and output paths.
 
-### 10. Advanced plotting, profiling, and 3-D rendering
+### 11. Advanced plotting, profiling, and 3-D rendering
 
 The shell pipeline writes compact concentration plots through
 `scripts/sprtz_plot.py`. For publication-style diagnostics, use the shared
@@ -499,13 +581,13 @@ MPLBACKEND=Agg python tools/plotter.py \
   --output data/output/satellite_ai_evaluation/figures/particles_concentration_animation.gif
 ```
 
-#### 10.2 Render a vertical profile with `tools/profiler.py`
+#### 10.2 Render a vertical profile with `tools/plotter.py profile`
 
-`tools/profiler.py` samples one local grid column through time. The example
+`tools/plotter.py profile` samples one local grid column through time. The example
 below samples the Aversa source column (`x=0`, `y=0`):
 
 ```bash
-MPLBACKEND=Agg python tools/profiler.py \
+MPLBACKEND=Agg python tools/plotter.py profile \
   data/output/satellite_ai_evaluation/model/particles/concentration.nc \
   --variable concentration_field \
   --x 0 --y 0 \
@@ -519,7 +601,7 @@ To profile a downwind column near the 13:00 particle peak, use `x=12700`,
 `y=4600`:
 
 ```bash
-MPLBACKEND=Agg python tools/profiler.py \
+MPLBACKEND=Agg python tools/plotter.py profile \
   data/output/satellite_ai_evaluation/model/particles/concentration.nc \
   --variable concentration_field \
   --x 12700 --y 4600 \
@@ -532,7 +614,7 @@ MPLBACKEND=Agg python tools/profiler.py \
 To animate all profile times:
 
 ```bash
-MPLBACKEND=Agg python tools/profiler.py \
+MPLBACKEND=Agg python tools/plotter.py profile \
   data/output/satellite_ai_evaluation/model/particles/concentration.nc \
   --variable concentration_field \
   --x 12700 --y 4600 \
@@ -543,14 +625,14 @@ MPLBACKEND=Agg python tools/profiler.py \
   --output data/output/satellite_ai_evaluation/figures/particles_concentration_profile_animation.gif
 ```
 
-#### 10.3 Render 3-D views with `tools/render3d.py`
+#### 10.3 Render 3-D views with `tools/plotter.py render3d`
 
-This use case writes one concentration field level at 400 m ASL. `render3d.py`
+This use case writes one concentration field level at 400 m ASL. `tools/plotter.py render3d`
 still provides useful terrain-aware 3-D context by rendering the gridded plume
 above `geo.nc` and overlaying the configured source location.
 
 ```bash
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   data/output/satellite_ai_evaluation/model/particles/concentration.nc \
   --variable concentration_field \
   --time-index 1 \
@@ -568,7 +650,7 @@ MPLBACKEND=Agg python tools/render3d.py \
 For a sparse voxel-style rendering:
 
 ```bash
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   data/output/satellite_ai_evaluation/model/particles/concentration.nc \
   --variable concentration_field \
   --time-index 1 \
@@ -586,7 +668,7 @@ MPLBACKEND=Agg python tools/render3d.py \
 To animate 3-D frames across all three output times:
 
 ```bash
-MPLBACKEND=Agg python tools/render3d.py \
+MPLBACKEND=Agg python tools/plotter.py render3d \
   data/output/satellite_ai_evaluation/model/particles/concentration.nc \
   --variable concentration_field \
   --terrain data/output/satellite_ai_evaluation/geo.nc \
@@ -612,7 +694,7 @@ activity, edge mass fractions, and meaningful boundary contact after the
 numerical-noise and mass-fraction floors are applied. `figures/` contains
 Gaussian and particle concentration plots, and may also contain publication
 maps, vertical-profile figures, and 3-D renders generated with `tools/plotter.py`,
-`tools/profiler.py`, and `tools/render3d.py`. Satellite provenance includes the
+`tools/plotter.py profile`, and `tools/plotter.py render3d`. Satellite provenance includes the
 Process API request, acquisition time, event-end time, sampling method, and
 valid-sample count, weighting rule, smoothing count, and conservation errors.
 

@@ -1,10 +1,14 @@
 # Use case 03 — CWL workflow
 
+This CWL wrapper executes the Aversa incident consistency workflow. Formal
+Gaussian and particle validation uses paired controlled-tracer observations and
+the separate `demo/step_00_validate_controlled_tracer.py` entry point.
+
 [`workflow.cwl`](workflow.cwl) is a CWL v1.2 wrapper around the canonical
 [`pipeline.sh`](../pipeline/pipeline.sh). It exposes the interpreter, output
 locations, and classification threshold as typed inputs and returns the model
-concentration, satellite mask, evaluation report, difference and ratio grids,
-statistics CSV, and figure.
+concentration, satellite mask, primary NO₂ column evaluation, secondary
+evaluation report, difference and ratio grids, statistics CSV, and figure.
 
 Create a job file:
 

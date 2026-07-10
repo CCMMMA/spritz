@@ -81,7 +81,7 @@
     "particles": 100000,
     "seed": 20240619,
     "concentration_output": "both",
-    "field_z_levels": [400.0],
+    "field_z_levels": [40.0, 100.0, 200.0, 400.0, 800.0, 1200.0, 2000.0, 3000.0],
     "field_z_reference": "height_above_sea_level",
     "stability": "D",
     "threshold": 0.00001,

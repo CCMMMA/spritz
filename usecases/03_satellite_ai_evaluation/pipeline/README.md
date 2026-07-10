@@ -1,5 +1,10 @@
 # Aversa satellite-evaluation pipeline
 
+This pipeline is the reproducible incident consistency branch of use case 03.
+It is not the formal backend-validation branch. Controlled-tracer validation is
+run explicitly with `demo/step_00_validate_controlled_tracer.py` and paired
+observations following the parent README's data contract.
+
 The canonical shell pipeline implements the procedure in
 [`../demo/README.md`](../demo/README.md):
 
@@ -34,10 +39,11 @@ To check the Sentinel-5P request without credentials, run the downloader with
 `--dry-run`; it writes the `.request.json` provenance file and does not contact
 the network. The canonical downloader command is
 `tools/copernicus-s5p-download.py`; its help and error messages are
-band-neutral even though `AER_AI_340_380` is the canonical use-case band and
-`NO2` remains available as a secondary diagnostic option.
+band-neutral. `NO2` is the canonical evaluation band; `AER_AI_340_380` is the
+secondary plume-footprint product.
 
-The network pipeline downloads a broad same-orbit Aerosol Index raster and lets
+The network pipeline downloads primary same-orbit NO₂ with `minQa=75` plus a
+broad Aerosol Index raster and lets
 the alignment step crop it to the Spritz concentration-field domain. Smaller
 domain-sized Sentinel Hub requests can return valid but all-masked GeoTIFFs for
 this product. If even the broad same-orbit request returns zero finite Aerosol
@@ -53,26 +59,30 @@ export SPRTZ_ALLOW_SYNTHETIC_SATELLITE_FALLBACK=1
 `XDG_CACHE_HOME` may be overridden. Products default to
 `data/03_satellite_ai_evaluation/`.
 
-The eleven stages are runtime/configuration validation, WRF download, COP30
+The twelve stages are runtime/configuration validation, WRF download, COP30
 download, LC100 download, Terrain/GEO generation, 601×351 100 m SpritzWRF/SpritzMet
 downscaling, Gaussian and particle runs, Sentinel-5P download, conservative
-satellite downscaling, backend-specific evaluation, and plotting. The
-evaluation stage also reads `usecase_03_stations.csv` and writes a colocated
+satellite downscaling, shared-scale original/downscaled satellite plotting,
+native-pixel NO₂ column evaluation, secondary pattern evaluation, and concentration plotting. The
+downscaling stage uses `usecase_03_stations.csv` as a bounded spatial-pattern
+correction while retaining coarse satellite means. The evaluation stage also
+reads the same file and writes a colocated
 NO₂ station spatial-pattern diagnostic into each backend `evaluation.json`.
-NO₂ is normalized only for pattern comparison; it is not converted to Aerosol
-Index or Spritz concentration. Network access is explicit; credentials are read
+The primary evaluator vertically integrates Spritz concentration, converts it
+to mol m⁻², and aggregates it to native TROPOMI pixels. Network access is explicit; credentials are read
 only from the environment and are never logged.
 
 Expected products include WRF and satellite source data when network mode is
 enabled, `dem/cop30_aversa.tif`, `landcover/lc100_aversa.tif`, `geo.nc`,
 `domain/meteo.nc`, Gaussian and particle concentration NetCDF files,
-backend-specific evaluation/difference/ratio/statistics artifacts, and two
+backend-specific `no2_column_evaluation.json` plus secondary
+evaluation/difference/ratio/statistics artifacts, and two
 concentration plots.
 
 The pipeline is deterministic in offline mode. Network mode records the
 Sentinel Hub request and satellite-alignment provenance. The same-day
-Sentinel-5P orbit overlaps the event, but its UV Aerosol Index is not a direct
-measurement of three-dimensional near-surface concentration.
+Sentinel-5P orbit overlaps the event. NO₂ column comparison remains limited by
+the absent averaging kernel, passive-tracer model, and missing background.
 
 ## References
 

@@ -33,8 +33,8 @@ def main(argv: list[str] | None = None, *, prog: str | None = None) -> int:
     parser.add_argument(
         "--band",
         choices=("AER_AI_340_380", "AER_AI_354_388", "NO2", "CO"),
-        default="AER_AI_340_380",
-        help="Sentinel-5P L2 band; aerosol index is the smoke-plume default",
+        default="NO2",
+        help="Sentinel-5P L2 band; NO2 is the use-case 03 primary comparison product",
     )
     parser.add_argument(
         "--min-qa",

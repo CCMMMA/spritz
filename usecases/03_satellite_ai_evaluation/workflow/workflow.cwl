@@ -31,9 +31,15 @@ outputs:
   satellite_mask:
     type: File?
     outputSource: run_pipeline/satellite_mask
+  satellite_no2:
+    type: File?
+    outputSource: run_pipeline/satellite_no2
   evaluation:
     type: File?
     outputSource: run_pipeline/evaluation
+  no2_column_evaluation:
+    type: File?
+    outputSource: run_pipeline/no2_column_evaluation
   difference:
     type: File?
     outputSource: run_pipeline/difference
@@ -55,7 +61,7 @@ steps:
       sprtz_output_dir: sprtz_output_dir
       python: python
       threshold: threshold
-    out: [output_root, concentration, satellite_mask, evaluation, difference, ratio, statistics, figure]
+    out: [output_root, concentration, satellite_mask, satellite_no2, evaluation, no2_column_evaluation, difference, ratio, statistics, figure]
     run:
       class: CommandLineTool
       requirements:
@@ -94,10 +100,18 @@ steps:
           type: File?
           outputBinding:
             glob: $((inputs.sprtz_output_dir || (inputs.sprtz_data_root || inputs.repo_root.path + "/data") + "/03_satellite_ai_evaluation") + "/satellite/sentinel5p_aer_ai_downscaled.json")
+        satellite_no2:
+          type: File?
+          outputBinding:
+            glob: $((inputs.sprtz_output_dir || (inputs.sprtz_data_root || inputs.repo_root.path + "/data") + "/03_satellite_ai_evaluation") + "/satellite/sentinel5p_no2_20240619T120518Z_full_orbit.tif")
         evaluation:
           type: File?
           outputBinding:
             glob: $((inputs.sprtz_output_dir || (inputs.sprtz_data_root || inputs.repo_root.path + "/data") + "/03_satellite_ai_evaluation") + "/model/gaussian/evaluation.json")
+        no2_column_evaluation:
+          type: File?
+          outputBinding:
+            glob: $((inputs.sprtz_output_dir || (inputs.sprtz_data_root || inputs.repo_root.path + "/data") + "/03_satellite_ai_evaluation") + "/model/gaussian/no2_column_evaluation.json")
         difference:
           type: File?
           outputBinding:

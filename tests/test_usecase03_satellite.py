@@ -22,6 +22,24 @@ assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
+PLOT_PATH = MODULE_PATH.with_name("plot_satellite_downscaling.py")
+PLOT_SPEC = importlib.util.spec_from_file_location("usecase03_plot_satellite", PLOT_PATH)
+assert PLOT_SPEC is not None and PLOT_SPEC.loader is not None
+PLOT_MODULE = importlib.util.module_from_spec(PLOT_SPEC)
+PLOT_SPEC.loader.exec_module(PLOT_MODULE)
+
+NO2_PATH = MODULE_PATH.with_name("evaluate_no2_column.py")
+NO2_SPEC = importlib.util.spec_from_file_location("usecase03_evaluate_no2", NO2_PATH)
+assert NO2_SPEC is not None and NO2_SPEC.loader is not None
+NO2_MODULE = importlib.util.module_from_spec(NO2_SPEC)
+NO2_SPEC.loader.exec_module(NO2_MODULE)
+
+TRACER_PATH = MODULE_PATH.with_name("controlled_tracer_validation.py")
+TRACER_SPEC = importlib.util.spec_from_file_location("usecase03_controlled_tracer", TRACER_PATH)
+assert TRACER_SPEC is not None and TRACER_SPEC.loader is not None
+TRACER_MODULE = importlib.util.module_from_spec(TRACER_SPEC)
+TRACER_SPEC.loader.exec_module(TRACER_MODULE)
+
 EVALUATION_PATH = (
     Path(__file__).resolve().parents[1]
     / "usecases"
@@ -86,6 +104,121 @@ def test_conservative_downscale_preserves_coarse_means() -> None:
     assert report["maximum_coarse_mean_error"] < 1.0e-12
 
 
+def test_satellite_plot_uses_one_color_scale_for_both_fields() -> None:
+    original = np.asarray([[0.0, 1.0], [2.0, np.nan]])
+    downscaled = np.asarray([[0.5, 1.5], [3.0, 4.0]])
+
+    low, high = PLOT_MODULE.shared_color_limits(original, downscaled)
+
+    combined = np.asarray([0.0, 1.0, 2.0, 0.5, 1.5, 3.0, 4.0])
+    assert low == pytest.approx(np.percentile(combined, 2.0))
+    assert high == pytest.approx(np.percentile(combined, 98.0))
+
+
+def test_seamless_regularization_reduces_coarse_pixel_edge() -> None:
+    field = np.ones((31, 31), dtype=float)
+    field[:, 16:] = 5.0
+
+    regularized = MODULE.seamless_regularize(field, radius_cells=4, blend=1.0)
+
+    original_jump = float(np.mean(np.abs(field[:, 16] - field[:, 15])))
+    regularized_jump = float(np.mean(np.abs(regularized[:, 16] - regularized[:, 15])))
+    assert regularized_jump < 0.25 * original_jump
+    assert np.mean(regularized) == pytest.approx(np.mean(field))
+
+
+def test_guided_downscale_preserves_south_to_north_orientation() -> None:
+    # Input row zero is already the southern row after the explicit GeoTIFF flip.
+    coarse = np.asarray([[1.0, 1.0], [4.0, 4.0]])
+
+    field = MODULE._guided_seamless_downscale(coarse, np.ones((20, 20)))
+
+    assert np.mean(field[0]) < np.mean(field[-1])
+    assert np.mean(field) == pytest.approx(np.mean(coarse))
+
+
+def test_satellite_plot_reads_normalized_spritz_model_plume(tmp_path: Path) -> None:
+    netcdf4 = pytest.importorskip("netCDF4")
+    path = tmp_path / "concentration.nc"
+    with netcdf4.Dataset(path, "w") as dataset:
+        dataset.createDimension("time", 2)
+        dataset.createDimension("field_z", 1)
+        dataset.createDimension("field_y", 3)
+        dataset.createDimension("field_x", 4)
+        variable = dataset.createVariable(
+            "concentration_field", "f8", ("time", "field_z", "field_y", "field_x")
+        )
+        values = np.zeros((2, 1, 3, 4), dtype=float)
+        values[1, 0, 1, 2] = 8.0
+        variable[:] = values
+
+    plume = PLOT_MODULE._read_model_plume(path, 1, 0)
+
+    assert plume.shape == (3, 4)
+    assert np.min(plume) >= 0.0
+    assert np.max(plume) == pytest.approx(1.0)
+
+
+def test_no2_model_column_integration_converts_to_moles(tmp_path: Path) -> None:
+    netcdf4 = pytest.importorskip("netCDF4")
+    path = tmp_path / "no2.nc"
+    with netcdf4.Dataset(path, "w") as dataset:
+        dataset.createDimension("time", 1)
+        dataset.createDimension("field_z", 2)
+        dataset.createDimension("field_y", 1)
+        dataset.createDimension("field_x", 1)
+        dataset.createVariable("field_z", "f8", ("field_z",))[:] = [0.0, 100.0]
+        variable = dataset.createVariable(
+            "concentration_field", "f8", ("time", "field_z", "field_y", "field_x")
+        )
+        variable.units = "g m-3"
+        variable[:] = np.full((1, 2, 1, 1), NO2_MODULE.NO2_MOLAR_MASS_G_MOL)
+
+    column, levels = NO2_MODULE._integrated_model_column(path, 0)
+
+    assert levels.tolist() == [0.0, 100.0]
+    assert column[0, 0] == pytest.approx(100.0)
+
+
+def test_no2_native_aggregation_flips_model_rows_to_satellite_orientation() -> None:
+    model = np.asarray([[1.0, 1.0], [4.0, 4.0]])  # south row, then north row
+
+    satellite_order = NO2_MODULE._aggregate_to_shape(model, (2, 2))
+
+    assert satellite_order[0].tolist() == [4.0, 4.0]
+    assert satellite_order[1].tolist() == [1.0, 1.0]
+
+
+def test_controlled_tracer_metrics_report_standard_factor_scores() -> None:
+    predicted = np.asarray([1.0, 2.0, 0.0, 8.0])
+    observed = np.asarray([1.0, 1.0, 1.0, 2.0])
+
+    metrics = TRACER_MODULE.validation_metrics(predicted, observed, detection_limit=0.5)
+
+    assert metrics["paired_sample_count"] == 4
+    assert metrics["fraction_within_factor_2"] == pytest.approx(0.5)
+    assert metrics["fraction_within_factor_5"] == pytest.approx(0.75)
+    assert metrics["false_negative"] == 1
+    assert metrics["false_positive"] == 0
+
+
+def test_controlled_tracer_pairing_requires_receptor_and_time_match() -> None:
+    model = [
+        {"receptor_id": "R1", "time": 60.0, "concentration": 2.0},
+        {"receptor_id": "R2", "time": 60.0, "concentration": 5.0},
+    ]
+    observations = [
+        {"receptor_id": "R1", "time_s": 60.0, "concentration": 1.5},
+        {"receptor_id": "R2", "time_s": 120.0, "concentration": 4.0},
+    ]
+
+    predicted, observed, pairs = TRACER_MODULE.paired_samples(model, observations)
+
+    assert predicted.tolist() == [2.0]
+    assert observed.tolist() == [1.5]
+    assert len(pairs) == 1
+
+
 def test_conservative_downscale_preserves_missing_footprint() -> None:
     coarse = np.asarray([[1.0, np.nan], [2.0, 3.0]])
     field, _ = MODULE.conservative_downscale(
@@ -96,6 +229,35 @@ def test_conservative_downscale_preserves_missing_footprint() -> None:
     )
     labels_y, labels_x = MODULE._coarse_labels(coarse.shape, field.shape)
     assert np.isnan(field[(labels_y == 0) & (labels_x == 1)]).all()
+
+
+def test_station_correction_uses_only_valid_in_domain_observations(tmp_path: Path) -> None:
+    config = load_config(
+        Path(__file__).resolve().parents[1]
+        / "usecases"
+        / "03_satellite_ai_evaluation"
+        / "demo"
+        / "config.json"
+    )
+    stations = tmp_path / "stations.csv"
+    stations.write_text(
+        "id,LAT,LON,NO2\n"
+        "near-source,40.9769,14.2168,80\n"
+        "east,40.9769,14.2762,10\n"
+        "outside,50.0,20.0,500\n",
+        encoding="utf-8",
+    )
+    base = np.linspace(0.0, 1.0, config.grid.nx)[None, :]
+    base = np.repeat(base, config.grid.ny, axis=0)
+
+    correction, report = MODULE._station_correction(stations, base, config)
+
+    assert correction.shape == (config.grid.ny, config.grid.nx)
+    assert report["station_observations_used"] == 2
+    assert report["station_ids_used"] == ["near-source", "east"]
+    assert report["station_correction_status"] == "applied"
+    assert np.min(correction) >= 0.5
+    assert np.max(correction) <= 2.0
 
 
 def test_boundary_diagnostic_ignores_floating_point_edge_ghost(tmp_path: Path) -> None:
