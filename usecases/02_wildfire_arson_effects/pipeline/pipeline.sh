@@ -32,9 +32,12 @@ PARTICLE_DIR="${OUT_DIR}/model_compare/particles"
 GAUSSIAN_CONC="${GAUSSIAN_DIR}/concentration.nc"
 PARTICLE_CONC="${PARTICLE_DIR}/concentration.nc"
 FIGURE_DIR="${OUT_DIR}/figures"
+MPLCONFIGDIR="${MPLCONFIGDIR:-${OUT_DIR}/.matplotlib}"
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-${OUT_DIR}/.cache}"
 
-mkdir -p "${GAUSSIAN_DIR}" "${PARTICLE_DIR}" "${FIGURE_DIR}"
+mkdir -p "${GAUSSIAN_DIR}" "${PARTICLE_DIR}" "${FIGURE_DIR}" "${MPLCONFIGDIR}" "${XDG_CACHE_HOME}"
 cd "${REPO_ROOT}"
+export MPLCONFIGDIR XDG_CACHE_HOME
 
 log_step() {
   printf '\n[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$1"
@@ -135,13 +138,15 @@ log_step "8/9 Postprocess particle output"
   --input "${PARTICLE_CONC}" --output "${PARTICLE_DIR}/post.json"
 
 log_step "9/9 Render backend concentration figures"
-"${PYTHON}" "${SCRIPTS_DIR}/sprtz_plot.py" \
-  --input "${GAUSSIAN_CONC}" \
+"${PYTHON}" tools/plotter.py \
+  "${GAUSSIAN_CONC}" \
   --output "${FIGURE_DIR}/gaussian_concentration.png" \
+  --variable concentration_field \
   --title "Wildfire/Arson Gaussian Concentration" --dpi 300
-"${PYTHON}" "${SCRIPTS_DIR}/sprtz_plot.py" \
-  --input "${PARTICLE_CONC}" \
+"${PYTHON}" tools/plotter.py \
+  "${PARTICLE_CONC}" \
   --output "${FIGURE_DIR}/particle_concentration.png" \
+  --variable concentration_field \
   --title "Wildfire/Arson Particle Concentration" --dpi 300
 
 log_step "Pipeline complete: ${OUT_DIR}"

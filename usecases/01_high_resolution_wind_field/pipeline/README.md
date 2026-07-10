@@ -36,8 +36,8 @@ Override paths with:
 - `WRF_DIR`, `DEM_PATH`, `LANDUSE_PATH`, `GEO_PATH`, and `METEO_PATH` for
   finer-grained path control.
 
-The script also sets `MPLCONFIGDIR` to
-`${SPRTZ_OUTPUT_DIR}/.matplotlib` by default so Matplotlib caches remain
+The script also sets `MPLCONFIGDIR` and `XDG_CACHE_HOME` under
+`${SPRTZ_OUTPUT_DIR}` by default so Matplotlib and font caches remain
 workflow-writable.
 
 ## Fixed scenario

@@ -15,6 +15,7 @@ METEO_PATH="${METEO_PATH:-${OUTPUT_ROOT}/wrf_100m_wind_bbox.nc}"
 TERRAIN_CACHE_DIR="${TERRAIN_CACHE_DIR:-${OUTPUT_ROOT}/terrain-cache}"
 CONFIG_PATH="${CONFIG_PATH:-${REPO_ROOT}/usecases/01_high_resolution_wind_field/demo/config.json}"
 MPLCONFIGDIR="${MPLCONFIGDIR:-${OUTPUT_ROOT}/.matplotlib}"
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-${OUTPUT_ROOT}/.cache}"
 
 DATE_UTC="${DATE_UTC:-20260621Z0000}"
 HOURS="${HOURS:-24}"
@@ -34,9 +35,9 @@ COASTLINE_SOURCE="${COASTLINE_SOURCE:-gshhs}"
 COASTLINE_RESOLUTION="${COASTLINE_RESOLUTION:-10m}"
 ALLOW_CARTOPY_DOWNLOAD="${ALLOW_CARTOPY_DOWNLOAD:-1}"
 
-mkdir -p "${OUTPUT_ROOT}" "${WRF_DIR}" "$(dirname "${DEM_PATH}")" "$(dirname "${LANDUSE_PATH}")" "${TERRAIN_CACHE_DIR}" "${MPLCONFIGDIR}"
+mkdir -p "${OUTPUT_ROOT}" "${WRF_DIR}" "$(dirname "${DEM_PATH}")" "$(dirname "${LANDUSE_PATH}")" "${TERRAIN_CACHE_DIR}" "${MPLCONFIGDIR}" "${XDG_CACHE_HOME}"
 cd "${REPO_ROOT}"
-export MPLCONFIGDIR
+export MPLCONFIGDIR XDG_CACHE_HOME
 
 log_step() {
   printf '\n[%s] %s\n' "${USECASE_NAME}" "$1"

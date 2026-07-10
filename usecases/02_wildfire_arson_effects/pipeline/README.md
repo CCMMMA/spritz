@@ -1,10 +1,10 @@
 # Use case 02 — Wildfire/arson scripts-only pipeline
 
 This pipeline provides a deterministic, self-contained wildfire smoke
-screening run using only public command wrappers in the repository-level
-`scripts/` directory. Bash writes the scenario JSON; Spritz scripts validate
-it, interpolate synthetic meteorology, run Gaussian and particle dispersion,
-postprocess both results, and render figures.
+screening run using public command wrappers and the repository-level unified
+plotter. Bash writes the scenario JSON; Spritz scripts validate it, interpolate
+synthetic meteorology, run Gaussian and particle dispersion, postprocess both
+results, and render figures.
 
 This is intentionally different from the WRF-driven workflow in
 [`../demo/README.md`](../demo/README.md). The demo is the appropriate workflow
@@ -88,10 +88,9 @@ SPRTZ_OUTPUT_DIR=data/output/wildfire_sensitivity \
 6. `scripts/spritz.py` runs particle dispersion with an explicit seed.
 7. `scripts/spritzpost.py` summarizes the Gaussian output.
 8. `scripts/spritzpost.py` summarizes the particle output.
-9. `scripts/sprtz_plot.py` renders one figure for each backend.
+9. `tools/plotter.py` renders one figure for each backend.
 
-No Python module under `usecases/` and no program under `tools/` is invoked by
-the pipeline.
+No Python module under `usecases/` is invoked by the pipeline.
 
 ## Products
 
