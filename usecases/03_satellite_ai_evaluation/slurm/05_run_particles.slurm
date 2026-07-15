@@ -1,0 +1,18 @@
+#!/bin/bash
+#SBATCH --job-name=uc03-particles
+#SBATCH --nodes=1
+#SBATCH --ntasks=8
+#SBATCH --cpus-per-task=1
+#SBATCH --time=08:00:00
+#SBATCH --export=ALL
+set -euo pipefail
+cd "${SPRTZ_REPO_ROOT:-${SLURM_SUBMIT_DIR}}"
+[[ -n "${SPRTZ_VENV:-}" ]] && source "${SPRTZ_VENV}/bin/activate"
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+mkdir -p data/output/satellite_ai_evaluation/model/particles
+srun --ntasks="${SLURM_NTASKS}" spritz \
+  --config usecases/03_satellite_ai_evaluation/demo/config.json \
+  --meteo data/output/satellite_ai_evaluation/domain/meteo_mpi.nc \
+  --output data/output/satellite_ai_evaluation/model/particles/concentration.nc \
+  --format netcdf --backend particles --seed 20240619 --output-interval 3600 \
+  --parallel mpi --decomposition particles --thread-backend serial

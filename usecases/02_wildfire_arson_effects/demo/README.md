@@ -35,6 +35,12 @@ near-ground plume transport.
 
 ## MPI execution on a SLURM cluster
 
+The preferred HPC workflow uses the separate launchers in
+[`../slurm/`](../slurm/README.md). Its non-blocking submitter queues weather,
+DEM, land-use, MPI downscaling, particle, Gaussian, and plotting jobs with
+explicit `afterok` dependencies. The combined allocation below is retained for
+sites that require one reservation for all compute stages.
+
 Install `mpi4py` against the cluster's MPI module and pre-stage the WRF, DEM,
 and LC100 inputs on shared storage. Before submission, run Step 2 below once on
 the login node to create

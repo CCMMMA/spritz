@@ -5,7 +5,7 @@ invoke `pipeline/pipeline.sh` as the canonical executable sequence.
 
 These wrappers are not SLURM MPI launchers. For WRF-driven MPI meteorological
 downscaling followed by particle and Gaussian stages, use the batch example in
-[`../demo/README.md`](../demo/README.md#mpi-execution-on-a-slurm-cluster).
+[`../slurm/README.md`](../slurm/README.md).
 
 ## CWL
 

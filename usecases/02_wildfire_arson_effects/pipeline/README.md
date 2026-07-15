@@ -12,8 +12,8 @@ for incident-specific WRF forcing, terrain-aware downscaling, geographic fire
 locations, and backend comparison metrics.
 
 For the WRF-driven MPI workflow on SLURM, including separate particle and
-Gaussian stages, use the batch example in
-[`../demo/README.md`](../demo/README.md#mpi-execution-on-a-slurm-cluster).
+Gaussian stages, use the non-blocking staged workflow in
+[`../slurm/README.md`](../slurm/README.md).
 
 ## Run
 

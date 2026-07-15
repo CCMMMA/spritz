@@ -25,6 +25,8 @@ inspection.
 The guided demo also provides a complete SLURM batch example for MPI
 meteorological downscaling followed by particle and Gaussian dispersion; see
 [`demo/README.md`](demo/README.md#mpi-execution-on-a-slurm-cluster).
+Separate non-blocking launchers and their dependency graph are documented in
+[`slurm/README.md`](slurm/README.md).
 
 ### Offline scripts-only pipeline
 

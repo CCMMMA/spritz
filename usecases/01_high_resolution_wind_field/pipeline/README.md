@@ -158,12 +158,10 @@ SpritzMet writes the accumulated NetCDF-CF output after each completed time
 frame, so a partial scientific product remains available if a later frame
 fails.
 
-For SLURM execution with explicit MPI downscaling and downstream particle and
-Gaussian models, use the staged batch example in
-[`../demo/README.md`](../demo/README.md#mpi-execution-on-a-slurm-cluster).
-Pre-stage all network inputs, launch each stage with `srun`, and retain
-`--parallel mpi` so MPI setup failures are reported rather than silently
-falling back to serial execution.
+For SLURM execution with explicit MPI downscaling, use the staged non-blocking
+workflow in [`../slurm/README.md`](../slurm/README.md). Pre-stage all network
+inputs and retain `--parallel mpi` so MPI setup failures are reported rather
+than silently falling back to serial execution.
 
 ### Step 5: Render the same products as the demo
 

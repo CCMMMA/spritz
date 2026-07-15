@@ -101,6 +101,12 @@ results must not be described as satellite validation.
 
 ## MPI execution on a SLURM cluster
 
+The preferred HPC workflow uses the separate launchers in
+[`../slurm/`](../slurm/README.md). Its non-blocking submitter queues weather,
+DEM, land-use, MPI downscaling, particle, Gaussian, and plotting jobs with
+explicit `afterok` dependencies. The combined allocation below remains a
+single-reservation alternative; satellite evaluation stays serial.
+
 Install the `netcdf`, `geo`, and `mpi` extras with `mpi4py` built against the
 same MPI implementation loaded by SLURM. Download WRF, DEM, LC100, and
 Sentinel-5P inputs before the compute job; compute nodes commonly have no

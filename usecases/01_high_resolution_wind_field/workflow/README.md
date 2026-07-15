@@ -10,9 +10,9 @@ The CWL workflow intentionally delegates to `pipeline.sh` instead of duplicating
 the ten scientific and rendering commands. This keeps workflow-engine execution
 aligned with the maintained operational wrapper.
 
-The CWL wrapper is not the SLURM MPI launcher. For explicit MPI
-meteorological, particle, and Gaussian stages under SLURM, use the batch example
-in [`../demo/README.md`](../demo/README.md#mpi-execution-on-a-slurm-cluster).
+The CWL wrapper is not the SLURM MPI launcher. For explicit MPI meteorological
+downscaling under SLURM, use the staged workflow in
+[`../slurm/README.md`](../slurm/README.md).
 
 ## Inputs
 

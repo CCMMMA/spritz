@@ -6,7 +6,7 @@ the separate `demo/step_00_validate_controlled_tracer.py` entry point.
 
 This CWL wrapper is not the SLURM MPI launcher. For MPI meteorological
 downscaling followed by particle and Gaussian stages, use the batch example in
-[`../demo/README.md`](../demo/README.md#mpi-execution-on-a-slurm-cluster).
+[`../slurm/README.md`](../slurm/README.md).
 
 [`workflow.cwl`](workflow.cwl) is a CWL v1.2 wrapper around the canonical
 [`pipeline.sh`](../pipeline/pipeline.sh). It exposes the interpreter, output

@@ -58,6 +58,8 @@ and deterministic lightweight logistic calibration.
   satellite alignment, and the interpretation boundary imposed by the
   same-day overpass. It also includes a complete SLURM example for MPI
   meteorological downscaling, particle dispersion, and Gaussian dispersion.
+- [`slurm/README.md`](slurm/README.md) documents the preferred staged,
+  non-blocking SLURM submission workflow and its MPI stages.
 - [`pipeline/pipeline.sh`](pipeline/pipeline.sh) creates a reproducible
   scripts-only concentration field, satellite mask, evaluation report, and
   diagnostic figure:

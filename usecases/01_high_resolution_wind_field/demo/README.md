@@ -51,6 +51,12 @@ launcher.
 
 ## MPI execution on a SLURM cluster
 
+The preferred HPC workflow uses the separate launchers in
+[`../slurm/`](../slurm/README.md). Run its `submit.sh` to queue weather, DEM,
+land-use, MPI downscaling, and plotting jobs with non-blocking `sbatch` calls
+and `afterok` dependencies. The combined allocation below remains useful when
+a site requires all compute stages inside one reservation.
+
 Install `mpi4py` against the same MPI implementation provided by the cluster.
 Module names vary by site, but the environment should be prepared along these
 lines before submitting the job:
@@ -69,9 +75,8 @@ Many compute nodes have no external network access, and all MPI ranks need to
 see identical inputs through the shared filesystem. The LC100 shared-cache
 procedure below avoids Zenodo rate limits on the headnode.
 
-The following single-node SLURM script runs the meteorological downscaling,
-particle dispersion, and Gaussian dispersion sequentially with eight MPI
-ranks. Save it as `usecase01_mpi.slurm` in the repository root:
+The following single-node SLURM script runs meteorological downscaling with
+eight MPI ranks. Save it as `usecase01_mpi.slurm` in the repository root:
 
 ```bash
 #!/bin/bash
@@ -99,7 +104,6 @@ export MKL_NUM_THREADS=1
 
 OUT=data/output/high_resolution_wind_field
 METEO="${OUT}/wrf_100m_wind_bbox_mpi.nc"
-mkdir -p "${OUT}/dispersion"
 
 srun --ntasks="${SLURM_NTASKS}" \
   python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
@@ -115,28 +119,6 @@ srun --ntasks="${SLURM_NTASKS}" \
     --parallel mpi \
     --decomposition rows \
     --thread-backend serial
-
-srun --ntasks="${SLURM_NTASKS}" \
-  spritz \
-    --config examples/minimal.json \
-    --meteo "${METEO}" \
-    --output "${OUT}/dispersion/particles_mpi.nc" \
-    --format netcdf \
-    --backend particles \
-    --parallel mpi \
-    --decomposition particles \
-    --thread-backend serial
-
-srun --ntasks="${SLURM_NTASKS}" \
-  spritz \
-    --config examples/minimal.json \
-    --meteo "${METEO}" \
-    --output "${OUT}/dispersion/gaussian_mpi.nc" \
-    --format netcdf \
-    --backend gaussian \
-    --parallel mpi \
-    --decomposition receptors \
-    --thread-backend serial
 ```
 
 Submit and monitor the job with:
@@ -150,12 +132,9 @@ squeue -u "${USER}"
 Create the output directory before `sbatch` because SLURM opens the requested
 log files before the script body executes.
 
-`examples/minimal.json` supplies a small, deterministic teaching source and
-receptor configuration for both dispersion commands. Replace it with a
-validated event configuration for scientific use. The Gaussian backend divides
-receptors among ranks; the particle backend divides particle/source work.
-Allocating more ranks than available work units may add overhead without
-speedup. In all three stages, shared output is written only by rank 0.
+SpritzMet divides target rows among ranks and only rank 0 writes the shared
+NetCDF output. Allocating more ranks than target-row work units may add overhead
+without speedup.
 
 For a multi-node allocation, increase `--nodes` and `--ntasks`; continue using
 `srun` so SLURM launches ranks with the site's configured MPI process manager.
