@@ -48,8 +48,10 @@ python3 tools/copernicus-lc100-download.py \
 ```
 
 The default source is the 2019 Copernicus Global Land Cover 100 m discrete
-classification GeoTIFF hosted on Zenodo. Override it only when a project has
-archived a vetted mirror:
+classification GeoTIFF hosted on Zenodo. The default uses Zenodo's canonical
+API file-content endpoint so GDAL's HTTP range requests do not depend on a
+browser download URL. Override it only when a project has archived a vetted
+mirror:
 
 ```bash
 python3 tools/copernicus-lc100-download.py \

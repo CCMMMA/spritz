@@ -140,6 +140,16 @@ def test_lc100_download_replaces_existing_output_via_temporary_file(tmp_path: Pa
     assert not Path(calls[0][-1]).exists()
 
 
+def test_lc100_download_uses_zenodo_file_content_endpoint() -> None:
+    tool = load_lc100_download_tool()
+
+    assert tool.COPERNICUS_LC100_2019_URL.startswith(
+        "https://zenodo.org/api/records/3939050/files/"
+    )
+    assert tool.COPERNICUS_LC100_2019_URL.endswith(".tif/content")
+    assert "?download=" not in tool.COPERNICUS_LC100_2019_URL
+
+
 def test_lc100_download_overwrite_passes_gdal_overwrite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     tool = load_lc100_download_tool()
     output = tmp_path / "lc100.tif"

@@ -34,9 +34,9 @@ from pyproj import CRS, Transformer
 from sprtz.terrain.regrid import DomainDefinition, aoi_bounds
 
 COPERNICUS_LC100_2019_URL = (
-    "https://zenodo.org/records/3939050/files/"
+    "https://zenodo.org/api/records/3939050/files/"
     "PROBAV_LC100_global_v3.0.1_2019-nrt_"
-    "Discrete-Classification-map_EPSG-4326.tif?download=1"
+    "Discrete-Classification-map_EPSG-4326.tif/content"
 )
 
 
