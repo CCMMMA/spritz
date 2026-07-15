@@ -22,6 +22,10 @@ downscaling, event configuration, both dispersion backends, comparison, and
 visualization. Use it for incident-oriented experiments and scientific
 inspection.
 
+The guided demo also provides a complete SLURM batch example for MPI
+meteorological downscaling followed by particle and Gaussian dispersion; see
+[`demo/README.md`](demo/README.md#mpi-execution-on-a-slurm-cluster).
+
 ### Offline scripts-only pipeline
 
 [`pipeline/pipeline.sh`](pipeline/pipeline.sh) runs a deterministic local-grid

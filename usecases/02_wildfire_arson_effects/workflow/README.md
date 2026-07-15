@@ -3,6 +3,10 @@
 This folder provides WCL and CWL wrappers for the scripts-only pipeline. Both
 invoke `pipeline/pipeline.sh` as the canonical executable sequence.
 
+These wrappers are not SLURM MPI launchers. For WRF-driven MPI meteorological
+downscaling followed by particle and Gaussian stages, use the batch example in
+[`../demo/README.md`](../demo/README.md#mpi-execution-on-a-slurm-cluster).
+
 ## CWL
 
 [`workflow.cwl`](workflow.cwl) is a CWL v1.2 workflow. It exposes every

@@ -49,6 +49,120 @@ python -m pip install -e '.[dev,netcdf,geo,viz]'
 MPI remains optional. Install `sprtz[mpi]` only when running with an MPI
 launcher.
 
+## MPI execution on a SLURM cluster
+
+Install `mpi4py` against the same MPI implementation provided by the cluster.
+Module names vary by site, but the environment should be prepared along these
+lines before submitting the job:
+
+```bash
+module load python
+module load openmpi
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[netcdf,geo,mpi]'
+python -m sprtz doctor
+```
+
+Download the WRF files, DEM, and LC100 data before entering the compute job.
+Many compute nodes have no external network access, and all MPI ranks need to
+see identical inputs through the shared filesystem. The LC100 shared-cache
+procedure below avoids Zenodo rate limits on the headnode.
+
+The following single-node SLURM script runs the meteorological downscaling,
+particle dispersion, and Gaussian dispersion sequentially with eight MPI
+ranks. Save it as `usecase01_mpi.slurm` in the repository root:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=sprtz-uc01
+#SBATCH --nodes=1
+#SBATCH --ntasks=8
+#SBATCH --cpus-per-task=1
+#SBATCH --time=04:00:00
+#SBATCH --partition=compute
+#SBATCH --output=data/output/high_resolution_wind_field/slurm-%j.out
+#SBATCH --error=data/output/high_resolution_wind_field/slurm-%j.err
+
+set -euo pipefail
+
+cd "${SLURM_SUBMIT_DIR}"
+module load python
+module load openmpi
+source .venv/bin/activate
+
+# One CPU thread per rank prevents BLAS/OpenMP oversubscription. Increase
+# --cpus-per-task and --threads-per-rank together only after benchmarking.
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
+OUT=data/output/high_resolution_wind_field
+METEO="${OUT}/wrf_100m_wind_bbox_mpi.nc"
+mkdir -p "${OUT}/dispersion"
+
+srun --ntasks="${SLURM_NTASKS}" \
+  python usecases/01_high_resolution_wind_field/demo/step_01_downscale_wind.py \
+    --date 20260621Z0000 \
+    --hours 24 \
+    --download-dir data/wrf/d03 \
+    --output "${METEO}" \
+    --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
+    --dx 100 --dy 100 \
+    --config usecases/01_high_resolution_wind_field/demo/config.json \
+    --dem "${OUT}/dem/cop30_naples.tif" \
+    --land-cover "${OUT}/landcover/lc100_naples.tif" \
+    --parallel mpi \
+    --decomposition rows \
+    --thread-backend serial
+
+srun --ntasks="${SLURM_NTASKS}" \
+  spritz \
+    --config examples/minimal.json \
+    --meteo "${METEO}" \
+    --output "${OUT}/dispersion/particles_mpi.nc" \
+    --format netcdf \
+    --backend particles \
+    --parallel mpi \
+    --decomposition particles \
+    --thread-backend serial
+
+srun --ntasks="${SLURM_NTASKS}" \
+  spritz \
+    --config examples/minimal.json \
+    --meteo "${METEO}" \
+    --output "${OUT}/dispersion/gaussian_mpi.nc" \
+    --format netcdf \
+    --backend gaussian \
+    --parallel mpi \
+    --decomposition receptors \
+    --thread-backend serial
+```
+
+Submit and monitor the job with:
+
+```bash
+mkdir -p data/output/high_resolution_wind_field
+sbatch usecase01_mpi.slurm
+squeue -u "${USER}"
+```
+
+Create the output directory before `sbatch` because SLURM opens the requested
+log files before the script body executes.
+
+`examples/minimal.json` supplies a small, deterministic teaching source and
+receptor configuration for both dispersion commands. Replace it with a
+validated event configuration for scientific use. The Gaussian backend divides
+receptors among ranks; the particle backend divides particle/source work.
+Allocating more ranks than available work units may add overhead without
+speedup. In all three stages, shared output is written only by rank 0.
+
+For a multi-node allocation, increase `--nodes` and `--ntasks`; continue using
+`srun` so SLURM launches ranks with the site's configured MPI process manager.
+Use `--parallel mpi`, rather than `auto`, in batch production so a missing or
+misconfigured `mpi4py` installation fails immediately. First compare each MPI
+product against an otherwise identical serial run before using it operationally.
+
 ## 1. Download the 24 hourly WRF files
 
 The downscaling command can download missing files automatically. To prepare

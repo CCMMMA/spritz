@@ -56,7 +56,8 @@ and deterministic lightweight logistic calibration.
 - [`demo/README.md`](demo/README.md) provides the guided evaluation workflow,
   including data acquisition, domain preparation, both dispersion backends,
   satellite alignment, and the interpretation boundary imposed by the
-  same-day overpass.
+  same-day overpass. It also includes a complete SLURM example for MPI
+  meteorological downscaling, particle dispersion, and Gaussian dispersion.
 - [`pipeline/pipeline.sh`](pipeline/pipeline.sh) creates a reproducible
   scripts-only concentration field, satellite mask, evaluation report, and
   diagnostic figure:

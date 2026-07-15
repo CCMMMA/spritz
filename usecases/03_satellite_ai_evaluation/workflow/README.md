@@ -4,6 +4,10 @@ This CWL wrapper executes the Aversa incident consistency workflow. Formal
 Gaussian and particle validation uses paired controlled-tracer observations and
 the separate `demo/step_00_validate_controlled_tracer.py` entry point.
 
+This CWL wrapper is not the SLURM MPI launcher. For MPI meteorological
+downscaling followed by particle and Gaussian stages, use the batch example in
+[`../demo/README.md`](../demo/README.md#mpi-execution-on-a-slurm-cluster).
+
 [`workflow.cwl`](workflow.cwl) is a CWL v1.2 wrapper around the canonical
 [`pipeline.sh`](../pipeline/pipeline.sh). It exposes the interpreter, output
 locations, and classification threshold as typed inputs and returns the model

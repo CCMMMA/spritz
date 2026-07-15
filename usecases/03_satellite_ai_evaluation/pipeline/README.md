@@ -76,6 +76,11 @@ On HPC headnodes with a shared public IP, prepare the reusable LC100 source
 cache as documented in `../demo/README.md`. This avoids Zenodo 403 responses
 caused when GDAL range reads exhaust the repository's per-IP request limit.
 
+For MPI execution on SLURM, use the three-stage batch example in
+[`../demo/README.md`](../demo/README.md#mpi-execution-on-a-slurm-cluster).
+The meteorological, particle, and Gaussian stages run under `srun`; satellite
+alignment, evaluation, and plotting remain serial postprocessing stages.
+
 Expected products include WRF and satellite source data when network mode is
 enabled, `dem/cop30_aversa.tif`, `landcover/lc100_aversa.tif`, `geo.nc`,
 `domain/meteo.nc`, Gaussian and particle concentration NetCDF files,

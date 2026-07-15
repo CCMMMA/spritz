@@ -99,6 +99,95 @@ Without `SPRTZ_RUN_NETWORK=1`, the pipeline remains runnable offline using
 configured meteorology and a deterministic synthetic observation. Offline
 results must not be described as satellite validation.
 
+## MPI execution on a SLURM cluster
+
+Install the `netcdf`, `geo`, and `mpi` extras with `mpi4py` built against the
+same MPI implementation loaded by SLURM. Download WRF, DEM, LC100, and
+Sentinel-5P inputs before the compute job; compute nodes commonly have no
+external network access. The MPI job below covers meteorological downscaling
+and both dispersion backends. Satellite alignment, evaluation, and plotting
+remain serial postprocessing stages after the job completes.
+
+```bash
+module load python
+module load openmpi
+source .venv/bin/activate
+python -m pip install -e '.[netcdf,geo,mpi]'
+python -m sprtz doctor
+```
+
+Save this as `usecase03_mpi.slurm` in the repository root:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=sprtz-uc03
+#SBATCH --nodes=1
+#SBATCH --ntasks=8
+#SBATCH --cpus-per-task=1
+#SBATCH --time=08:00:00
+#SBATCH --partition=compute
+#SBATCH --output=data/output/satellite_ai_evaluation/slurm-%j.out
+#SBATCH --error=data/output/satellite_ai_evaluation/slurm-%j.err
+
+set -euo pipefail
+cd "${SLURM_SUBMIT_DIR}"
+module load python
+module load openmpi
+source .venv/bin/activate
+
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
+OUT=data/output/satellite_ai_evaluation
+CONFIG=usecases/03_satellite_ai_evaluation/demo/config.json
+METEO="${OUT}/domain/meteo_mpi.nc"
+mkdir -p "${OUT}/domain" "${OUT}/model/particles" "${OUT}/model/gaussian"
+
+srun --ntasks="${SLURM_NTASKS}" \
+  python usecases/03_satellite_ai_evaluation/demo/step_02_prepare_domain.py \
+    --date 20240619Z1000 --hours 4 \
+    --download-dir data/wrf/d03 \
+    --center-lat 40.9769 --center-lon 14.2168 \
+    --nx 601 --ny 351 --dx 100 --dy 100 \
+    --dem "${OUT}/dem/cop30_aversa.tif" \
+    --land-cover "${OUT}/landcover/lc100_aversa.tif" \
+    --advanced-physics --bulk-richardson-number 0.0 \
+    --mass-consistency-iterations 80 \
+    --mass-consistency-relaxation 0.8 \
+    --output "${METEO}" \
+    --parallel mpi --decomposition rows --thread-backend serial
+
+srun --ntasks="${SLURM_NTASKS}" \
+  spritz --config "${CONFIG}" --meteo "${METEO}" \
+    --output "${OUT}/model/particles/concentration.nc" \
+    --format netcdf --backend particles --seed 20240619 \
+    --output-interval 3600 --parallel mpi \
+    --decomposition particles --thread-backend serial
+
+srun --ntasks="${SLURM_NTASKS}" \
+  spritz --config "${CONFIG}" --meteo "${METEO}" \
+    --output "${OUT}/model/gaussian/concentration.nc" \
+    --format netcdf --backend gaussian --output-interval 3600 \
+    --parallel mpi --decomposition receptors --thread-backend serial
+```
+
+Create the log directory before `sbatch`, then submit and monitor the job:
+
+```bash
+mkdir -p data/output/satellite_ai_evaluation
+sbatch usecase03_mpi.slurm
+squeue -u "${USER}"
+```
+
+The canonical particle configuration uses 100,000 particles, while the
+Gaussian configuration includes 11 receptors and a complete 601×351 field.
+Benchmark rank counts rather than assuming more ranks are faster. Only rank 0
+writes each shared NetCDF file. Preserve explicit `--parallel mpi` in production
+so an MPI installation error fails immediately, and compare the resulting
+products with otherwise identical serial runs before evaluation. Multi-node
+runs use the same script with larger `--nodes` and `--ntasks` allocations.
+
 ## Complete workflow
 
 ```bash

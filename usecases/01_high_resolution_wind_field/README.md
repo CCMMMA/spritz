@@ -132,7 +132,9 @@ scientific output; only rank 0 writes shared products.
 
 Use parallel execution only after validating it against the serial result for
 the same inputs and configuration. Install the optional MPI dependencies and
-use the command-line parallel controls documented by the demo driver.
+use the command-line parallel controls documented by the demo driver. A
+complete SLURM example for SpritzMet downscaling followed by particle and
+Gaussian MPI runs is provided in [`demo/README.md`](demo/README.md#mpi-execution-on-a-slurm-cluster).
 
 ## Environment
 

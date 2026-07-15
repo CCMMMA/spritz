@@ -33,6 +33,95 @@ physical `z` level is above the surface, the Gaussian and particle samplers use
 that diagnostic 10 m above-ground wind as the lower-boundary layer for
 near-ground plume transport.
 
+## MPI execution on a SLURM cluster
+
+Install `mpi4py` against the cluster's MPI module and pre-stage the WRF, DEM,
+and LC100 inputs on shared storage. Before submission, run Step 2 below once on
+the login node to create
+`data/output/wildfire_case/wildfire_event.json`; do not have multiple MPI ranks
+create or modify the shared configuration concurrently.
+
+```bash
+module load python
+module load openmpi
+source .venv/bin/activate
+python -m pip install -e '.[netcdf,geo,mpi]'
+python -m sprtz doctor
+```
+
+Save the following as `usecase02_mpi.slurm` in the repository root. Module and
+partition names are site-specific.
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=sprtz-uc02
+#SBATCH --nodes=1
+#SBATCH --ntasks=8
+#SBATCH --cpus-per-task=1
+#SBATCH --time=06:00:00
+#SBATCH --partition=compute
+#SBATCH --output=data/output/wildfire_case/slurm-%j.out
+#SBATCH --error=data/output/wildfire_case/slurm-%j.err
+
+set -euo pipefail
+cd "${SLURM_SUBMIT_DIR}"
+module load python
+module load openmpi
+source .venv/bin/activate
+
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
+OUT=data/output/wildfire_case
+METEO="${OUT}/wrf_100m_wind_mpi.nc"
+CONFIG="${OUT}/wildfire_event.json"
+mkdir -p "${OUT}/model_compare/particles" "${OUT}/model_compare/gaussian"
+
+srun --ntasks="${SLURM_NTASKS}" \
+  python usecases/02_wildfire_arson_effects/demo/step_01_downscale_wind.py \
+    --date 20240731Z1000 --hours 24 \
+    --download-dir data/wrf/d03 \
+    --output "${METEO}" \
+    --center-lat 40.827 --center-lon 14.518 \
+    --nx 201 --ny 201 --dx 100 --dy 100 \
+    --dem "${OUT}/dem/cop30_wildfire_case.tif" \
+    --land-cover "${OUT}/landcover/lc100_wildfire_case.tif" \
+    --advanced-physics --bulk-richardson-number 0.0 \
+    --mass-consistency-iterations 80 \
+    --mass-consistency-relaxation 0.8 \
+    --parallel mpi --decomposition rows --thread-backend serial
+
+srun --ntasks="${SLURM_NTASKS}" \
+  spritz --config "${CONFIG}" --meteo "${METEO}" \
+    --output "${OUT}/model_compare/particles/concentration.nc" \
+    --format netcdf --backend particles --parallel mpi \
+    --decomposition particles --thread-backend serial \
+    --output-interval 3600
+
+srun --ntasks="${SLURM_NTASKS}" \
+  spritz --config "${CONFIG}" --meteo "${METEO}" \
+    --output "${OUT}/model_compare/gaussian/concentration.nc" \
+    --format netcdf --backend gaussian --parallel mpi \
+    --decomposition receptors --thread-backend serial \
+    --output-interval 3600
+```
+
+Create the log directory before submission, then submit and monitor the job:
+
+```bash
+mkdir -p data/output/wildfire_case
+sbatch usecase02_mpi.slurm
+squeue -u "${USER}"
+```
+
+Only rank 0 writes each shared NetCDF product. Particle work and Gaussian
+receptors are partitioned deterministically; allocating more ranks than useful
+particle/source or receptor work adds overhead. Compare both MPI outputs with
+otherwise identical `--parallel serial` runs before scientific use. Increase
+`--nodes` and `--ntasks` for a multi-node run, retaining `srun` and explicit
+`--parallel mpi` so MPI setup failures cannot silently fall back to serial.
+
 ## Data preparation
 
 Prepare WRF forcing before the run:
