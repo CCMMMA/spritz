@@ -55,6 +55,10 @@ products include event JSON, NetCDF-CF meteorology, particle and Gaussian
 concentrations, postprocessing reports, comparison metrics in the full demo,
 and optional maps, profiles, animations, and 3-D renders.
 
+When running the full setup on an HPC system with a shared outbound IP, use the
+LC100 shared-cache procedure in [`demo/README.md`](demo/README.md). Direct GDAL
+range reads can exhaust Zenodo's per-IP request limit.
+
 All operational data belongs under the repository-level `data/` tree unless an
 explicit path is supplied. Date-time arguments use `YYYYMMDDZhhmm`.
 

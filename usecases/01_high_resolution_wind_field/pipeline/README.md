@@ -108,6 +108,11 @@ The pipeline downloads:
 - buffered COP30 terrain with `tools/copernicus-cop30-dem-download.py`;
 - buffered Copernicus LC100 land cover with `tools/copernicus-lc100-download.py`.
 
+For HPC headnodes that share a public IP, Zenodo may rate-limit GDAL's remote
+range reads. The resumable shared-cache procedure in `../demo/README.md` avoids
+repeated access to the 1.7 GB global LC100 source and should be used before
+operational runs on such systems.
+
 Both commands use bbox plus `--dx/--dy/--buffer-m`, letting the tools derive
 the centered snapped grid automatically.
 

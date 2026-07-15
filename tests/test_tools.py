@@ -150,6 +150,62 @@ def test_lc100_download_uses_zenodo_file_content_endpoint() -> None:
     assert "?download=" not in tool.COPERNICUS_LC100_2019_URL
 
 
+def test_lc100_download_accepts_local_source(tmp_path: Path) -> None:
+    tool = load_lc100_download_tool()
+    source = tmp_path / "global.tif"
+    source.write_bytes(b"TIFF")
+
+    assert tool.gdal_source(str(source)) == str(source)
+    assert tool.gdal_source(source.as_uri()) == str(source)
+
+
+def test_lc100_download_rejects_missing_local_source(tmp_path: Path) -> None:
+    tool = load_lc100_download_tool()
+
+    with pytest.raises(ValueError, match="does not exist"):
+        tool.gdal_source(str(tmp_path / "missing.tif"))
+
+
+def test_lc100_download_disables_remote_sidecar_probes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tool = load_lc100_download_tool()
+    output = tmp_path / "lc100.tif"
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], check: bool) -> None:
+        calls.append(command)
+        Path(command[-1]).write_text("new")
+
+    monkeypatch.setattr(tool.shutil, "which", lambda name: "/usr/bin/gdalwarp")
+    monkeypatch.setattr(tool.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "copernicus-lc100-download.py",
+            "--south",
+            "40.0",
+            "--north",
+            "41.0",
+            "--west",
+            "14.0",
+            "--east",
+            "15.0",
+            "--output",
+            str(output),
+        ],
+    )
+
+    tool.main()
+
+    config_index = calls[0].index("--config")
+    assert calls[0][config_index + 1 : config_index + 3] == [
+        "GDAL_DISABLE_READDIR_ON_OPEN",
+        "EMPTY_DIR",
+    ]
+
+
 def test_lc100_download_overwrite_passes_gdal_overwrite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     tool = load_lc100_download_tool()
     output = tmp_path / "lc100.tif"

@@ -163,6 +163,26 @@ python tools/copernicus-lc100-download.py \
   --output data/output/satellite_ai_evaluation/landcover/lc100_aversa.tif
 ```
 
+On HPC systems with a shared outbound IP, cache the 1.7 GB global LC100 source
+once and crop it locally instead of consuming Zenodo's per-IP request allowance
+with GDAL range reads:
+
+```bash
+mkdir -p data/cache/copernicus-lc100
+curl -fL --retry 10 --continue-at - \
+  --output data/cache/copernicus-lc100/PROBAV_LC100_2019_discrete.tif \
+  "https://zenodo.org/api/records/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif/content"
+
+python tools/copernicus-lc100-download.py \
+  --center-lat 40.9769 --center-lon 14.2168 \
+  --nx 601 --ny 351 --dx 100 --dy 100 --buffer-m 5000 \
+  --source-url data/cache/copernicus-lc100/PROBAV_LC100_2019_discrete.tif \
+  --output data/output/satellite_ai_evaluation/landcover/lc100_aversa.tif
+```
+
+The download is resumable and reusable by other use cases. Keep the global
+raster out of Git and release archives.
+
 LC100 is categorical land cover. It is sampled with nearest-neighbor logic;
 the workflow never bilinearly interpolates class identifiers.
 

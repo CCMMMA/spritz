@@ -72,6 +72,10 @@ The primary evaluator vertically integrates Spritz concentration, converts it
 to mol m⁻², and aggregates it to native TROPOMI pixels. Network access is explicit; credentials are read
 only from the environment and are never logged.
 
+On HPC headnodes with a shared public IP, prepare the reusable LC100 source
+cache as documented in `../demo/README.md`. This avoids Zenodo 403 responses
+caused when GDAL range reads exhaust the repository's per-IP request limit.
+
 Expected products include WRF and satellite source data when network mode is
 enabled, `dem/cop30_aversa.tif`, `landcover/lc100_aversa.tif`, `geo.nc`,
 `domain/meteo.nc`, Gaussian and particle concentration NetCDF files,

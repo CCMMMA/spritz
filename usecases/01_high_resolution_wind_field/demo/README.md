@@ -91,6 +91,28 @@ python tools/copernicus-lc100-download.py \
   --output data/output/high_resolution_wind_field/landcover/lc100_naples.tif
 ```
 
+On an HPC headnode, many users commonly share one public IP address. Zenodo's
+per-IP request limit can therefore be exhausted by GDAL while it performs range
+reads against the 1.7 GB global LC100 GeoTIFF. Cache that source once on shared
+storage and crop the local copy instead:
+
+```bash
+mkdir -p data/cache/copernicus-lc100
+curl -fL --retry 10 --continue-at - \
+  --output data/cache/copernicus-lc100/PROBAV_LC100_2019_discrete.tif \
+  "https://zenodo.org/api/records/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif/content"
+
+python tools/copernicus-lc100-download.py \
+  --south 40.78 --north 40.85 --west 14.18 --east 14.33 \
+  --dx 100 --dy 100 \
+  --buffer-m 5000 \
+  --source-url data/cache/copernicus-lc100/PROBAV_LC100_2019_discrete.tif \
+  --output data/output/high_resolution_wind_field/landcover/lc100_naples.tif
+```
+
+The `curl` command is resumable and is needed only when the shared cached file
+is absent. Do not add the downloaded global raster to a release archive or Git.
+
 The bounding-box downscaler determines its exact node count from the projected
 corners. The buffered rasters need to cover that resulting grid; the node
 counts above are acquisition extents, not a replacement for the bounding-box

@@ -69,8 +69,27 @@ python3 tools/copernicus-lc100-download.py \
   --output data/output/wildfire_case/landcover/lc100_wildfire_case.tif
 ```
 
+On HPC systems with a shared outbound IP, cache the 1.7 GB global LC100 source
+once to avoid exhausting Zenodo's per-IP limit with GDAL range requests:
+
+```bash
+mkdir -p data/cache/copernicus-lc100
+curl -fL --retry 10 --continue-at - \
+  --output data/cache/copernicus-lc100/PROBAV_LC100_2019_discrete.tif \
+  "https://zenodo.org/api/records/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif/content"
+
+python3 tools/copernicus-lc100-download.py \
+  --center-lat 40.827 --center-lon 14.518 \
+  --nx 201 --ny 201 --dx 100 --dy 100 --buffer-m 5000 \
+  --source-url data/cache/copernicus-lc100/PROBAV_LC100_2019_discrete.tif \
+  --output data/output/wildfire_case/landcover/lc100_wildfire_case.tif
+```
+
+The download is resumable and reusable by other use cases. Keep the global
+raster out of Git and release archives.
+
 These commands compute the WGS84 download bounds from the exact `201 x 201`,
-`100 m` terrain domain and add a `1000 m` source-raster buffer. The buffer keeps
+`100 m` terrain domain and add a `5000 m` source-raster buffer. The buffer keeps
 bilinear DEM sampling away from the source raster edge and gives nearest-neighbor
 land-cover sampling full coverage for the standalone `geo.nc` product.
 

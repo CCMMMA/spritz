@@ -90,7 +90,10 @@ buffer, coastline settings, and rendering parameters. See
 [`pipeline/README.md`](pipeline/README.md) for the full operational contract.
 
 This setup requires network access for missing WRF, COP30, LC100, and optional
-Cartopy coastline data.
+Cartopy coastline data. On HPC systems with a shared outbound IP, cache the
+global LC100 source once and crop it locally as documented in
+[`demo/README.md`](demo/README.md); direct GDAL range reads can exhaust Zenodo's
+per-IP request limit.
 
 ### 3. CWL workflow
 

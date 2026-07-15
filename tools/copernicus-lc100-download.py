@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+from urllib.parse import urlparse
 
 from pyproj import CRS, Transformer
 
@@ -189,6 +190,21 @@ def resolve_bbox(args):
     return south, north, west, east
 
 
+def gdal_source(source_url: str) -> str:
+    parsed = urlparse(source_url)
+    if parsed.scheme in {"http", "https"}:
+        return f"/vsicurl/{source_url}"
+    if parsed.scheme == "file":
+        source_path = Path(parsed.path)
+    elif parsed.scheme:
+        raise ValueError(f"unsupported source URL scheme: {parsed.scheme}")
+    else:
+        source_path = Path(source_url)
+    if not source_path.is_file():
+        raise ValueError(f"local source GeoTIFF does not exist: {source_path}")
+    return str(source_path)
+
+
 def main():
     args = parse_args()
     south, north, west, east = resolve_bbox(args)
@@ -208,10 +224,17 @@ def main():
         target = output.with_name(f".{output.name}.{uuid.uuid4().hex}.tmp{output.suffix}")
         replace_target = True
 
-    source = f"/vsicurl/{args.source_url}"
+    try:
+        source = gdal_source(args.source_url)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
 
     command = [
         "gdalwarp",
+        "--config",
+        "GDAL_DISABLE_READDIR_ON_OPEN",
+        "EMPTY_DIR",
         "-te",
         str(west),
         str(south),
