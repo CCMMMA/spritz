@@ -53,6 +53,13 @@ class MPIContext:
             return list(self.comm.allgather(value))
         return [value]
 
+    def gather(self, value: T, root: int = 0) -> list[T] | None:
+        """Gather values on ``root`` without replicating them on other ranks."""
+        if self.enabled and self.comm is not None:
+            gathered = self.comm.gather(value, root=root)
+            return list(gathered) if self.rank == root else None
+        return [value]
+
     def gather_flat(self, rows: Sequence[T]) -> list[T]:
         chunks = self.allgather(list(rows))
         merged: list[T] = []

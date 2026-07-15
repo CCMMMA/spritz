@@ -4,7 +4,9 @@
 
 This pipeline creates a deterministic high-resolution local wind product for sailing forecast demonstrations and renders publication-ready wind figures.
 
-This pipeline uses public command-line programs from `scripts/` for Sprtz model execution and avoids use-case-specific demonstration scripts. It is suitable for workflow engines because each scientific stage is an explicit process with concrete file inputs and outputs.
+This pipeline uses the use case's documented forecast builder and public Sprtz
+validation/visualization programs. It is suitable for workflow engines because
+each scientific stage has concrete file inputs and outputs.
 
 ## Operational Contract
 
@@ -24,12 +26,15 @@ Products are written under `data/05_sailing_wind_forecast/` by default. Set `SPR
 - `DY` defaults to `100`.
 - `WIND_SPEED_M_S` defaults to `6.0`.
 - `WIND_FROM_DIRECTION_DEG` defaults to `245.0`.
+- `INITIALIZATION_TIME` defaults to `20260601Z0000`.
+- Forecast output cadence is fixed at 600 seconds (10 minutes).
 
 All parameters may be overridden as shell environment variables.
 
 ## Expected Products
 
 - `sailing_wind_config.json`
+- `sailing_wind.json`
 - `sailing_wind.nc`
 - `figures/sailing_wind_map.png`
 - `figures/sailing_wind_profile.png`
@@ -61,12 +66,15 @@ Validates the config via public CLI.
 python3 "${SCRIPTS_DIR}/sprtz.py" validate "${CONFIG_PATH}"
 ```
 
-### Step 4: SpritzMet wind generation
+### Step 4: Ten-minute forecast generation
 
-Creates the NetCDF wind product.
+Creates JSON and NetCDF-CF forecast products with one high-resolution frame
+every 10 minutes.
 
 ```bash
-python3 "${SCRIPTS_DIR}/spritzmet.py" ...
+python3 usecases/05_sailing_wind_forecast/demo/step_01_build_forecast.py \
+  --initialization-time 20260601Z0000 --time-resolution-s 600 \
+  --output data/05_sailing_wind_forecast/sailing_wind.json
 ```
 
 ### Step 5: 2-D wind rendering

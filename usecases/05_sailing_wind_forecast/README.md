@@ -6,7 +6,8 @@ This use case creates a forecast-ready local wind product for precision
 sailing applications. It represents initialization time, outlook, geographic
 domain, horizontal and vertical spacing, and forecast time resolution
 explicitly. The bundled Bay of Naples setup demonstrates deterministic
-high-resolution wind generation and visualization while preserving strict
+high-resolution wind generation at a fixed 10-minute (600-second) output
+cadence and visualization while preserving strict
 NetCDF-CF coordinates and absolute UTC time.
 
 ## Available setup scenarios

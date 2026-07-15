@@ -319,6 +319,11 @@ Spritz includes a root-level `usecases/` folder with reproducible templates for:
 - model evaluation against satellite-derived masks with a lightweight deterministic AI calibration layer.
 - catalog-driven production incident screening with receptor latitude/longitude and geographic maps.
 - high-resolution Bay of Naples sailing wind forecasts with configurable outlook, bounding box, vertical levels, and temporal cadence.
+
+WRF downscaling loads and processes one source time frame at a time. In MPI
+mode rank 0 alone performs input/output, while workers process spatial rows.
+Pass `--temporal-resolution-s 900` to the shared wind use-case command for
+15-minute temporal downscaling; use case 05 emits 10-minute frames by default.
 - a 12-hour Acerra waste-to-energy chimney screening case starting on 2026-06-01.
 
 Install the package, then run the explicit root-level didactic steps. The use cases are intentionally not importable suite modules:

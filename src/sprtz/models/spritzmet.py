@@ -1237,6 +1237,8 @@ def _diagnostic_precipitation_adjustment(
     precip_arr = np.asarray(precipitation_rate, dtype=float)
     precip_wind_u = np.asarray(wind_u, dtype=float)
     precip_wind_v = np.asarray(wind_v, dtype=float)
+    if precip_arr.ndim == 2 and precip_wind_u.ndim >= 3:
+        precip_arr = precip_arr[np.newaxis, :, :]
     while precip_wind_u.ndim > precip_arr.ndim:
         precip_wind_u = np.take(precip_wind_u, 0, axis=1)
         precip_wind_v = np.take(precip_wind_v, 0, axis=1)
@@ -2084,7 +2086,7 @@ def downscale_wrf_to_local_grid(
         downscaling_metadata = {**downscaling_metadata, **terrain_input_metadata}
     if ctx.enabled:
         LOGGER.debug("SpritzMet: rank %s gathering WRF downscaling rows [%s:%s)", ctx.rank, row_start, row_stop)
-        pieces = ctx.allgather(
+        pieces = ctx.gather(
             (
                 row_start,
                 row_stop,
@@ -2097,36 +2099,35 @@ def downscale_wrf_to_local_grid(
                 relative_humidity_2m,
             )
         )
-        full_shape = (u.shape[0], u.shape[1], ny, nx)
-        full_surface_shape = (u.shape[0], ny, nx)
-        full_u = np.zeros(full_shape, dtype=float)
-        full_v = np.zeros(full_shape, dtype=float)
-        full_precipitation = np.zeros(full_surface_shape, dtype=float)
-        full_u10m = np.zeros(full_surface_shape, dtype=float) if u10m is not None else None
-        full_v10m = np.zeros(full_surface_shape, dtype=float) if v10m is not None else None
-        full_temperature_2m_c = np.zeros(full_surface_shape, dtype=float) if temperature_2m_c is not None else None
-        full_relative_humidity_2m = np.zeros(full_surface_shape, dtype=float) if relative_humidity_2m is not None else None
-        for start, stop, uu, vv, pp, uu10, vv10, tt2, rh2 in pieces:
-            full_u[:, :, start:stop, :] = uu
-            full_v[:, :, start:stop, :] = vv
-            full_precipitation[:, start:stop, :] = pp
-            if full_u10m is not None and uu10 is not None:
-                full_u10m[:, start:stop, :] = uu10
-            if full_v10m is not None and vv10 is not None:
-                full_v10m[:, start:stop, :] = vv10
-            if full_temperature_2m_c is not None and tt2 is not None:
-                full_temperature_2m_c[:, start:stop, :] = tt2
-            if full_relative_humidity_2m is not None and rh2 is not None:
-                full_relative_humidity_2m[:, start:stop, :] = rh2
-        u = full_u
-        v = full_v
-        precipitation_rate = full_precipitation
-        u10m = full_u10m
-        v10m = full_v10m
-        temperature_2m_c = full_temperature_2m_c
-        relative_humidity_2m = full_relative_humidity_2m
-        downscaling_metadata["parallel_row_start"] = 0
-        downscaling_metadata["parallel_row_stop"] = ny
+        if ctx.is_root:
+            assert pieces is not None
+            full_shape = (u.shape[0], u.shape[1], ny, nx)
+            full_surface_shape = (u.shape[0], ny, nx)
+            full_u = np.zeros(full_shape, dtype=float)
+            full_v = np.zeros(full_shape, dtype=float)
+            full_precipitation = np.zeros(full_surface_shape, dtype=float)
+            full_u10m = np.zeros(full_surface_shape, dtype=float) if u10m is not None else None
+            full_v10m = np.zeros(full_surface_shape, dtype=float) if v10m is not None else None
+            full_temperature_2m_c = np.zeros(full_surface_shape, dtype=float) if temperature_2m_c is not None else None
+            full_relative_humidity_2m = np.zeros(full_surface_shape, dtype=float) if relative_humidity_2m is not None else None
+            for start, stop, uu, vv, pp, uu10, vv10, tt2, rh2 in pieces:
+                full_u[:, :, start:stop, :] = uu
+                full_v[:, :, start:stop, :] = vv
+                full_precipitation[:, start:stop, :] = pp
+                if full_u10m is not None and uu10 is not None:
+                    full_u10m[:, start:stop, :] = uu10
+                if full_v10m is not None and vv10 is not None:
+                    full_v10m[:, start:stop, :] = vv10
+                if full_temperature_2m_c is not None and tt2 is not None:
+                    full_temperature_2m_c[:, start:stop, :] = tt2
+                if full_relative_humidity_2m is not None and rh2 is not None:
+                    full_relative_humidity_2m[:, start:stop, :] = rh2
+            u, v, precipitation_rate = full_u, full_v, full_precipitation
+            u10m, v10m = full_u10m, full_v10m
+            temperature_2m_c = full_temperature_2m_c
+            relative_humidity_2m = full_relative_humidity_2m
+            downscaling_metadata["parallel_row_start"] = 0
+            downscaling_metadata["parallel_row_stop"] = ny
     LOGGER.info(
         "SpritzMet: downscaling complete wind_shape=%s precipitation_shape=%s",
         u.shape,

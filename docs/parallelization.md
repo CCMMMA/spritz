@@ -309,7 +309,10 @@ rank 0 broadcasts the final workflow summary
 
 This avoids concurrent writes for shared meteorology and post-processing products while still using MPI for the expensive concentration step.
 
-For WRF-driven SpritzMet downscaling, `downscale_wrf_to_local_grid(...,
+For WRF-driven SpritzMet downscaling, rank 0 loads one source time frame at a
+time and broadcasts it to workers. Workers never open shared WRF, terrain, or
+station files. Row results are gathered to rank 0 (not replicated with an
+all-gather), and only rank 0 writes shared products. `downscale_wrf_to_local_grid(...,
 parallel="auto"|"mpi")` partitions the target local grid by row, builds each
 rank's projected inverse-distance neighbour plan only for its rows, applies DEM
 and land-cover corrections on the same row slice, then allgathers the completed

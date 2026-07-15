@@ -2,6 +2,6 @@ WORKFLOW 05_sailing_wind_forecast {
   DESCRIPTION = "Sprtz clean-room workflow for 05 Sailing Wind Forecast.";
   WORKDIR = ".";
     STEP step_01 {
-      COMMAND = "python usecases/05_sailing_wind_forecast/demo/step_01_build_forecast.py";
+      COMMAND = "python usecases/05_sailing_wind_forecast/demo/step_01_build_forecast.py --initialization-time 20260601Z0000 --time-resolution-s 600 --output data/05_sailing_wind_forecast/sailing_wind.json";
     }
 }

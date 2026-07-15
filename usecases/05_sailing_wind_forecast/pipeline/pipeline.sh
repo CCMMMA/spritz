@@ -28,6 +28,8 @@ WIND_SPEED_M_S="${WIND_SPEED_M_S:-6.0}"
 WIND_FROM_DIRECTION_DEG="${WIND_FROM_DIRECTION_DEG:-245.0}"
 CONFIG_PATH="${OUT_DIR}/sailing_wind_config.json"
 METEO_PATH="${OUT_DIR}/sailing_wind.nc"
+FORECAST_JSON="${OUT_DIR}/sailing_wind.json"
+INITIALIZATION_TIME="${INITIALIZATION_TIME:-20260601Z0000}"
 
 log_step "1. Runtime environment diagnostic"
 python3 "${SCRIPTS_DIR}/sprtz_doctor.py"
@@ -40,8 +42,11 @@ JSON
 log_step "3. Public configuration validation"
 python3 "${SCRIPTS_DIR}/sprtz.py" validate "${CONFIG_PATH}"
 
-log_step "4. SpritzMet sailing wind generation"
-python3 "${SCRIPTS_DIR}/spritzmet.py" --config "${CONFIG_PATH}" --output "${METEO_PATH}" --format netcdf
+log_step "4. Ten-minute high-resolution sailing wind generation"
+python3 "${USECASE_DIR}/demo/step_01_build_forecast.py" \
+  --initialization-time "${INITIALIZATION_TIME}" \
+  --time-resolution-s 600 \
+  --output "${FORECAST_JSON}"
 
 log_step "5. Publication-ready 2-D wind map"
 MPLBACKEND=Agg python3 "${REPO_ROOT}/tools/plotter.py" "${METEO_PATH}" --output "${FIGURE_DIR}/sailing_wind_map.png" --variable wind_speed --title "Sailing Wind Speed" --dpi 600 --vector-density 18

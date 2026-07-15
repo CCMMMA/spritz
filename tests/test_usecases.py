@@ -1851,6 +1851,30 @@ def test_sailing_forecast_demo_defaults() -> None:
     assert DEFAULT_TIME_RESOLUTION_S == 600.0
 
 
+def test_temporal_downscaling_builds_15_minute_vector_frames() -> None:
+    module = importlib.import_module("wind_downscaling_cli")
+    grid = np.zeros((2, 2), dtype=float)
+
+    def frame(value: float, valid: str) -> spritzmet.LocalMeteorology:
+        field = np.full((1, 1, 2, 2), value, dtype=float)
+        return spritzmet.LocalMeteorology(
+            grid, grid, grid, grid, field, field, grid[np.newaxis, ...],
+            40.0, 14.0, 100.0, 100.0, "test",
+            valid_datetime_utc=valid, valid_datetimes_utc=[valid],
+        )
+
+    frames = module._interpolate_frames(
+        frame(0.0, "2026-06-01T00:00:00Z"),
+        frame(4.0, "2026-06-01T01:00:00Z"),
+        900.0,
+    )
+    assert [item.valid_datetime_utc for item in frames] == [
+        "2026-06-01T00:15:00Z", "2026-06-01T00:30:00Z",
+        "2026-06-01T00:45:00Z", "2026-06-01T01:00:00Z",
+    ]
+    assert [float(item.wind_4d[0][0, 0, 0, 0]) for item in frames] == [1.0, 2.0, 3.0, 4.0]
+
+
 def test_fire_workflow_run_entrypoints_route_backends(monkeypatch, tmp_path: Path) -> None:
     calls = []
 

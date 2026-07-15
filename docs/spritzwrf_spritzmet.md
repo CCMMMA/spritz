@@ -158,6 +158,18 @@ WRF/CF time metadata such as `Times`, CF `time` units, or explicit global time
 attributes. It does not infer datetimes from WRF filenames. SpritzMet propagates
 that selected UTC datetime to the local NetCDF-CF `time(time)` coordinate.
 
+The shared WRF workflow processes source time frames as a stream. Rank 0 opens
+one source frame, broadcasts that frame to the MPI workers, and releases it
+before opening the next frame; input files are never opened independently by
+worker ranks. Completed row partitions are gathered only on rank 0, which is
+also the only rank that writes NetCDF, JSON, or CALMET output.
+
+Use `--temporal-resolution-s 900` for 15-minute output, or another positive
+cadence. SpritzMet linearly interpolates vector components, precipitation, and
+available 10 m wind and 2 m thermodynamic fields between consecutive absolute
+UTC source frames. It never infers times from filenames, and rejects temporal
+downscaling when valid-time metadata is absent or non-monotonic.
+
 ## Output conventions
 
 SpritzMet writes a strict NetCDF-CF product containing local x/y, vertical

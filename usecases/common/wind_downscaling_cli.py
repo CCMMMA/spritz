@@ -6,7 +6,7 @@ import importlib.util
 import logging
 import math
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -258,9 +258,23 @@ def _with_vertical_level_metadata(
     wrf: spritzwrf.WRFWindField,
     vertical_levels_m: list[float] | None,
 ) -> spritzwrf.WRFWindField:
-    if vertical_levels_m is None:
-        return wrf
     metadata = dict(wrf.metadata or {})
+    if vertical_levels_m is None:
+        # Streaming selects one time at a time. Preserve the remaining leading
+        # axis as vertical levels explicitly so SpritzMet does not interpret a
+        # level,y,x slice as time,y,x.
+        if metadata.get("level_index") == "all" and metadata.get("time_index") != "all":
+            u = np.asarray(wrf.u, dtype=float)
+            v = np.asarray(wrf.v, dtype=float)
+            if u.ndim == 3 and v.ndim == 3:
+                return spritzwrf.WRFWindField(
+                    wrf.latitude, wrf.longitude, u[np.newaxis, ...], v[np.newaxis, ...],
+                    wrf.source_path, time_index=wrf.time_index, metadata=metadata,
+                    precipitation_rate=wrf.precipitation_rate, u10m=wrf.u10m, v10m=wrf.v10m,
+                    temperature_2m_c=wrf.temperature_2m_c,
+                    relative_humidity_2m=wrf.relative_humidity_2m,
+                )
+        return wrf
     u = _expand_or_remap_wind(wrf.u, vertical_levels_m, "u", metadata)
     v = _expand_or_remap_wind(wrf.v, vertical_levels_m, "v", metadata)
     metadata["level_meters"] = [float(level) for level in vertical_levels_m]
@@ -547,6 +561,58 @@ def _combine_local_meteorology(items: list[spritzmet.LocalMeteorology]) -> sprit
     )
 
 
+def _parse_utc(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _interpolate_frames(
+    earlier: spritzmet.LocalMeteorology,
+    later: spritzmet.LocalMeteorology,
+    interval_s: float,
+) -> list[spritzmet.LocalMeteorology]:
+    """Return temporal frames after ``earlier`` through and including ``later``."""
+    if interval_s <= 0.0:
+        raise ValueError("--temporal-resolution-s must be positive")
+    if not earlier.valid_datetime_utc or not later.valid_datetime_utc:
+        raise ValueError("temporal downscaling requires absolute UTC valid times on every input frame")
+    start = _parse_utc(earlier.valid_datetime_utc)
+    stop = _parse_utc(later.valid_datetime_utc)
+    span_s = (stop - start).total_seconds()
+    if span_s <= 0.0:
+        raise ValueError("WRF valid times must be strictly increasing for temporal downscaling")
+    offsets = list(np.arange(interval_s, span_s, interval_s, dtype=float)) + [span_s]
+
+    def blend(a: np.ndarray | None, b: np.ndarray | None, fraction: float) -> np.ndarray | None:
+        if a is None or b is None:
+            return None
+        return np.asarray(a, dtype=float) + fraction * (np.asarray(b, dtype=float) - np.asarray(a, dtype=float))
+
+    result: list[spritzmet.LocalMeteorology] = []
+    for offset_s in offsets:
+        fraction = offset_s / span_s
+        valid = (start + timedelta(seconds=float(offset_s))).isoformat().replace("+00:00", "Z")
+        metadata = dict(later.downscaling_metadata or {})
+        metadata.update({
+            "temporal_downscaling": "linear",
+            "temporal_resolution_seconds": float(interval_s),
+            "temporal_source_interval_seconds": float(span_s),
+        })
+        result.append(spritzmet.LocalMeteorology(
+            later.x, later.y, later.latitude, later.longitude,
+            blend(earlier.wind_4d[0], later.wind_4d[0], fraction),
+            blend(earlier.wind_4d[1], later.wind_4d[1], fraction),
+            blend(earlier.precipitation_3d, later.precipitation_3d, fraction),
+            later.center_lat, later.center_lon, later.dx_m, later.dy_m, later.source,
+            valid_datetime_utc=valid, valid_datetimes_utc=[valid],
+            downscaling_metadata=metadata,
+            u10m=blend(earlier.u10m, later.u10m, fraction),
+            v10m=blend(earlier.v10m, later.v10m, fraction),
+            temperature_2m_c=blend(earlier.temperature_2m_c, later.temperature_2m_c, fraction),
+            relative_humidity_2m=blend(earlier.relative_humidity_2m, later.relative_humidity_2m, fraction),
+        ))
+    return result
+
+
 def _load_wrf_field(
     wrf_path: Path | None,
     *,
@@ -615,41 +681,34 @@ def run_workflow(
         )
     _check_local_raster_dependencies(args.dem, args.land_cover)
 
-    wrf_paths = _resolve_hourly_wrf_inputs(args)
-    if wrf_paths is None:
+    mpi_ctx = get_mpi_context(args.parallel)
+    # Rank 0 alone resolves/downloads and inspects shared inputs.  The compact
+    # path/index schedule is broadcast; field arrays are loaded one frame at a
+    # time later in the processing loop.
+    wrf_paths = _resolve_hourly_wrf_inputs(args) if mpi_ctx.is_root else None
+    if mpi_ctx.is_root and wrf_paths is None:
         wrf_path = _resolve_wrf_input(args, download_date, download_cycle_hour)
-        wrf = _load_wrf_field(
-            wrf_path,
-            time_index=args.time_index,
-            level_index=args.level_index,
-            vertical_levels_m=vertical_levels_m,
-            allow_synthetic=args.allow_synthetic,
-            center_lat=center_lat,
-            center_lon=center_lon,
-        )
-        _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=not args.json)
-        wrf_fields = [wrf]
+        wrf_paths = [wrf_path] if wrf_path is not None else []
+    wrf_paths = mpi_ctx.bcast(wrf_paths)
+    if wrf_paths:
+        if args.time_index is None:
+            frame_specs = [
+                (path, index)
+                for path in wrf_paths
+                for index in range(spritzwrf.wrf_time_count(path))
+            ] if mpi_ctx.is_root else None
+        else:
+            frame_specs = [(path, args.time_index) for path in wrf_paths] if mpi_ctx.is_root else None
+        frame_specs = mpi_ctx.bcast(frame_specs)
     else:
-        wrf_fields = _load_wrf_sequence(
-            wrf_paths,
-            time_index=args.time_index,
-            level_index=args.level_index,
-            vertical_levels_m=vertical_levels_m,
-        )
-        for wrf in wrf_fields:
-            _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=not args.json)
+        frame_specs = [(None, 0)]
 
-    dem_elevation_m, land_cover, terrain_metadata = spritzmet.terrain_downscaling_inputs_from_rasters(
-        center_lat=center_lat,
-        center_lon=center_lon,
-        nx=nx,
-        ny=ny,
-        dx_m=args.dx,
-        dy_m=args.dy,
-        dem_path=args.dem,
-        land_cover_path=args.land_cover,
-        allow_outside_raster=args.allow_synthetic,
-    )
+    terrain_inputs = spritzmet.terrain_downscaling_inputs_from_rasters(
+        center_lat=center_lat, center_lon=center_lon, nx=nx, ny=ny,
+        dx_m=args.dx, dy_m=args.dy, dem_path=args.dem,
+        land_cover_path=args.land_cover, allow_outside_raster=args.allow_synthetic,
+    ) if mpi_ctx.is_root else None
+    dem_elevation_m, land_cover, terrain_metadata = mpi_ctx.bcast(terrain_inputs)
     if dem_elevation_m is not None or land_cover is not None:
         _teach(
             "terrain-aware SpritzMet downscaling is enabled: DEM=%s, land-cover=%s",
@@ -657,7 +716,7 @@ def run_workflow(
             args.land_cover or "not supplied",
         )
     station_measurements = None
-    if args.station_measurements is not None:
+    if args.station_measurements is not None and mpi_ctx.is_root:
         station_measurements = spritzmet.read_station_measurements_csv(
             args.station_measurements,
             center_lat=center_lat,
@@ -668,6 +727,7 @@ def run_workflow(
             args.station_measurements,
             len(station_measurements),
         )
+    station_measurements = mpi_ctx.bcast(station_measurements)
 
     LOGGER.info("step 3/4 SpritzMet: spritzmet.downscale_wrf_to_local_grid")
     _teach(
@@ -700,9 +760,18 @@ def run_workflow(
             args.mass_consistency_relaxation,
         )
     met_items: list[spritzmet.LocalMeteorology] = []
-    mpi_ctx = get_mpi_context(args.parallel)
     fmt = "NetCDF-CF" if not args.json else "json"
-    for frame_index, wrf in enumerate(wrf_fields):
+    previous_frame: spritzmet.LocalMeteorology | None = None
+    for frame_index, (wrf_path, source_time_index) in enumerate(frame_specs):
+        wrf = None
+        if mpi_ctx.is_root:
+            wrf = _load_wrf_field(
+                wrf_path, time_index=source_time_index, level_index=args.level_index,
+                vertical_levels_m=vertical_levels_m, allow_synthetic=args.allow_synthetic,
+                center_lat=center_lat, center_lon=center_lon,
+            )
+            _require_cf_valid_time_for_netcdf(wrf, prefer_netcdf=not args.json)
+        wrf = mpi_ctx.bcast(wrf)
         frame = spritzmet.downscale_wrf_to_local_grid(
             wrf,
             center_lat=center_lat,
@@ -719,7 +788,14 @@ def run_workflow(
             parallel=args.parallel,
             physics_options=physics_options,
         )
-        met_items.append(frame)
+        if mpi_ctx.is_root:
+            new_frames = (
+                _interpolate_frames(previous_frame, frame, args.temporal_resolution_s)
+                if previous_frame is not None and args.temporal_resolution_s is not None
+                else [frame]
+            )
+            met_items.extend(new_frames)
+            previous_frame = frame
         # Persist every completed time frame. Rewriting the accumulated product
         # keeps the on-disk file CF-valid and readable if a later frame fails.
         # In MPI runs every rank computes and gathers, but only rank 0 writes
@@ -734,9 +810,11 @@ def run_workflow(
             LOGGER.info(
                 "step 4/4 output: persisted completed time frame %s/%s to %s",
                 frame_index + 1,
-                len(wrf_fields),
+                len(frame_specs),
                 args.output,
             )
+    if not mpi_ctx.is_root:
+        return WindDownscalingResult(Path(args.output), nx, ny, args.dx, args.dy, center_lat, center_lon, "mpi-rank-local", fmt, component=component)
     met = _combine_local_meteorology(met_items) if len(met_items) > 1 else met_items[0]
     finite_wind_speed = np.asarray(met.wind_speed)[np.isfinite(met.wind_speed)]
     if finite_wind_speed.size:
@@ -809,6 +887,10 @@ def build_parser(description: str | None = None) -> argparse.ArgumentParser:
     parser.add_argument("--dx", type=float, default=100.0)
     parser.add_argument("--dy", type=float, default=100.0)
     parser.add_argument("--time-index", type=int, default=None, help="time index for WRF variables; omit to downscale all times")
+    parser.add_argument(
+        "--temporal-resolution-s", type=float, default=None,
+        help="Optional output cadence in seconds (for example 900 for 15-minute linear temporal downscaling)",
+    )
     parser.add_argument("--level-index", type=int, default=None, help="vertical level index for 4D WRF wind variables; omit to downscale all levels")
     parser.add_argument(
         "--field-z-levels",

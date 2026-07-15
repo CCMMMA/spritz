@@ -691,6 +691,23 @@ def load_near_surface_wind(
     )
 
 
+def wrf_time_count(path: str | Path) -> int:
+    """Return the number of source time frames without loading field arrays."""
+    if not netcdf_available():
+        raise RuntimeError("netCDF4 is required to inspect WRF NetCDF files; install sprtz[netcdf]")
+    from netCDF4 import Dataset  # type: ignore
+
+    with Dataset(Path(path)) as ds:
+        for name in ("Time", "time"):
+            if name in ds.dimensions:
+                return max(1, len(ds.dimensions[name]))
+        for variable in ds.variables.values():
+            for axis, dimension in enumerate(variable.dimensions):
+                if str(dimension).lower() in {"time", "times", "datetime"}:
+                    return max(1, int(variable.shape[axis]))
+    return 1
+
+
 def describe_wrf_input(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     result: dict[str, Any] = {"component": "spritzwrf", "path": str(p), "exists": p.exists()}

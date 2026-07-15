@@ -6,7 +6,7 @@ This document describes MPI domain decomposition for SpritzMet. It emphasizes pa
 
 ## Overview
 
-SpritzMet MPI uses spatial domain decomposition, unlike SpritzFire realization splitting. The current implementation partitions rows across ranks and gathers the complete field to rank 0 for safe shared-file output; the helper module also exposes 2-D Cartesian slice utilities for halo-aware extensions.
+SpritzMet MPI uses spatial domain decomposition, unlike SpritzFire realization splitting. The implementation partitions rows across ranks, loads each source time frame on rank 0 only, broadcasts it for processing, and gathers the completed field to rank 0 for safe shared-file output. Worker ranks do not perform input or output. The helper module also exposes 2-D Cartesian slice utilities for halo-aware extensions.
 
 CUDA acceleration is optional:
 
