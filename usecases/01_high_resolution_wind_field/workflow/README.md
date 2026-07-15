@@ -76,3 +76,7 @@ as the shell pipeline and demo. It requires explicit network access for WRF,
 COP30, LC100, and optional Cartopy coastline downloads. The generated 100 m
 wind field is a deterministic downscaling diagnostic and is not a regulatory or
 official operational forecast product.
+
+On a shared-IP HPC system, prepare the reusable LC100 source cache documented
+in `../demo/README.md` before launching the workflow to avoid Zenodo per-IP
+rate limits during GDAL range reads.

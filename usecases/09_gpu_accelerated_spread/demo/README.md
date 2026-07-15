@@ -33,6 +33,11 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_gpu_fire_area.tif
 ```
 
+On shared-IP HPC systems, follow the reusable LC100 source-cache procedure in
+[`docs/copernicus-lc100-download.md`](../../../docs/copernicus-lc100-download.md)
+and pass the cached TIFF through `--source-url`; direct GDAL range reads can
+exhaust Zenodo's per-IP request limit.
+
 Use the DEM and LC100 land cover as SpritzMet `--dem`/`--land-cover` inputs
 when preparing WRF-derived wind and precipitation, and through
 `sprtz-terrain fetch` for fire-spread terrain products. GPU backend detection

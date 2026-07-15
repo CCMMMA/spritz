@@ -74,6 +74,9 @@ raster CRS and pixel-center coordinates to sample each raster on the target
 Terrain/SpritzMet grid. Keep both bounding boxes larger than the configured
 domain and set `terrain.landuse.target_categories` to `copernicus-lc100` for
 LC100 inputs.
+For shared-IP HPC installations, cache the global LC100 source once and crop it
+locally as described in `docs/copernicus-lc100-download.md`. The cached source
+must remain outside Git and release archives.
 
 ## JSON Configuration
 

@@ -179,6 +179,10 @@ matching categorical land-cover GeoTIFF. Use both rasters with `--dem` and
 `--land-cover` in WRF/SpritzMet downscaling use cases, or through
 `sprtz-terrain fetch` when generating standalone GEO products. Install
 `sprtz[geo]` when using GeoTIFF inputs.
+On shared-IP HPC systems, use the resumable LC100 cache workflow documented in
+`docs/copernicus-lc100-download.md`, then pass the cached global TIFF through
+`--source-url` for each local crop. Do not commit or package that 1.7 GB source
+raster.
 For best `geo.nc` quality, pass the same center, spacing, node count, and
 projection to the download helpers and to `sprtz-terrain fetch`; keep
 `--buffer-m` positive so the downloaded DEM and land-cover rasters extend beyond

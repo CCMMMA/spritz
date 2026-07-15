@@ -156,6 +156,9 @@ product contains elevation, land-use class, and derived surface parameters. The
 COP30 downloader supplies only the DEM. Pair it with a compatible local
 land-cover raster, for example an LC100 GeoTIFF prepared with
 `tools/copernicus-lc100-download.py` for the same area.
+On a shared-IP HPC system, prepare LC100 from the reusable local source cache
+described in `docs/copernicus-lc100-download.md`; remote GDAL range reads can
+otherwise exhaust Zenodo's per-IP request limit.
 
 ## Compatibility Notes
 

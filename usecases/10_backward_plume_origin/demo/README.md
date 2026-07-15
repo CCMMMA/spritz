@@ -33,6 +33,11 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_backward_plume_area.tif
 ```
 
+On shared-IP HPC systems, follow the reusable LC100 source-cache procedure in
+[`docs/copernicus-lc100-download.md`](../../../docs/copernicus-lc100-download.md)
+and pass the cached TIFF through `--source-url`; direct GDAL range reads can
+exhaust Zenodo's per-IP request limit.
+
 Backward outputs should be reviewed against the archived WRF cycle, the
 DEM/LC-aware derived SpritzMet field, COP30 terrain, LC100 land cover, and
 independent observations.

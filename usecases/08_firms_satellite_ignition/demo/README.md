@@ -34,9 +34,14 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_firms_area.tif
 ```
 
+On shared-IP HPC systems, follow the reusable LC100 source-cache procedure in
+[`docs/copernicus-lc100-download.md`](../../../docs/copernicus-lc100-download.md)
+and pass the cached TIFF through `--source-url`; direct GDAL range reads can
+exhaust Zenodo's per-IP request limit.
+
 The FIRMS key is separate from the OpenTopography key used by the COP30
-downloader. LC100 uses GDAL `/vsicurl/` against a public source URL. Never
-hard-code credentials in configuration files.
+downloader. LC100 can use GDAL `/vsicurl/` against the public source or a local
+shared-cache TIFF. Never hard-code credentials in configuration files.
 
 Create the FIRMS-domain GEO product before 3-D fire-surface rendering:
 

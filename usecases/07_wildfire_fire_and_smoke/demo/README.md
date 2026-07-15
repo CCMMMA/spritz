@@ -33,6 +33,11 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_fire_smoke_area.tif
 ```
 
+On shared-IP HPC systems, follow the reusable LC100 source-cache procedure in
+[`docs/copernicus-lc100-download.md`](../../../docs/copernicus-lc100-download.md)
+and pass the cached TIFF through `--source-url`; direct GDAL range reads can
+exhaust Zenodo's per-IP request limit.
+
 The WRF files feed SpritzWRF/SpritzMet. Pass the DEM and LC100 land cover into
 the SpritzMet downscaling step with `--dem` and `--land-cover`; use the same
 rasters with `sprtz-terrain fetch` and make sure they cover the coupled fire and

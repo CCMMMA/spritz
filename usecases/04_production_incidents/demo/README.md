@@ -44,6 +44,11 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_acerra.tif
 ```
 
+On shared-IP HPC systems, follow the reusable LC100 source-cache procedure in
+[`docs/copernicus-lc100-download.md`](../../../docs/copernicus-lc100-download.md)
+and pass the cached TIFF through `--source-url`; direct GDAL range reads can
+exhaust Zenodo's per-IP request limit.
+
 Use `tools/meteouniparthenope-wrf-download.py` with the event start hour and
 duration. When creating WRF-derived SpritzMet meteorology, pass the COP30
 GeoTIFF as `--dem` and the LC100 GeoTIFF as `--land-cover`; use the same rasters

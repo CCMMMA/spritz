@@ -49,6 +49,10 @@ precipitation; the same rasters also feed `sprtz-terrain fetch` with
 `docs/meteouniparthenope-wrf-download.md`,
 `docs/copernicus-cop30-dem-download.md`, and
 `docs/copernicus-lc100-download.md`.
+On HPC systems where users share an outbound IP, download the global LC100
+source once into `data/cache/copernicus-lc100/` and supply that local TIFF with
+`--source-url`. This avoids Zenodo per-IP rate limits during GDAL range reads;
+the complete resumable procedure is in `docs/copernicus-lc100-download.md`.
 For best `geo.nc` quality, use the same grid definition for raster downloads
 and `sprtz-terrain fetch`, and keep `--buffer-m` positive so the source rasters
 cover the model edges during DEM interpolation and land-cover sampling.

@@ -72,6 +72,11 @@ python3 tools/copernicus-lc100-download.py \
   --output data/landcover/lc100_bay_of_naples.tif
 ```
 
+On shared-IP HPC systems, follow the reusable LC100 source-cache procedure in
+[`docs/copernicus-lc100-download.md`](../../../docs/copernicus-lc100-download.md)
+and pass the cached TIFF through `--source-url`; direct GDAL range reads can
+exhaust Zenodo's per-IP request limit.
+
 The WRF files are the source for replacing the synthetic wind field. Pass the
 COP30 DEM as `--dem` and LC100 land cover as `--land-cover` when preparing
 SpritzMet wind and precipitation products; the same rasters can also be used by
