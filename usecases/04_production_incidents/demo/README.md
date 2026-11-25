@@ -14,6 +14,8 @@ metadata. Incident datetimes are encoded in configuration fields and propagated
 to model output time metadata; no use-case step infers scientific datetimes from
 filenames.
 
+Warning: the date 2021-07-30 does not have, within the meteouniparthenope database, the 15:00 and 16:00 hours. For this reason, the Acerra event will only be applied to the 14:00 hours. Developers are asked to insert the missing data to respect the established duration of this use case.
+
 ## Data preparation
 
 For incident dossiers, archive the exact meteorology and terrain inputs used by
